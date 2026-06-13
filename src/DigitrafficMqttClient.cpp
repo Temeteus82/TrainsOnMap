@@ -1,0 +1,234 @@
+#include "DigitrafficMqttClient.h"
+
+#include "MqttCodec.h"
+
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QNetworkRequest>
+#include <QRandomGenerator>
+#include <QUrl>
+#include <QWebSocket>
+#include <QWebSocketHandshakeOptions>
+
+namespace {
+constexpr auto kBrokerUrl = "wss://rata.digitraffic.fi:443/mqtt";
+constexpr auto kLocationsTopic = "train-locations/#";
+constexpr quint16 kKeepAliveSecs = 60;
+constexpr int kReconnectMs = 5000;
+}
+
+DigitrafficMqttClient::DigitrafficMqttClient(QObject *parent)
+    : QObject(parent)
+    , m_socket(new QWebSocket(QString(), QWebSocketProtocol::VersionLatest, this))
+{
+    connect(m_socket, &QWebSocket::connected, this, &DigitrafficMqttClient::onSocketConnected);
+    connect(m_socket, &QWebSocket::disconnected, this, &DigitrafficMqttClient::onSocketDisconnected);
+    connect(m_socket, &QWebSocket::binaryMessageReceived, this, &DigitrafficMqttClient::onBinaryMessage);
+    connect(m_socket, &QWebSocket::errorOccurred, this, [this](QAbstractSocket::SocketError) {
+        setStatus(QStringLiteral("Socket error: %1").arg(m_socket->errorString()));
+    });
+
+    m_pingTimer.setInterval(kKeepAliveSecs * 1000 / 2);
+    connect(&m_pingTimer, &QTimer::timeout, this, [this] { send(mqttwire::buildPingReq()); });
+
+    m_reconnectTimer.setSingleShot(true);
+    m_reconnectTimer.setInterval(kReconnectMs);
+    connect(&m_reconnectTimer, &QTimer::timeout, this, [this] {
+        if (m_active)
+            openConnection();
+    });
+}
+
+DigitrafficMqttClient::~DigitrafficMqttClient()
+{
+    if (m_socket->state() == QAbstractSocket::ConnectedState) {
+        m_socket->sendBinaryMessage(mqttwire::buildDisconnect());
+        m_socket->close();
+    }
+}
+
+void DigitrafficMqttClient::setModel(TrainListModel *model)
+{
+    if (m_model == model)
+        return;
+    m_model = model;
+    emit modelChanged();
+}
+
+void DigitrafficMqttClient::setActive(bool active)
+{
+    if (m_active == active)
+        return;
+    m_active = active;
+    emit activeChanged();
+    if (m_active)
+        openConnection();
+    else
+        closeConnection();
+}
+
+void DigitrafficMqttClient::openConnection()
+{
+    if (m_socket->state() != QAbstractSocket::UnconnectedState)
+        return;
+
+    setStatus(QStringLiteral("Connecting…"));
+    QNetworkRequest request{QUrl(QString::fromLatin1(kBrokerUrl))};
+    request.setRawHeader("Origin", "https://www.digitraffic.fi");
+
+    // MQTT-over-WebSocket requires the "mqtt" subprotocol in the handshake.
+    QWebSocketHandshakeOptions options;
+    options.setSubprotocols({QStringLiteral("mqtt")});
+    m_socket->open(request, options);
+}
+
+void DigitrafficMqttClient::subscribeTrain(const QString &departureDate, int trainNumber)
+{
+    if (departureDate.isEmpty())
+        return;
+    // "#" matches the train-specific topic regardless of its category/operator tail.
+    const QString topic = QStringLiteral("trains/%1/%2/#").arg(departureDate).arg(trainNumber);
+    if (topic == m_trainTopic)
+        return;
+
+    unsubscribeTrain();        // drop the previous selection, if any
+    m_trainTopic = topic;
+    sendTrainSubscription();
+}
+
+void DigitrafficMqttClient::unsubscribeTrain()
+{
+    if (m_trainTopic.isEmpty())
+        return;
+    if (m_connected)
+        send(mqttwire::buildUnsubscribe(m_packetId++, m_trainTopic));
+    m_trainTopic.clear();
+}
+
+void DigitrafficMqttClient::sendTrainSubscription()
+{
+    if (!m_trainTopic.isEmpty() && m_connected)
+        send(mqttwire::buildSubscribe(m_packetId++, m_trainTopic, 0));
+}
+
+void DigitrafficMqttClient::closeConnection()
+{
+    m_pingTimer.stop();
+    m_reconnectTimer.stop();
+    m_rxBuffer.clear();
+    if (m_socket->state() == QAbstractSocket::ConnectedState)
+        m_socket->sendBinaryMessage(mqttwire::buildDisconnect());
+    m_socket->close();
+    setConnected(false);
+    setStatus(QStringLiteral("Disconnected"));
+}
+
+void DigitrafficMqttClient::onSocketConnected()
+{
+    // WebSocket is up; begin the MQTT session with a unique client id.
+    m_rxBuffer.clear();
+    const QString clientId = QStringLiteral("TrainsOnMap-%1")
+                                 .arg(QRandomGenerator::global()->generate(), 8, 16, QChar('0'));
+    send(mqttwire::buildConnect(clientId, kKeepAliveSecs));
+    setStatus(QStringLiteral("Authenticating…"));
+}
+
+void DigitrafficMqttClient::onSocketDisconnected()
+{
+    m_pingTimer.stop();
+    setConnected(false);
+    if (m_active) {
+        setStatus(QStringLiteral("Reconnecting…"));
+        m_reconnectTimer.start();
+    }
+}
+
+void DigitrafficMqttClient::onBinaryMessage(const QByteArray &message)
+{
+    // WebSocket frame boundaries are independent of MQTT packet boundaries, so
+    // accumulate and parse as many complete packets as are available.
+    m_rxBuffer += message;
+
+    while (m_rxBuffer.size() >= 2) {
+        int remaining = 0;
+        int lengthBytes = 0;
+        if (!mqttwire::decodeRemainingLength(m_rxBuffer, 1, remaining, lengthBytes))
+            break; // length field not fully arrived yet
+
+        const int total = 1 + lengthBytes + remaining;
+        if (m_rxBuffer.size() < total)
+            break; // packet body not fully arrived yet
+
+        const quint8 first = static_cast<quint8>(m_rxBuffer.at(0));
+        const QByteArray body = m_rxBuffer.mid(1 + lengthBytes, remaining);
+        dispatchPacket((first >> 4) & 0x0F, first & 0x0F, body);
+        m_rxBuffer.remove(0, total);
+    }
+}
+
+void DigitrafficMqttClient::dispatchPacket(quint8 type, quint8 flags, const QByteArray &body)
+{
+    switch (type) {
+    case mqttwire::ConnAck:
+        if (body.size() >= 2 && body.at(1) == 0) {
+            setConnected(true);
+            m_pingTimer.start();
+            send(mqttwire::buildSubscribe(m_packetId++, QString::fromLatin1(kLocationsTopic), 0));
+            sendTrainSubscription();   // restore a selected-train sub across reconnects
+            setStatus(QStringLiteral("Subscribing…"));
+        } else {
+            setStatus(QStringLiteral("Broker refused connection"));
+            m_socket->close();
+        }
+        break;
+    case mqttwire::SubAck:
+        setStatus(QStringLiteral("Live (MQTT)"));
+        break;
+    case mqttwire::Publish: {
+        const mqttwire::PublishMessage msg = mqttwire::parsePublish(body, flags);
+        if (msg.topic.startsWith(QLatin1String("train-locations/")))
+            handleLocationPayload(msg.payload);
+        else if (msg.topic.startsWith(QLatin1String("trains/")))
+            emit trainMessage(msg.payload);
+        break;
+    }
+    case mqttwire::PingResp:
+    default:
+        break;
+    }
+}
+
+void DigitrafficMqttClient::handleLocationPayload(const QByteArray &payload)
+{
+    if (!m_model || payload.isEmpty())
+        return;
+    const QJsonDocument doc = QJsonDocument::fromJson(payload);
+    if (!doc.isObject())
+        return;
+    const TrainPosition tp = parseTrainLocation(doc.object());
+    if (tp.coordinate.isValid())
+        m_model->upsertTrain(tp);
+}
+
+void DigitrafficMqttClient::send(const QByteArray &packet)
+{
+    if (m_socket->state() == QAbstractSocket::ConnectedState)
+        m_socket->sendBinaryMessage(packet);
+}
+
+void DigitrafficMqttClient::setConnected(bool connected)
+{
+    if (m_connected == connected)
+        return;
+    m_connected = connected;
+    emit connectedChanged();
+}
+
+void DigitrafficMqttClient::setStatus(const QString &status)
+{
+    if (m_status == status)
+        return;
+    m_status = status;
+    emit statusChanged();
+}
