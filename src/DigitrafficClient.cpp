@@ -11,8 +11,11 @@
 
 namespace {
 constexpr auto kLatestUrl = "https://rata.digitraffic.fi/api/v1/train-locations/latest/";
+// Currently-running trains, carrying trainCategory for marker colouring.
+constexpr auto kLiveTrainsUrl = "https://rata.digitraffic.fi/api/v1/live-trains";
 // Digitraffic asks every client to identify itself. Replace with your own app id.
 constexpr auto kUserAgent = "TrainsOnMap/0.1 (Qt6 scaffolding)";
+constexpr int kCategoryRefreshMs = 5 * 60 * 1000;
 }
 
 DigitrafficClient::DigitrafficClient(QObject *parent)
@@ -22,6 +25,11 @@ DigitrafficClient::DigitrafficClient(QObject *parent)
 {
     m_timer.setInterval(5000);
     connect(&m_timer, &QTimer::timeout, this, &DigitrafficClient::refresh);
+
+    // Categories change slowly; refresh them on their own, longer cadence.
+    m_categoryTimer.setInterval(kCategoryRefreshMs);
+    connect(&m_categoryTimer, &QTimer::timeout, this, &DigitrafficClient::refreshCategories);
+    m_categoryTimer.start();
 }
 
 void DigitrafficClient::setActive(bool active)
@@ -56,6 +64,42 @@ void DigitrafficClient::refresh()
     QNetworkReply *reply = m_net->get(req);
     connect(reply, &QNetworkReply::finished, this, [this, reply] { handleReply(reply); });
     setStatus(QStringLiteral("Fetching train positions…"));
+
+    refreshCategories();   // seed marker colours alongside the position snapshot
+}
+
+void DigitrafficClient::refreshCategories()
+{
+    QNetworkRequest req{QUrl(QString::fromLatin1(kLiveTrainsUrl))};
+    req.setRawHeader("Digitraffic-User", kUserAgent);
+    req.setRawHeader("Accept-Encoding", "gzip");
+
+    QNetworkReply *reply = m_net->get(req);
+    connect(reply, &QNetworkReply::finished, this, [this, reply] { handleCategories(reply); });
+}
+
+void DigitrafficClient::handleCategories(QNetworkReply *reply)
+{
+    reply->deleteLater();
+    if (reply->error() != QNetworkReply::NoError)
+        return;   // markers just stay neutral until the next refresh
+
+    const QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
+    if (!doc.isArray())
+        return;
+
+    const QJsonArray arr = doc.array();
+    QHash<int, QString> types;
+    QHash<int, QString> categories;
+    types.reserve(arr.size());
+    categories.reserve(arr.size());
+    for (const QJsonValue &v : arr) {
+        const QJsonObject o = v.toObject();
+        const int number = o.value("trainNumber").toInt();
+        types.insert(number, o.value("trainType").toString());
+        categories.insert(number, o.value("trainCategory").toString());
+    }
+    m_model->setTrainMetadata(types, categories);
 }
 
 void DigitrafficClient::handleReply(QNetworkReply *reply)

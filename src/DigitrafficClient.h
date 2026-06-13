@@ -42,6 +42,10 @@ public slots:
     /// Fetch the latest positions once, immediately.
     void refresh();
 
+    /// Refresh the trainNumber -> category map from /live-trains (used to colour
+    /// markers). Called by refresh() and on a periodic timer.
+    void refreshCategories();
+
 signals:
     void activeChanged();
     void pollIntervalMsChanged();
@@ -49,11 +53,13 @@ signals:
 
 private:
     void handleReply(QNetworkReply *reply);
+    void handleCategories(QNetworkReply *reply);
     void setStatus(const QString &status);
 
     QNetworkAccessManager *m_net = nullptr;
     TrainListModel *m_model = nullptr;
     QTimer m_timer;
+    QTimer m_categoryTimer;
     bool m_active = false;
     QString m_status;
 };
