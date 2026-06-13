@@ -24,7 +24,7 @@ appear out of the box), with clearly marked extension points.
 
 ## Architecture
 
-```
+```text
 main.cpp                    Bootstraps the QML engine, loads TrainsOnMap/Main.qml
 │
 ├─ DigitrafficClient   (C++) One REST train-locations/latest snapshot → TrainListModel
@@ -86,7 +86,8 @@ by contrast, already come as WGS84 GeoJSON Points and need no transform.
 
 - **Qt 6.5 or newer** with the `Quick`, `Qml`, `Network`, `Positioning`,
   `Location`, and `WebSockets` modules (Qt Location ships the `osm` map plugin).
-- **CMake ≥ 3.21** and a C++17 compiler (MSVC 2019+ or MinGW on Windows).
+- **CMake ≥ 3.21**, **Ninja**, and a C++17 compiler (MSVC 2019+ or MinGW on
+  Windows; GCC or Clang on Linux/macOS).
 
 > Qt Location is an optional component in the Qt installer — make sure
 > **Qt Positioning** and **Qt Location** are ticked for your kit.
@@ -99,14 +100,29 @@ by contrast, already come as WGS84 GeoJSON Points and need no transform.
 
 ## Build & run
 
-### Command line (Windows, PowerShell)
+Point `CMAKE_PREFIX_PATH` at your Qt kit (adjust the version/compiler to match
+your install).
+
+### Windows (PowerShell)
 
 ```powershell
-# Point CMake at your Qt kit (adjust path/compiler to your install)
 cmake -S . -B build -G "Ninja" `
-    -DCMAKE_PREFIX_PATH="C:/Qt/6.7.2/msvc2019_64"
+    -DCMAKE_PREFIX_PATH="C:/Qt/6.11.1/mingw_64"
 cmake --build build
 ./build/TrainsOnMap.exe
+```
+
+> With Qt's bundled MinGW kit, prepend the toolchain to `PATH` first so CMake
+> finds the compiler and Ninja:
+> `$env:PATH = "C:/Qt/Tools/mingw1310_64/bin;C:/Qt/Tools/Ninja;$env:PATH"`.
+
+### Linux / macOS
+
+```bash
+cmake -S . -B build -G Ninja \
+    -DCMAKE_PREFIX_PATH="$HOME/Qt/6.11.1/gcc_64"   # or .../macos for macOS
+cmake --build build
+./build/TrainsOnMap
 ```
 
 ### Qt Creator
