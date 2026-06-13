@@ -56,6 +56,8 @@ public:
         SpeedRole,        ///< km/h
         BearingRole,      ///< degrees, derived from successive positions
         TimestampRole,
+        CategoryRole,     ///< "Commuter" / "Long-distance" / "Cargo" / … (broad class)
+        TrainTypeRole,    ///< "IC" / "S" / "PYO" / "HL" / "T" / … (drives marker colour)
     };
 
     explicit TrainListModel(QObject *parent = nullptr);
@@ -74,6 +76,11 @@ public:
     /// row is touched, so existing markers don't flicker.
     void upsertTrain(const TrainPosition &train);
 
+    /// Supply trainNumber -> type and -> category maps (e.g. from /live-trains).
+    /// Markers are coloured by type/category; existing rows repaint on change.
+    void setTrainMetadata(const QHash<int, QString> &types,
+                          const QHash<int, QString> &categories);
+
 signals:
     void countChanged();
 
@@ -89,4 +96,6 @@ private:
     QVector<Row> m_rows;
     QHash<int, int> m_indexByNumber;        ///< trainNumber -> row index
     QHash<int, QGeoCoordinate> m_previous;  ///< trainNumber -> last coord (for bearing)
+    QHash<int, QString> m_categoryByNumber; ///< trainNumber -> category
+    QHash<int, QString> m_typeByNumber;     ///< trainNumber -> train type
 };

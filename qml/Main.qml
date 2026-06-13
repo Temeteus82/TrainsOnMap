@@ -53,31 +53,60 @@ ApplicationWindow {
     }
 
     // ---- Map ---------------------------------------------------------------
+    // Light, OSM-based cartography (CARTO Positron) — like juliadata.fi's light
+    // map, so the type-coloured trains and rails read clearly. Swap for
+    // "dark_all" / "rastertiles/voyager" to retheme. CARTO renders OSM data.
+    readonly property string basemapStyle: "light_all"
+
     Plugin {
         id: mapPlugin
-        name: "osm"             // OpenStreetMap tiles, bundled with Qt Location
+        name: "osm"
+        // Use only our custom tile host, not the bundled online provider list.
+        PluginParameter { name: "osm.mapping.providersrepository.disabled"; value: true }
+        PluginParameter {
+            name: "osm.mapping.custom.host"   // Qt appends "%z/%x/%y.png"
+            value: "https://a.basemaps.cartocdn.com/" + win.basemapStyle + "/"
+        }
+        PluginParameter {
+            name: "osm.mapping.custom.mapcopyright"
+            value: "© OpenStreetMap contributors, © CARTO"
+        }
+        PluginParameter { name: "osm.mapping.highdpi_tiles"; value: true }
+        PluginParameter { name: "osm.useragent"; value: "TrainsOnMap/0.1 (Qt6 scaffolding)" }
     }
 
     Map {
         id: map
         anchors.fill: parent
         plugin: mapPlugin
-        center: QtPositioning.coordinate(62.8, 25.7)   // central Finland
-        zoomLevel: 5.4
+        center: QtPositioning.coordinate(60.20, 24.94)  // Helsinki region (capital area)
+        zoomLevel: 10.5
         copyrightsVisible: true
+        color: "#e9eaec"          // neutral light backdrop shown while tiles load
+
+        // The CARTO tiles arrive as the plugin's "custom" map type; activate it.
+        function selectBasemap() {
+            for (var i = 0; i < supportedMapTypes.length; ++i) {
+                if (supportedMapTypes[i].style === MapType.CustomMap) {
+                    activeMapType = supportedMapTypes[i];
+                    return;
+                }
+            }
+        }
+        onSupportedMapTypesChanged: selectBasemap()
 
         // Debounce viewport changes before re-fetching track geometry.
         onCenterChanged: trackDebounce.restart()
         onZoomLevelChanged: trackDebounce.restart()
-        Component.onCompleted: win.autoLoadTracks()
+        Component.onCompleted: { selectBasemap(); win.autoLoadTracks(); }
 
         // Track geometry layer (drawn beneath the trains).
         MapItemView {
             model: trackService.model
             delegate: MapPolyline {
                 required property var model
-                line.width: 2
-                line.color: "#5b6bb5"
+                line.width: 2.5
+                line.color: "#34567d"      // steel-blue rail, clear on the light base
                 path: model.path
             }
         }

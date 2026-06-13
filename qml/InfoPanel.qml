@@ -76,7 +76,7 @@ Rectangle {
         }
 
         Label {
-            text: qsTr("Data © Fintraffic / Digitraffic (CC BY 4.0)\nMap © OpenStreetMap contributors")
+            text: qsTr("Data © Fintraffic / Digitraffic (CC BY 4.0)\nMap © OpenStreetMap contributors, © CARTO")
             color: "#888888"
             font.pixelSize: 10
         }

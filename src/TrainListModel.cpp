@@ -25,6 +25,8 @@ QVariant TrainListModel::data(const QModelIndex &index, int role) const
     case SpeedRole:       return row.pos.speed;
     case BearingRole:     return row.bearing;
     case TimestampRole:   return row.pos.timestamp;
+    case CategoryRole:    return m_categoryByNumber.value(row.pos.trainNumber);
+    case TrainTypeRole:   return m_typeByNumber.value(row.pos.trainNumber);
     default:              return {};
     }
 }
@@ -38,6 +40,8 @@ QHash<int, QByteArray> TrainListModel::roleNames() const
         { SpeedRole,       "speed" },
         { BearingRole,     "bearing" },
         { TimestampRole,   "timestamp" },
+        { CategoryRole,    "category" },
+        { TrainTypeRole,   "trainType" },
     };
 }
 
@@ -99,4 +103,13 @@ void TrainListModel::upsertTrain(const TrainPosition &train)
     m_indexByNumber.insert(train.trainNumber, newRow);
     endInsertRows();
     emit countChanged();
+}
+
+void TrainListModel::setTrainMetadata(const QHash<int, QString> &types,
+                                      const QHash<int, QString> &categories)
+{
+    m_typeByNumber = types;
+    m_categoryByNumber = categories;
+    if (!m_rows.isEmpty())
+        emit dataChanged(index(0), index(m_rows.size() - 1), { CategoryRole, TrainTypeRole });
 }

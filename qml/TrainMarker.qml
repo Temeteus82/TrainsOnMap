@@ -3,7 +3,11 @@ import QtLocation
 import QtPositioning
 
 /// Delegate for a single train inside a MapItemView. Model roles come from
-/// TrainListModel: coordinate, trainNumber, speed, bearing.
+/// TrainListModel: coordinate, trainNumber, speed, bearing, trainType, category.
+///
+/// Colours follow juliadata.fi (verified against the live map): long-distance
+/// is split by train type (S = green, IC = red, PYO = navy); commuter = green,
+/// cargo/freight = navy, everything else (locomotive / shunting / unknown) = grey.
 MapQuickItem {
     id: marker
 
@@ -12,8 +16,24 @@ MapQuickItem {
 
     signal clicked(int trainNumber, string departureDate)
 
+    function colorFor(type, category) {
+        switch (type) {            // long-distance types get their own colour
+        case "S":   return "#33B24A";   // Pendolino — green
+        case "IC":  return "#E0312A";   // InterCity — red
+        case "PYO": return "#2f4cc8";   // night train — navy (brightened for dark base)
+        }
+        switch (category) {        // fall back to the broad class
+        case "Commuter":      return "#33B24A";   // green
+        case "Long-distance": return "#E0312A";   // other long-distance ~ red
+        case "Cargo":         return "#2f4cc8";   // freight — navy
+        }
+        return "#9E9E9E";          // locomotive / shunting / unknown
+    }
+
+    readonly property color trainColor: colorFor(model.trainType, model.category)
+
     coordinate: model.coordinate
-    // Anchor the coordinate at the centre of the dot (the pill floats to its right).
+    // Anchor the coordinate at the centre of the dot (the label floats right).
     anchorPoint.x: dot.width / 2
     anchorPoint.y: dot.height / 2
 
@@ -30,10 +50,10 @@ MapQuickItem {
                 width: 15
                 height: 15
                 radius: 7.5
-                color: marker.model.speed > 1 ? "#d32f2f" : "#757575"   // moving vs stopped
-                border.color: marker.selected ? "#1565c0" : "white"
-                border.width: marker.selected ? 3 : 2
-                rotation: marker.model.bearing      // only the dot/notch rotate to heading
+                color: marker.trainColor
+                border.color: marker.selected ? "#1565c0" : "#10141a"
+                border.width: marker.selected ? 3 : 1
+                rotation: marker.model.bearing      // dot/notch rotate to heading
 
                 // Small notch indicating heading.
                 Rectangle {
@@ -46,25 +66,15 @@ MapQuickItem {
                 }
             }
 
-            // Always-upright, high-contrast number label.
-            Rectangle {
-                id: pill
+            // Outlined, category-coloured number — readable on dark or light.
+            Text {
                 anchors.verticalCenter: dot.verticalCenter
-                radius: 3
-                color: marker.selected ? "#1565c0" : Qt.rgba(1, 1, 1, 0.92)
-                border.color: marker.selected ? "#0d3c75" : "#888888"
-                border.width: 1
-                width: numberLabel.implicitWidth + 8
-                height: numberLabel.implicitHeight + 4
-
-                Text {
-                    id: numberLabel
-                    anchors.centerIn: parent
-                    text: marker.model.trainNumber
-                    font.pixelSize: 11
-                    font.bold: true
-                    color: marker.selected ? "white" : "#1a1a1a"
-                }
+                text: marker.model.trainNumber
+                font.pixelSize: 11
+                font.bold: true
+                color: marker.trainColor
+                style: Text.Outline
+                styleColor: Qt.rgba(1, 1, 1, 0.85)   // light halo for the light base
             }
         }
 

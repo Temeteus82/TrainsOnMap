@@ -9,10 +9,15 @@ appear out of the box), with clearly marked extension points.
 
 ## Features
 
-- OpenStreetMap base layer via **Qt Location** (`osm` plugin).
+- **Light OpenStreetMap base layer** — CARTO *Positron* tiles (OSM data, light
+  minimal cartography like juliadata.fi's map) via the Qt Location `osm` plugin's
+  custom-host mechanism, so the coloured trains and rails are the focus. One-line
+  restyle (`dark_all`, Voyager, …) via the `basemapStyle` property in `Main.qml`.
 - **Live train markers** streamed over **MQTT** (push, real-time), seeded by one
-  REST snapshot at startup; coloured by moving/stopped and rotated to heading
-  (derived from successive positions). A status dot shows the live connection.
+  REST snapshot at startup; **coloured by train type** like juliadata.fi
+  (S/Pendolino = green, IC = red, PYO/night = navy, commuter = green,
+  cargo = navy, other = grey) and rotated to heading. A status dot shows the
+  live connection.
 - **Click a train** to open a timetable panel: stops, scheduled vs. estimated
   arrival/departure times, live delay, and track, with station codes resolved to
   names from the metadata API. While open, the panel **updates live** from the
@@ -27,7 +32,8 @@ appear out of the box), with clearly marked extension points.
 ```text
 main.cpp                    Bootstraps the QML engine, loads TrainsOnMap/Main.qml
 │
-├─ DigitrafficClient   (C++) One REST train-locations/latest snapshot → TrainListModel
+├─ DigitrafficClient   (C++) REST train-locations/latest snapshot + periodic
+│                            live-trains category map → TrainListModel
 │   └─ TrainListModel  (C++) QAbstractListModel of live trains (roles: coordinate,
 │                            trainNumber, speed, bearing, timestamp); bulk replace
 │                            for the snapshot, per-train upsert for the MQTT stream
@@ -60,6 +66,7 @@ so `DigitrafficClient` and `TrackService` are instantiated declaratively in QML.
 |------|----------|-------|
 | Train positions (seed) | `GET https://rata.digitraffic.fi/api/v1/train-locations/latest/` | JSON array; `location` is a GeoJSON Point `[lon, lat]`, plus `speed`, `trainNumber`, `departureDate`, `timestamp`. Fetched once at startup. |
 | Train positions (live) | `wss://rata.digitraffic.fi:443/mqtt`, topic `train-locations/#` | MQTT 3.1.1 over WebSocket (subprotocol `mqtt`, no credentials). Each PUBLISH payload is the same JSON shape as one REST element. |
+| Train type/category | `GET https://rata.digitraffic.fi/api/v1/live-trains` | `trainNumber` → `trainType` (`IC` / `S` / `PYO` / …) and `trainCategory` for marker colour; seeded at startup, refreshed every 5 min. |
 | Timetable (initial) | `GET https://rata.digitraffic.fi/api/v1/trains/{departureDate}/{trainNumber}` | Single-element array; `timeTableRows` are ARRIVAL/DEPARTURE entries with `scheduledTime`, `liveEstimateTime`, `actualTime`, `differenceInMinutes`, `commercialStop`, `commercialTrack`. |
 | Timetable (live) | `wss://rata.digitraffic.fi:443/mqtt`, topic `trains/<date>/<number>/#` | Subscribed only while a train is selected; each PUBLISH is the full running-train object, re-applied to the open panel. |
 | Station names | `GET https://rata.digitraffic.fi/api/v1/metadata/stations` | Maps `stationShortCode` → `stationName`; fetched once and cached. |
@@ -133,6 +140,10 @@ Open `CMakeLists.txt` as a project, pick a Qt 6.5+ kit, and Run.
 
 - **Live stream:** `DigitrafficMqttClient { active: true }` in `Main.qml` — set
   `false` to disable MQTT and rely on the REST seed (or wire up polling).
+- **Basemap style:** `basemapStyle` in `Main.qml` — `"light_all"` (default),
+  `"dark_all"`, `"light_nolabels"`, or `"rastertiles/voyager"` (CARTO styles).
+- **Train colours:** the type/category→colour map is in `TrainMarker.qml`
+  (`colorFor()`); tweak the hex values or add train types there.
 - **Start region:** `Map { center; zoomLevel }` in `Main.qml`.
 - **Track endpoint:** `TrackService { endpoint: "…" }` — point at a different
   infra-api version or a self-hosted GeoJSON.
@@ -141,9 +152,9 @@ Open `CMakeLists.txt` as a project, pick a Qt 6.5+ kit, and Run.
 
 ## Ideas for next steps
 
-- Subscribe to the MQTT `trains/#` topic too, to push live timetable/delay
-  updates into the open detail panel (no re-fetch on estimate changes).
 - Smoothly animate marker movement between updates.
 - Periodically re-seed from REST to prune trains that stopped reporting.
 - Cache/throttle track loads; style tracks by line category.
 - Highlight the selected train's route on the map from its timetable stops.
+- Declutter overlapping number labels at low zoom (hide labels below a zoom, or
+  cluster nearby trains).
