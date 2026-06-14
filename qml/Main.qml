@@ -13,10 +13,12 @@ ApplicationWindow {
     title: qsTr("Trains on Map — Finland (Digitraffic)")
 
     // ---- Backend services (C++) -------------------------------------------
-    // REST seeds the full set of trains once; MQTT then streams live updates.
+    // REST bootstraps the full set of trains and resyncs/prunes every 60 s;
+    // MQTT streams live position deltas in between. active:true fetches the
+    // bootstrap snapshot immediately and starts the resync timer.
     DigitrafficClient {
         id: trainClient
-        active: false
+        active: true
     }
 
     DigitrafficMqttClient {
@@ -24,8 +26,6 @@ ApplicationWindow {
         model: trainClient.model
         active: true
     }
-
-    Component.onCompleted: trainClient.refresh()   // initial snapshot
 
     TrackService {
         id: trackService
@@ -105,8 +105,8 @@ ApplicationWindow {
             model: trackService.model
             delegate: MapPolyline {
                 required property var model
-                line.width: 2.5
-                line.color: "#34567d"      // steel-blue rail, clear on the light base
+                line.width: 1.4
+                line.color: "#b4b8bf"      // light grey rail, subtle on the light base
                 path: model.path
             }
         }

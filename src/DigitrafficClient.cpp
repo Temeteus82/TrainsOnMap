@@ -16,6 +16,9 @@ constexpr auto kLiveTrainsUrl = "https://rata.digitraffic.fi/api/v1/live-trains"
 // Digitraffic asks every client to identify itself. Replace with your own app id.
 constexpr auto kUserAgent = "TrainsOnMap/0.1 (Qt6 scaffolding)";
 constexpr int kCategoryRefreshMs = 5 * 60 * 1000;
+// REST is the bootstrap + prune path; MQTT carries live deltas in between, so
+// the snapshot only needs to run slowly. Matches the Swift app's 60 s resync.
+constexpr int kResyncIntervalMs = 60 * 1000;
 }
 
 DigitrafficClient::DigitrafficClient(QObject *parent)
@@ -23,7 +26,7 @@ DigitrafficClient::DigitrafficClient(QObject *parent)
     , m_net(new QNetworkAccessManager(this))
     , m_model(new TrainListModel(this))
 {
-    m_timer.setInterval(5000);
+    m_timer.setInterval(kResyncIntervalMs);
     connect(&m_timer, &QTimer::timeout, this, &DigitrafficClient::refresh);
 
     // Categories change slowly; refresh them on their own, longer cadence.
@@ -59,7 +62,9 @@ void DigitrafficClient::refresh()
 {
     QNetworkRequest req{QUrl(QString::fromLatin1(kLatestUrl))};
     req.setRawHeader("Digitraffic-User", kUserAgent);
-    req.setRawHeader("Accept-Encoding", "gzip");   // Qt transparently inflates the reply
+    // Don't set Accept-Encoding by hand: Qt 6 advertises it and inflates gzip
+    // transparently. Setting it ourselves disables that, so readAll() would
+    // return raw compressed bytes and JSON parsing would fail.
 
     QNetworkReply *reply = m_net->get(req);
     connect(reply, &QNetworkReply::finished, this, [this, reply] { handleReply(reply); });
@@ -72,7 +77,6 @@ void DigitrafficClient::refreshCategories()
 {
     QNetworkRequest req{QUrl(QString::fromLatin1(kLiveTrainsUrl))};
     req.setRawHeader("Digitraffic-User", kUserAgent);
-    req.setRawHeader("Accept-Encoding", "gzip");
 
     QNetworkReply *reply = m_net->get(req);
     connect(reply, &QNetworkReply::finished, this, [this, reply] { handleCategories(reply); });
@@ -91,15 +95,37 @@ void DigitrafficClient::handleCategories(QNetworkReply *reply)
     const QJsonArray arr = doc.array();
     QHash<int, QString> types;
     QHash<int, QString> categories;
+    QHash<int, QString> commuterLines;
+    QHash<int, TrainStatus> statuses;
     types.reserve(arr.size());
     categories.reserve(arr.size());
+    commuterLines.reserve(arr.size());
+    statuses.reserve(arr.size());
     for (const QJsonValue &v : arr) {
         const QJsonObject o = v.toObject();
         const int number = o.value("trainNumber").toInt();
         types.insert(number, o.value("trainType").toString());
         categories.insert(number, o.value("trainCategory").toString());
+        // commuterLineID is "" for non-commuter trains; kept as-is so the badge
+        // label can test for emptiness.
+        commuterLines.insert(number, o.value("commuterLineID").toString());
+
+        TrainStatus st;
+        st.known = true;
+        st.cancelled = o.value("cancelled").toBool();
+        st.running = o.value("runningCurrently").toBool();
+        // Current delay = differenceInMinutes of the most recently passed stop
+        // (the last timetable row that already has an actualTime).
+        const QJsonArray rows = o.value("timeTableRows").toArray();
+        for (const QJsonValue &rv : rows) {
+            const QJsonObject row = rv.toObject();
+            if (!row.value("actualTime").toString().isEmpty())
+                st.delayMinutes = row.value("differenceInMinutes").toInt();
+        }
+        statuses.insert(number, st);
     }
-    m_model->setTrainMetadata(types, categories);
+    m_model->setTrainMetadata(types, categories, commuterLines);
+    m_model->setTrainStatuses(statuses);
 }
 
 void DigitrafficClient::handleReply(QNetworkReply *reply)

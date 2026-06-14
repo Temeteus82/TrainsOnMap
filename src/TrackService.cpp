@@ -14,6 +14,7 @@
 #include <QUrlQuery>
 
 #include <algorithm>
+#include <cmath>
 #include <limits>
 
 namespace {
@@ -81,12 +82,14 @@ void TrackService::loadForBounds(double west, double south, double east, double 
 
     QUrl url(m_endpoint);
     QUrlQuery query(url);
+    // The infra-api rejects fractional coordinates ("Coordinate must be an
+    // integer number"), so floor/ceil to whole metres without shrinking the box.
     query.addQueryItem(QStringLiteral("bbox"),
                        QStringLiteral("%1,%2,%3,%4")
-                           .arg(minE, 0, 'f', 1)
-                           .arg(minN, 0, 'f', 1)
-                           .arg(maxE, 0, 'f', 1)
-                           .arg(maxN, 0, 'f', 1));
+                           .arg(qint64(std::floor(minE)))
+                           .arg(qint64(std::floor(minN)))
+                           .arg(qint64(std::ceil(maxE)))
+                           .arg(qint64(std::ceil(maxN))));
     url.setQuery(query);
     fetch(url);
 }
@@ -103,7 +106,6 @@ void TrackService::fetch(const QUrl &url)
 
     QNetworkRequest req{url};
     req.setRawHeader("Digitraffic-User", kUserAgent);
-    req.setRawHeader("Accept-Encoding", "gzip");
 
     QNetworkReply *reply = m_net->get(req);
     m_inflight = reply;
