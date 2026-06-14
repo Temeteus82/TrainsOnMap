@@ -8,6 +8,23 @@ Legend: ✨ feature · 🐛 bug fix · ♻️ change/refactor · ✅ verificatio
 
 ---
 
+## Status-ring rules (refinement)
+
+### ♻️ Changes
+- [x] Late rings now have a clear two-tier threshold: **amber at 5–14 min late,
+      red at 15+ min** (nothing under 5 min). Constants `kLateMinutes`/
+      `kVeryLateMinutes` (`TrainListModel`).
+- [x] Delay rings apply to **scheduled passenger trains only** — Cargo,
+      Locomotive, Shunting and On-track-machines carry no ring. Green "ready" ring
+      additionally requires a genuinely on-time (`delay <= 0`), stopped train.
+
+### ✅ Verification
+- [x] Visual: green rings only on stopped trains, red rings on very-late ICs.
+- [x] Data cross-check vs live `/live-trains`: amber tier populated, all
+      non-passenger categories excluded.
+
+---
+
 ## Live-train pipeline (REST + MQTT → map)
 
 ### ✨ Features
