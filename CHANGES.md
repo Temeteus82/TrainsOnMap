@@ -83,6 +83,30 @@ Legend: ✨ feature · 🐛 bug fix · ♻️ change/refactor · ✅ verificatio
 
 ---
 
+## Rail geometry (offline)
+
+### ✨ Features
+- [x] Rail network is **pre-baked and shipped in the repo** instead of fetched on
+      every launch. `scripts/bake_rails.py` tiles the national network from the
+      infra-api, de-dupes by `tunniste`, strips to geometry-only, and writes a
+      compressed snapshot (`resources/rails.geojson.qz`).
+- [x] The snapshot is embedded as a Qt resource and loaded once at startup;
+      `TrackService` now projects it to WGS84 in memory and `loadForBounds()`
+      filters to the viewport — no network calls for tracks (`TrackService`,
+      `CMakeLists.txt`).
+
+### ♻️ Changes
+- [x] `TrackService` no longer uses `QNetworkAccessManager` / the infra-api
+      endpoint; the live-fetch + bbox-request path is removed.
+
+### 📝 Notes
+- Container is Qt's `qCompress` (zlib) format, not a literal `.gz`, so it loads
+  with pure Qt Core (`qUncompress`) — no `find_package(ZLIB)` or build-time
+  gunzip, keeping the MSVC 2022 build dependency-free. Re-bake with
+  `python3 scripts/bake_rails.py` when the rail topology changes.
+
+---
+
 ## 📋 Known issues / follow-ups
 - [ ] `/trains/{date}` summary cache not added — `/live-trains` already supplies
       type/category/line for currently-running trains (covers cross-midnight), so

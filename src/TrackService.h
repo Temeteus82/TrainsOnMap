@@ -1,21 +1,20 @@
 #pragma once
 
 #include <QObject>
+#include <QVariantList>
+#include <QVector>
 #include <QtQmlIntegration>
 
 #include "TrackListModel.h"
 
-class QNetworkAccessManager;
-class QNetworkReply;
-class QJsonArray;
-
-/// Fetches railway track geometry from the Digitraffic infra-api as GeoJSON and
-/// turns each LineString/MultiLineString feature into polyline segments.
+/// Provides railway track geometry to the map from a pre-baked snapshot embedded
+/// in the binary (`:/data/rails.geojson.qz`, produced by `scripts/bake_rails.py`).
 ///
-/// API reference: https://www.digitraffic.fi/rautatieliikenne/
-///   Base GeoJSON: https://rata.digitraffic.fi/infra-api/latest/raiteet.geojson
-///   The full network is large (10+ MB), so prefer loadForBounds() to fetch only
-///   the current map viewport.
+/// The rail network changes rarely, so it ships in the repo instead of being
+/// fetched from the Digitraffic infra-api on every launch. The whole network is
+/// parsed + projected to WGS84 once at startup; loadForBounds() then filters the
+/// in-memory segments to the current viewport (rendering the entire network at
+/// once would be thousands of polylines).
 class TrackService : public QObject
 {
     Q_OBJECT
@@ -23,7 +22,6 @@ class TrackService : public QObject
     Q_PROPERTY(TrackListModel *model READ model CONSTANT)
     Q_PROPERTY(bool loading READ isLoading NOTIFY loadingChanged)
     Q_PROPERTY(QString status READ status NOTIFY statusChanged)
-    Q_PROPERTY(QString endpoint READ endpoint WRITE setEndpoint NOTIFY endpointChanged)
 
 public:
     explicit TrackService(QObject *parent = nullptr);
@@ -32,32 +30,36 @@ public:
     bool isLoading() const { return m_loading; }
     QString status() const { return m_status; }
 
-    QString endpoint() const { return m_endpoint; }
-    void setEndpoint(const QString &endpoint);
-
 public slots:
-    /// Load the entire railway network (heavy — use sparingly).
+    /// Show the entire network (heavy — thousands of segments).
     void load();
 
-    /// Load only tracks intersecting the given WGS84 bounding box.
+    /// Show only tracks intersecting the given WGS84 bounding box.
     /// Arguments follow the GeoJSON/OGC convention: west, south, east, north.
     void loadForBounds(double west, double south, double east, double north);
 
 signals:
     void loadingChanged();
     void statusChanged();
-    void endpointChanged();
 
 private:
-    void fetch(const QUrl &url);
-    void handleReply(QNetworkReply *reply);
+    /// One track segment: its WGS84 polyline plus a lat/lon bbox for fast
+    /// viewport filtering.
+    struct Segment {
+        QVariantList path;   ///< QGeoCoordinate list, bind to MapPolyline.path
+        double minLat = 0.0;
+        double maxLat = 0.0;
+        double minLon = 0.0;
+        double maxLon = 0.0;
+    };
+
+    /// Parse + project the embedded snapshot into m_all (once, at startup).
+    void loadGeometry();
     void setLoading(bool loading);
     void setStatus(const QString &status);
 
-    QNetworkAccessManager *m_net = nullptr;
     TrackListModel *m_model = nullptr;
-    QNetworkReply *m_inflight = nullptr;   ///< current request; aborted if superseded
-    QString m_endpoint = QStringLiteral("https://rata.digitraffic.fi/infra-api/latest/raiteet.geojson");
+    QVector<Segment> m_all;   ///< the whole network, projected to WGS84
     bool m_loading = false;
     QString m_status;
 };

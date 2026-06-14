@@ -43,6 +43,14 @@ qt_add_qml_module(TrainsOnMap
         qml/TrainDetailPanel.qml
 )
 
+# Pre-baked national rail network (scripts/bake_rails.py), embedded so the app
+# never fetches track geometry over the network at launch. Already compressed
+# (qCompress container), loaded at startup by TrackService.
+qt_add_resources(TrainsOnMap "raildata"
+    PREFIX "/data"
+    BASE "${CMAKE_CURRENT_SOURCE_DIR}/resources"
+    FILES resources/rails.geojson.qz)
+
 # So the generated QML type-registration unit can find the class headers
 # (it probes them via __has_include(<Header.h>)).
 target_include_directories(TrainsOnMap PRIVATE src)
