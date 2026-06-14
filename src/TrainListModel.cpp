@@ -10,7 +10,8 @@ constexpr qint64 kStaleGraceSecs = 120;
 
 // Status-ring thresholds.
 constexpr qint64 kStalePositionSecs = 300;   // position older than this reads as stale
-constexpr int kVeryLateMinutes = 5;          // delay above this is "very late" (red)
+constexpr int kLateMinutes = 5;              // amber "late" ring at this delay or more
+constexpr int kVeryLateMinutes = 15;         // red "very late" ring at this delay or more
 }
 
 TrainListModel::TrainListModel(QObject *parent)
@@ -195,15 +196,23 @@ QString TrainListModel::ringStateFor(const Row &row) const
     if (!st.known)
         return QStringLiteral("none");
 
-    // Lateness takes precedence over the green ready ring.
-    if (st.delayMinutes > kVeryLateMinutes)
+    // Delay/readiness rings are only meaningful for scheduled passenger trains.
+    // Cargo and special movements (locomotive, shunting, on-track machines) carry
+    // no delay indication.
+    const QString category = m_categoryByNumber.value(row.pos.trainNumber);
+    if (category != QLatin1String("Long-distance") && category != QLatin1String("Commuter"))
+        return QStringLiteral("none");
+
+    // Lateness takes precedence over the green ready ring: red at 15+ min late,
+    // amber at 5–14 min, nothing under 5 min.
+    if (st.delayMinutes >= kVeryLateMinutes)
         return QStringLiteral("red");
-    if (st.delayMinutes >= 1)
+    if (st.delayMinutes >= kLateMinutes)
         return QStringLiteral("amber");
 
-    // On time: green only while waiting (stopped); a running on-time train gets
-    // no ring, so the map isn't a wash of green.
-    if (row.pos.speed == 0.0)
+    // Green "ready" ring only for a genuinely on-time, stopped (waiting) train; a
+    // running on-time train gets no ring, so the map isn't a wash of green.
+    if (row.pos.speed == 0.0 && st.delayMinutes <= 0)
         return QStringLiteral("green");
     return QStringLiteral("none");
 }

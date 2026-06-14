@@ -53,8 +53,9 @@ MapQuickItem {
     readonly property color trainColor: colorFor(model.trainType, model.category, model.speed)
     readonly property string badgeLabel: labelFor(model.commuterLine, model.trainType, model.trainNumber)
 
-    // Live status ring: green = ready/stopped on time, amber = 1–5 min late,
-    // red = very late, stale = greyed/dimmed, none = running on time (no ring).
+    // Live status ring (passenger trains only): green = ready/stopped on time,
+    // amber = 5–14 min late, red = 15+ min late, stale = greyed/dimmed,
+    // none = running on time / under 5 min late / cargo & special trains.
     readonly property bool stale: model.ringState === "stale"
     readonly property color ringColor: {
         switch (model.ringState) {
