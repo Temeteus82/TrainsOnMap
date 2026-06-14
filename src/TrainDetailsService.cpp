@@ -97,7 +97,6 @@ void TrainDetailsService::fetchStations()
 {
     QNetworkRequest req{QUrl(QString::fromLatin1(kStationsUrl))};
     req.setRawHeader("Digitraffic-User", kUserAgent);
-    req.setRawHeader("Accept-Encoding", "gzip");
     QNetworkReply *reply = m_net->get(req);
     connect(reply, &QNetworkReply::finished, this, [this, reply] { handleStations(reply); });
 }
@@ -147,7 +146,6 @@ void TrainDetailsService::show(int trainNumber, const QString &departureDate)
                        .arg(trainNumber));
     QNetworkRequest req{url};
     req.setRawHeader("Digitraffic-User", kUserAgent);
-    req.setRawHeader("Accept-Encoding", "gzip");
     QNetworkReply *reply = m_net->get(req);
     connect(reply, &QNetworkReply::finished, this, [this, reply] { handleTrain(reply); });
 
