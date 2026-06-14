@@ -1,0 +1,51 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": { "major": 3, "minor": 21, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "linux-clang",
+      "displayName": "Linux (Clang)",
+      "description": "Clang + Ninja. Set CMAKE_PREFIX_PATH to your Qt kit (e.g. ~/Qt/6.11.1/gcc_64).",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" },
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/linux-clang",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_PREFIX_PATH": "$penv{CMAKE_PREFIX_PATH}"
+      }
+    },
+    {
+      "name": "macos-clang",
+      "displayName": "macOS (Clang)",
+      "description": "Apple Clang + Ninja. Set CMAKE_PREFIX_PATH to your Qt kit (e.g. ~/Qt/6.11.1/macos).",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" },
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/macos-clang",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_PREFIX_PATH": "$penv{CMAKE_PREFIX_PATH}"
+      }
+    },
+    {
+      "name": "windows-msvc",
+      "displayName": "Windows (MSVC 2022)",
+      "description": "MSVC 2022 (v143) via the Visual Studio generator. Set CMAKE_PREFIX_PATH to your Qt kit (e.g. C:/Qt/6.11.1/msvc2022_64).",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" },
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64",
+      "binaryDir": "${sourceDir}/build/windows-msvc",
+      "cacheVariables": {
+        "CMAKE_PREFIX_PATH": "$penv{CMAKE_PREFIX_PATH}"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "linux-clang",   "configurePreset": "linux-clang" },
+    { "name": "macos-clang",   "configurePreset": "macos-clang" },
+    { "name": "windows-msvc",  "configurePreset": "windows-msvc", "configuration": "Release" }
+  ]
+}

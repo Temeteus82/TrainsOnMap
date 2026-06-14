@@ -107,34 +107,48 @@ by contrast, already come as WGS84 GeoJSON Points and need no transform.
 
 ## Build & run
 
-Point `CMAKE_PREFIX_PATH` at your Qt kit (adjust the version/compiler to match
-your install).
+The toolchain per platform is pinned in [`CMakePresets.json`](CMakePresets.json)
+— **Clang** on Linux/macOS, **MSVC 2022** on Windows — and each preset builds
+into its own folder under `build/` with the executable in a `bin/` subfolder.
+Point Qt at your kit by exporting `CMAKE_PREFIX_PATH` once (a system Qt is found
+automatically and needs no export).
 
-### Windows (PowerShell)
-
-```powershell
-cmake -S . -B build -G "Ninja" `
-    -DCMAKE_PREFIX_PATH="C:/Qt/6.11.1/mingw_64"
-cmake --build build
-./build/TrainsOnMap.exe
-```
-
-> With Qt's bundled MinGW kit, prepend the toolchain to `PATH` first so CMake
-> finds the compiler and Ninja:
-> `$env:PATH = "C:/Qt/Tools/mingw1310_64/bin;C:/Qt/Tools/Ninja;$env:PATH"`.
-
-### Linux / macOS
+### Linux (Clang)
 
 ```bash
-cmake -S . -B build -G Ninja \
-    -DCMAKE_PREFIX_PATH="$HOME/Qt/6.11.1/gcc_64"   # or .../macos for macOS
-cmake --build build
-./build/TrainsOnMap
+export CMAKE_PREFIX_PATH="$HOME/Qt/6.11.1/gcc_64"   # ABI-compatible with Clang
+cmake --preset linux-clang
+cmake --build --preset linux-clang
+./build/linux-clang/bin/TrainsOnMap
 ```
+
+### macOS (Clang)
+
+```bash
+export CMAKE_PREFIX_PATH="$HOME/Qt/6.11.1/macos"
+cmake --preset macos-clang
+cmake --build --preset macos-clang
+./build/macos-clang/bin/TrainsOnMap
+```
+
+### Windows (MSVC 2022, PowerShell)
+
+```powershell
+$env:CMAKE_PREFIX_PATH = "C:/Qt/6.11.1/msvc2022_64"
+cmake --preset windows-msvc
+cmake --build --preset windows-msvc        # Release
+./build/windows-msvc/bin/Release/TrainsOnMap.exe
+```
+
+> The build runs **windeployqt** automatically, copying the Qt DLLs and the
+> needed plugins (the `windows` platform plugin, the TLS backend for the `wss://`
+> MQTT feed, and the QML / QtLocation geoservices / QtPositioning plugins) next
+> to the `.exe`, so it runs without a Qt install on `PATH`.
 
 ### Qt Creator
 
-Open `CMakeLists.txt` as a project, pick a Qt 6.5+ kit, and Run.
+Open `CMakeLists.txt` (or the presets) as a project, pick a Qt 6.5+ kit with the
+matching compiler, and Run.
 
 ## Configuration knobs
 

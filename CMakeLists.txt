@@ -58,11 +58,40 @@ target_link_libraries(TrainsOnMap PRIVATE
     Qt6::WebSockets
 )
 
-# Place the executable in a predictable spot.
+# Place the executable under build/bin/. This also avoids a name clash on
+# case-sensitive/extension-less platforms (Linux, macOS): qt_add_qml_module
+# creates a "TrainsOnMap" *directory* in the build root for the QML module, which
+# would collide with an extension-less "TrainsOnMap" executable emitted there.
+# (Windows is unaffected — it emits TrainsOnMap.exe.)
 set_target_properties(TrainsOnMap PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
     WIN32_EXECUTABLE OFF        # keep the console attached for log output during development
     MACOSX_BUNDLE OFF
 )
+
+# On Windows, copy every Qt runtime DLL and plugin the app needs (Qt core libs,
+# the "windows" platform plugin, the TLS backend for the wss:// MQTT feed, and
+# the QML / QtLocation geoservices / QtPositioning plugins) next to the .exe in
+# bin/ as a post-build step, so the freshly built app runs without a Qt on PATH.
+# windeployqt scans the QML sources (--qmldir) to resolve the QML import plugins.
+if(WIN32)
+    get_target_property(_qmake_exe Qt6::qmake IMPORTED_LOCATION)
+    get_filename_component(_qt_bin_dir "${_qmake_exe}" DIRECTORY)
+    find_program(WINDEPLOYQT_EXECUTABLE windeployqt HINTS "${_qt_bin_dir}")
+    if(WINDEPLOYQT_EXECUTABLE)
+        add_custom_command(TARGET TrainsOnMap POST_BUILD
+            COMMAND "${WINDEPLOYQT_EXECUTABLE}"
+                    --no-translations
+                    --compiler-runtime
+                    --qmldir "${CMAKE_SOURCE_DIR}/qml"
+                    "$<TARGET_FILE:TrainsOnMap>"
+            COMMENT "windeployqt: bundling Qt DLLs and QML/geoservices/TLS plugins next to the .exe"
+            VERBATIM)
+    else()
+        message(WARNING "windeployqt not found near ${_qt_bin_dir}; "
+                        "the built .exe will need Qt DLLs on PATH to run.")
+    endif()
+endif()
 
 install(TARGETS TrainsOnMap
     BUNDLE  DESTINATION .

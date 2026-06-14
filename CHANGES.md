@@ -54,12 +54,36 @@ Legend: ✨ feature · 🐛 bug fix · ♻️ change/refactor · ✅ verificatio
 
 ---
 
+## Build & tooling
+
+### ✨ Features
+- [x] `CMakePresets.json` pins the toolchain per OS — **Clang** on Linux/macOS,
+      **MSVC 2022** (VS 17 generator, x64) on Windows — each building into its own
+      `build/<preset>/` folder, with the executable under `bin/` for clarity.
+- [x] Windows: `windeployqt` post-build step bundles the Qt DLLs and required
+      plugins (windows platform, TLS backend for `wss://`, QML / QtLocation
+      geoservices / QtPositioning) next to the `.exe`, plus `--compiler-runtime`,
+      so a fresh build runs without Qt on `PATH` (`CMakeLists.txt`).
+
+### ♻️ Changes
+- [x] **CMake exe/module name collision** (fixed) — default `cmake --build build`
+      used to fail at link (`cannot open output file TrainsOnMap: Is a directory`)
+      because the extension-less executable collided with the `TrainsOnMap/` QML
+      module directory on Linux/macOS. Fixed by emitting the executable to a
+      `bin/` subfolder via `RUNTIME_OUTPUT_DIRECTORY` (`CMakeLists.txt`).
+- [x] README **Build & run** rewritten around the presets, with per-OS paths
+      (`build/<preset>/bin/...`).
+
+### ✅ Verification
+- [x] `cmake --preset linux-clang` + `cmake --build --preset linux-clang`
+      configures with Clang 22 and builds; the Clang binary launches and renders
+      trains, rings, and rail tracks.
+- [ ] Windows `windeployqt` deployment not testable on this Linux host — verify on
+      a Windows/MSVC machine.
+
+---
+
 ## 📋 Known issues / follow-ups
-- [ ] **CMake exe/module name collision** — default `cmake --build build` fails
-      at link (`cannot open output file TrainsOnMap: Is a directory`) because the
-      executable target and the QML module URI share the name `TrainsOnMap`.
-      Workaround: `-DCMAKE_RUNTIME_OUTPUT_DIRECTORY=build/bin`. Proper fix: give
-      the executable a distinct `OUTPUT_NAME` or output dir.
 - [ ] `/trains/{date}` summary cache not added — `/live-trains` already supplies
       type/category/line for currently-running trains (covers cross-midnight), so
       it's unnecessary for now. Revisit only if a type source independent of
