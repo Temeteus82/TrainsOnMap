@@ -6,6 +6,7 @@
 #include <QtQmlIntegration>
 
 #include "TrackListModel.h"
+#include "TrackMatcher.h"
 
 /// Provides railway track geometry to the map from a pre-baked snapshot embedded
 /// in the binary (`:/data/rails.geojson.qz`, produced by `scripts/bake_rails.py`).
@@ -16,7 +17,7 @@
 /// fires when done); loadForBounds() then filters the in-memory segments to the
 /// current viewport (rendering the entire network at once would be thousands of
 /// polylines).
-class TrackService : public QObject
+class TrackService : public QObject, public TrackMatcher
 {
     Q_OBJECT
     QML_ELEMENT
@@ -30,6 +31,11 @@ public:
     TrackListModel *model() const { return m_model; }
     bool isLoading() const { return m_loading; }
     QString status() const { return m_status; }
+
+    /// TrackMatcher: snap a WGS84 fix to the nearest in-memory rail segment.
+    /// Reads m_all on the GUI thread (where positions are applied); returns an
+    /// empty match until the network has finished loading.
+    TrackMatch matchToNetwork(const QGeoCoordinate &fix) const override;
 
 public slots:
     /// Show only tracks intersecting the given WGS84 bounding box.

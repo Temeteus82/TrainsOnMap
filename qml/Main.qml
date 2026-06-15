@@ -21,6 +21,7 @@ ApplicationWindow {
     DigitrafficClient {
         id: trainClient
         active: true
+        matcher: trackService   // snap/flag GPS fixes against the rail network
     }
 
     DigitrafficMqttClient {

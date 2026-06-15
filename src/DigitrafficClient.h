@@ -5,6 +5,7 @@
 #include <QtQmlIntegration>
 
 #include "TrainListModel.h"
+#include "TrackService.h"
 
 class QNetworkAccessManager;
 class QNetworkReply;
@@ -24,6 +25,9 @@ class DigitrafficClient : public QObject
     Q_PROPERTY(bool active READ isActive WRITE setActive NOTIFY activeChanged)
     Q_PROPERTY(int pollIntervalMs READ pollIntervalMs WRITE setPollIntervalMs NOTIFY pollIntervalMsChanged)
     Q_PROPERTY(QString status READ status NOTIFY statusChanged)
+    // Optional rail-network matcher (a TrackService); when set, the model snaps
+    // and flags incoming GPS fixes against the track geometry.
+    Q_PROPERTY(TrackService *matcher READ matcher WRITE setMatcher NOTIFY matcherChanged)
 
 public:
     explicit DigitrafficClient(QObject *parent = nullptr);
@@ -38,6 +42,9 @@ public:
 
     QString status() const { return m_status; }
 
+    TrackService *matcher() const { return m_matcher; }
+    void setMatcher(TrackService *matcher);
+
 public slots:
     /// Fetch the latest positions once, immediately.
     void refresh();
@@ -50,6 +57,7 @@ signals:
     void activeChanged();
     void pollIntervalMsChanged();
     void statusChanged();
+    void matcherChanged();
 
 private:
     void handleReply(QNetworkReply *reply);
@@ -58,6 +66,7 @@ private:
 
     QNetworkAccessManager *m_net = nullptr;
     TrainListModel *m_model = nullptr;
+    TrackService *m_matcher = nullptr;
     QTimer m_timer;
     bool m_active = false;
     QString m_status;

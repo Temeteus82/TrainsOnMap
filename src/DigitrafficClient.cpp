@@ -51,6 +51,17 @@ void DigitrafficClient::setActive(bool active)
     emit activeChanged();
 }
 
+void DigitrafficClient::setMatcher(TrackService *matcher)
+{
+    if (m_matcher == matcher)
+        return;
+    m_matcher = matcher;
+    // TrackService implements TrackMatcher; hand the model the interface so it can
+    // snap/flag every fix (REST and the shared MQTT path both funnel through it).
+    m_model->setMatcher(matcher);
+    emit matcherChanged();
+}
+
 void DigitrafficClient::setPollIntervalMs(int ms)
 {
     ms = qMax(1000, ms);    // be a good API citizen
@@ -95,22 +106,24 @@ void DigitrafficClient::handleCategories(QNetworkReply *reply)
         return;
 
     const QJsonArray arr = doc.array();
-    QHash<int, QString> types;
-    QHash<int, QString> categories;
-    QHash<int, QString> commuterLines;
-    QHash<int, TrainStatus> statuses;
+    QHash<TrainKey, QString> types;
+    QHash<TrainKey, QString> categories;
+    QHash<TrainKey, QString> commuterLines;
+    QHash<TrainKey, TrainStatus> statuses;
     types.reserve(arr.size());
     categories.reserve(arr.size());
     commuterLines.reserve(arr.size());
     statuses.reserve(arr.size());
     for (const QJsonValue &v : arr) {
         const QJsonObject o = v.toObject();
-        const int number = o.value("trainNumber").toInt();
-        types.insert(number, o.value("trainType").toString());
-        categories.insert(number, o.value("trainCategory").toString());
+        // Key on (departureDate, trainNumber): the number alone is reused daily
+        // and can be in motion under two dates at once. See TrainKey.
+        const TrainKey key{o.value("departureDate").toString(), o.value("trainNumber").toInt()};
+        types.insert(key, o.value("trainType").toString());
+        categories.insert(key, o.value("trainCategory").toString());
         // commuterLineID is "" for non-commuter trains; kept as-is so the badge
         // label can test for emptiness.
-        commuterLines.insert(number, o.value("commuterLineID").toString());
+        commuterLines.insert(key, o.value("commuterLineID").toString());
 
         TrainStatus st;
         st.known = true;
@@ -124,7 +137,7 @@ void DigitrafficClient::handleCategories(QNetworkReply *reply)
             if (!row.value("actualTime").toString().isEmpty())
                 st.delayMinutes = row.value("differenceInMinutes").toInt();
         }
-        statuses.insert(number, st);
+        statuses.insert(key, st);
     }
     m_model->setTrainMetadata(types, categories, commuterLines);
     m_model->setTrainStatuses(statuses);
