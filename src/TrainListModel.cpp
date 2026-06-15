@@ -43,6 +43,7 @@ QVariant TrainListModel::data(const QModelIndex &index, int role) const
     case TrainTypeRole:   return m_typeByNumber.value(row.pos.trainNumber);
     case CommuterLineRole: return m_lineByNumber.value(row.pos.trainNumber);
     case RingStateRole:   return ringStateFor(row);
+    case DelayMinutesRole: return m_statusByNumber.value(row.pos.trainNumber).delayMinutes;
     default:              return {};
     }
 }
@@ -60,6 +61,7 @@ QHash<int, QByteArray> TrainListModel::roleNames() const
         { TrainTypeRole,   "trainType" },
         { CommuterLineRole, "commuterLine" },
         { RingStateRole,   "ringState" },
+        { DelayMinutesRole, "delayMinutes" },
     };
 }
 
@@ -176,7 +178,8 @@ void TrainListModel::setTrainStatuses(const QHash<int, TrainStatus> &statuses)
 {
     m_statusByNumber = statuses;
     if (!m_rows.isEmpty())
-        emit dataChanged(index(0), index(m_rows.size() - 1), { RingStateRole });
+        emit dataChanged(index(0), index(m_rows.size() - 1),
+                         { RingStateRole, DelayMinutesRole });
 }
 
 QString TrainListModel::ringStateFor(const Row &row) const

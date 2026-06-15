@@ -8,6 +8,30 @@ Legend: ✨ feature · 🐛 bug fix · ♻️ change/refactor · ✅ verificatio
 
 ---
 
+## Accessibility — UI audit critical fixes
+
+From the `qt-ui-design` audit. The three **Critical** (WCAG / core-law) findings:
+
+### 🐛 / ♻️ Fixes
+- [x] **Keyboard focus invisible** — the custom-styled sidebar buttons dropped
+      the style's focus ring. Added `focusPolicy: Qt.StrongFocus` and a
+      `visualFocus`-driven focus ring (accent outline) on *Refresh* and
+      *Load tracks* (`InfoPanel.qml`).
+- [x] **Lateness was colour-only** — the marker late ring (amber/red) is now
+      paired with a textual `+N min` badge so the state is legible without colour
+      perception (colour-blind safety). Added a `delayMinutes` model role
+      (`TrainListModel`) and the badge (`TrainMarker.qml`).
+- [x] **Sub-4.5:1 text contrast** — raised failing greys to ≥ 4.5:1: sidebar
+      attribution `#9aa0a6`→`#6b7280`; detail-panel status `#888888`, track
+      sub-label and neutral delay `#999999` → `#5f6671`
+      (`InfoPanel.qml`, `TrainDetailPanel.qml`).
+
+### ✅ Verification
+- [x] Builds clean; app loads with no QML errors. Screenshot-verified an amber
+      late train rendering both the ring **and** a matching "+5 min" badge.
+
+---
+
 ## Map framing & sidebar polish
 
 ### ✨ Features
@@ -170,3 +194,33 @@ Legend: ✨ feature · 🐛 bug fix · ♻️ change/refactor · ✅ verificatio
       type/category/line for currently-running trains (covers cross-midnight), so
       it's unnecessary for now. Revisit only if a type source independent of
       "currently running" is needed.
+
+### UI design audit (qt-ui-design) — non-critical findings
+The three **Critical** accessibility findings (focus rings, colour-blind-safe
+lateness, sub-4.5:1 text contrast) are fixed (see "Accessibility — UI audit
+critical fixes" above). Remaining items:
+
+**🟡 Warnings**
+- [ ] Type sizes are hardcoded `font.pixelSize` (8/10/11/12/13/15/17) — they
+      don't respect the OS "Large font" scale and a single surface uses 5+ sizes.
+      Introduce a `TypeScale` singleton (modular scale) and prefer `pointSize`.
+- [ ] Semantic colours are duplicated literally across all four QML files and
+      disagree (late-red `#E03131` ring vs `#c62828` panel; green `#18A957` vs
+      `#2e7d32`). Introduce a `Theme` singleton of role-based tokens.
+- [ ] Sidebar has redundant/dead affordances: "Load tracks" now re-pushes the
+      same static network (no-op), and the track count is shown twice (count
+      label + `trackService.status`).
+- [ ] Marker clutter at the default zoom (~130 dot+label+km/h markers overlap in
+      the Helsinki triangle) — hide labels below a zoom or cluster nearby trains.
+- [ ] Map markers are click-only (`MouseArea`) — not keyboard-reachable; no
+      keyboard pan. Map content isn't input-agnostic.
+- [ ] Action buttons are 32 px tall (below the 44 px desktop / 48 px touch
+      target guidance).
+
+**🟢 Opportunities**
+- [ ] `TrainDetailPanel` is described as "slide-in" but only toggles `visible` —
+      add a 200–300 ms x/opacity enter/exit transition.
+- [ ] No reduced-motion path for the pulsing LIVE dot — gate it on a project
+      accessibility setting.
+- [ ] Overlays are hardcoded light even though the basemap can switch to
+      `dark_all` — a token layer (above) makes a dark theme cheap.
