@@ -95,8 +95,12 @@ Legend: ✨ feature · 🐛 bug fix · ♻️ change/refactor · ✅ verificatio
 - [x] `cmake --preset linux-clang` + `cmake --build --preset linux-clang`
       configures with Clang 22 and builds; the Clang binary launches and renders
       trains, rings, and rail tracks.
-- [ ] Windows `windeployqt` deployment not testable on this Linux host — verify on
-      a Windows/MSVC machine.
+- [x] Windows build verified on Windows 11 + Qt 6.11.1 (2026-06-15): clean
+      from-scratch configure + Release build with the **MSVC** preset (VS 2022
+      Build Tools v17.14, `Visual Studio 17 2022` generator) and with a **MinGW**
+      kit (Qt's bundled GCC 13 + Ninja), both exit 0 and emit `TrainsOnMap.exe`.
+      The `windeployqt` post-build step runs and bundles the Qt DLLs/plugins.
+      Launching the deployed `.exe` standalone not yet confirmed.
 
 ---
 

@@ -140,6 +140,10 @@ cmake --build --preset windows-msvc        # Release
 ./build/windows-msvc/bin/Release/TrainsOnMap.exe
 ```
 
+> ✅ Verified on Windows 11 with Qt 6.11.1 (2026-06-15): both this MSVC preset
+> (VS 2022 Build Tools v17.14) and a MinGW kit (Qt's bundled GCC 13 + Ninja)
+> configure and build clean.
+
 > The build runs **windeployqt** automatically, copying the Qt DLLs and the
 > needed plugins (the `windows` platform plugin, the TLS backend for the `wss://`
 > MQTT feed, and the QML / QtLocation geoservices / QtPositioning plugins) next
