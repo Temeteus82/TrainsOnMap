@@ -36,22 +36,6 @@ ApplicationWindow {
         stream: trainStream      // live timetable updates for the selected train
     }
 
-    // Below this zoom the viewport covers too much of the network to fetch.
-    readonly property real trackZoomThreshold: 9.0
-
-    // Fetch only the tracks within the current viewport.
-    function loadVisibleTracks() {
-        const tl = map.toCoordinate(Qt.point(0, 0));
-        const br = map.toCoordinate(Qt.point(map.width, map.height));
-        trackService.loadForBounds(tl.longitude, br.latitude, br.longitude, tl.latitude);
-    }
-
-    // Auto-load tracks for the visible area once zoomed in enough.
-    function autoLoadTracks() {
-        if (map.zoomLevel >= win.trackZoomThreshold)
-            win.loadVisibleTracks();
-    }
-
     // ---- Map ---------------------------------------------------------------
     // Light, OSM-based cartography (CARTO Positron) — like juliadata.fi's light
     // map, so the type-coloured trains and rails read clearly. Swap for
@@ -79,8 +63,16 @@ ApplicationWindow {
         id: map
         anchors.fill: parent
         plugin: mapPlugin
-        center: QtPositioning.coordinate(60.20, 24.94)  // Helsinki region (capital area)
-        zoomLevel: 10.5
+        // Framed on southern Finland (the dense Helsinki–Turku–Tampere rail
+        // triangle) on startup; zoom out to 4.0 to see the whole country.
+        center: QtPositioning.coordinate(61.00, 24.50)
+        zoomLevel: 7.0
+        minimumZoomLevel: 4.0
+        maximumZoomLevel: 18.0
+
+        // Anchor point captured when a pinch starts, so the gesture zooms
+        // around the fingers rather than the map centre.
+        property geoCoordinate startCentroid
         copyrightsVisible: true
         color: "#e9eaec"          // neutral light backdrop shown while tiles load
 
@@ -95,18 +87,17 @@ ApplicationWindow {
         }
         onSupportedMapTypesChanged: selectBasemap()
 
-        // Debounce viewport changes before re-fetching track geometry.
-        onCenterChanged: trackDebounce.restart()
-        onZoomLevelChanged: trackDebounce.restart()
-        Component.onCompleted: { selectBasemap(); win.autoLoadTracks(); }
+        // The whole national rail network is pre-baked and held in memory, so
+        // load it once; there's no per-viewport fetch to debounce.
+        Component.onCompleted: { selectBasemap(); trackService.load(); }
 
         // Track geometry layer (drawn beneath the trains).
         MapItemView {
             model: trackService.model
             delegate: MapPolyline {
                 required property var model
-                line.width: 1.4
-                line.color: "#b4b8bf"      // light grey rail, subtle on the light base
+                line.width: 2.2
+                line.color: "#8c95a0"      // mid grey rail, legible at the overview zoom
                 path: model.path
             }
         }
@@ -120,13 +111,45 @@ ApplicationWindow {
             }
         }
 
-        // Standard pan/zoom gestures are enabled by default on Map.
-    }
-
-    Timer {
-        id: trackDebounce
-        interval: 500
-        onTriggered: win.autoLoadTracks()
+        // ---- Pan / zoom input (Qt 6 needs explicit handlers) --------------
+        // Drag to pan, wheel/trackpad to zoom, pinch to zoom; the map stays
+        // north-up (no rotation handler). Keyboard +/- zoom in steps too.
+        PinchHandler {
+            id: pinch
+            target: null
+            onActiveChanged: if (active)
+                map.startCentroid = map.toCoordinate(pinch.centroid.position, false)
+            onScaleChanged: (delta) => {
+                map.zoomLevel += Math.log2(delta)
+                map.alignCoordinateToPoint(map.startCentroid, pinch.centroid.position)
+            }
+            grabPermissions: PointerHandler.TakeOverForbidden
+        }
+        WheelHandler {
+            id: wheel
+            // Magic Mouse / Wayland trackpads report as touchpads (QTBUG-87646).
+            acceptedDevices: Qt.platform.pluginName === "cocoa"
+                             || Qt.platform.pluginName === "wayland"
+                             ? PointerDevice.Mouse | PointerDevice.TouchPad
+                             : PointerDevice.Mouse
+            rotationScale: 1 / 120
+            property: "zoomLevel"
+        }
+        DragHandler {
+            id: drag
+            target: null
+            onTranslationChanged: (delta) => map.pan(-delta.x, -delta.y)
+        }
+        Shortcut {
+            enabled: map.zoomLevel < map.maximumZoomLevel
+            sequence: StandardKey.ZoomIn
+            onActivated: map.zoomLevel = Math.round(map.zoomLevel + 1)
+        }
+        Shortcut {
+            enabled: map.zoomLevel > map.minimumZoomLevel
+            sequence: StandardKey.ZoomOut
+            onActivated: map.zoomLevel = Math.round(map.zoomLevel - 1)
+        }
     }
 
     // ---- Overlay UI --------------------------------------------------------
@@ -141,12 +164,10 @@ ApplicationWindow {
         tracksLoading: trackService.loading
         streamConnected: trainStream.connected
         streamStatus: trainStream.status
-        statusText: map.zoomLevel < win.trackZoomThreshold && trackService.model.count === 0
-                    ? qsTr("Zoom in to load track geometry")
-                    : (trackService.status.length > 0 ? trackService.status : trainClient.status)
+        statusText: trackService.status.length > 0 ? trackService.status : trainClient.status
 
         onRefreshRequested: trainClient.refresh()
-        onLoadTracksRequested: win.loadVisibleTracks()
+        onLoadTracksRequested: trackService.load()
     }
 
     // Timetable detail panel — slides in from the right when a train is picked.

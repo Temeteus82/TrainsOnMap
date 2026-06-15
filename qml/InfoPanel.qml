@@ -1,5 +1,5 @@
 import QtQuick
-import QtQuick.Controls
+import QtQuick.Controls.Basic
 import QtQuick.Layouts
 
 /// Floating status/control card overlaid on the map.
@@ -16,69 +16,184 @@ Rectangle {
     signal refreshRequested()
     signal loadTracksRequested()
 
-    radius: 8
-    color: Qt.rgba(1, 1, 1, 0.92)
-    border.color: "#cccccc"
+    // Palette
+    readonly property color cardBg: Qt.rgba(1, 1, 1, 0.96)
+    readonly property color hairline: "#e6e8ec"
+    readonly property color textStrong: "#1a1d21"
+    readonly property color textMuted: "#6b7280"
+    readonly property color accent: "#1565c0"
+    readonly property color liveOn: "#18a957"
+    readonly property color liveOff: "#b0b6be"
+
+    radius: 12
+    color: cardBg
+    border.color: hairline
     border.width: 1
-    implicitWidth: layout.implicitWidth + 24
-    implicitHeight: layout.implicitHeight + 24
+    implicitWidth: 268
+    implicitHeight: layout.implicitHeight + 32
+
+    // Soft drop shadow for a floating-card feel (drawn behind the card).
+    Rectangle {
+        z: -1
+        anchors.fill: parent
+        anchors.topMargin: 2
+        anchors.leftMargin: 1
+        anchors.rightMargin: -1
+        radius: root.radius
+        color: Qt.rgba(0, 0, 0, 0.06)
+    }
 
     ColumnLayout {
         id: layout
         anchors.fill: parent
-        anchors.margins: 12
-        spacing: 8
+        anchors.margins: 16
+        spacing: 12
 
-        Label {
-            text: qsTr("🚆 Trains on Map — Finland")
-            font.bold: true
-            font.pixelSize: 15
-        }
-
+        // ---- Header --------------------------------------------------------
         RowLayout {
-            spacing: 6
+            Layout.fillWidth: true
+            spacing: 10
+
             Rectangle {
-                width: 9; height: 9; radius: 4.5
-                anchors.verticalCenter: parent.verticalCenter
-                color: root.streamConnected ? "#2e7d32" : "#bbbbbb"
+                Layout.preferredWidth: 30
+                Layout.preferredHeight: 30
+                radius: 8
+                color: "#eaf1fb"
+                Label {
+                    anchors.centerIn: parent
+                    text: "🚆"
+                    font.pixelSize: 16
+                }
             }
+
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 0
+                Label {
+                    text: qsTr("Trains on Map")
+                    font.bold: true
+                    font.pixelSize: 15
+                    color: root.textStrong
+                }
+                Label {
+                    text: qsTr("Finland · Digitraffic")
+                    font.pixelSize: 11
+                    color: root.textMuted
+                }
+            }
+        }
+
+        Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: root.hairline }
+
+        // ---- Live status ---------------------------------------------------
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 8
+
+            Rectangle {
+                Layout.preferredWidth: 10
+                Layout.preferredHeight: 10
+                radius: 5
+                color: root.streamConnected ? root.liveOn : root.liveOff
+
+                SequentialAnimation on opacity {
+                    running: root.streamConnected
+                    loops: Animation.Infinite
+                    NumberAnimation { to: 0.35; duration: 900; easing.type: Easing.InOutQuad }
+                    NumberAnimation { to: 1.0;  duration: 900; easing.type: Easing.InOutQuad }
+                }
+            }
+
             Label {
-                text: root.streamConnected
-                      ? qsTr("Live trains: %1").arg(root.trainCount)
-                      : qsTr("Live trains: %1  (%2)").arg(root.trainCount).arg(root.streamStatus)
+                Layout.fillWidth: true
+                text: qsTr("%1 live trains").arg(root.trainCount)
+                font.pixelSize: 13
+                font.bold: true
+                color: root.textStrong
+            }
+
+            Label {
+                text: root.streamConnected ? qsTr("LIVE") : root.streamStatus
+                font.pixelSize: 10
+                font.bold: true
+                color: root.streamConnected ? root.liveOn : root.textMuted
             }
         }
 
         Label {
-            text: qsTr("Track segments: %1").arg(root.trackCount)
-            color: "#555555"
+            Layout.fillWidth: true
+            text: qsTr("%1 track segments").arg(root.trackCount)
+            font.pixelSize: 12
+            color: root.textMuted
         }
 
         Label {
+            Layout.fillWidth: true
             text: root.statusText
-            color: "#555555"
+            color: root.textMuted
+            font.pixelSize: 12
             wrapMode: Text.WordWrap
-            Layout.maximumWidth: 260
             visible: text.length > 0
         }
 
+        // ---- Actions -------------------------------------------------------
         RowLayout {
+            Layout.fillWidth: true
             spacing: 8
+
             Button {
-                text: qsTr("Refresh trains")
+                id: refreshBtn
+                Layout.fillWidth: true
+                text: qsTr("Refresh")
                 onClicked: root.refreshRequested()
+                contentItem: Label {
+                    text: refreshBtn.text
+                    font.pixelSize: 12
+                    font.bold: true
+                    color: "white"
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                }
+                background: Rectangle {
+                    radius: 8
+                    implicitHeight: 32
+                    color: refreshBtn.down ? Qt.darker(root.accent, 1.15)
+                                           : (refreshBtn.hovered ? Qt.lighter(root.accent, 1.08) : root.accent)
+                }
             }
+
             Button {
-                text: root.tracksLoading ? qsTr("Loading…") : qsTr("Load tracks in view")
+                id: tracksBtn
+                Layout.fillWidth: true
                 enabled: !root.tracksLoading
+                text: root.tracksLoading ? qsTr("Loading…") : qsTr("Load tracks")
                 onClicked: root.loadTracksRequested()
+                contentItem: Label {
+                    text: tracksBtn.text
+                    font.pixelSize: 12
+                    font.bold: true
+                    color: tracksBtn.enabled ? root.accent : root.textMuted
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                }
+                background: Rectangle {
+                    radius: 8
+                    implicitHeight: 32
+                    color: tracksBtn.down ? "#e4e7ec" : (tracksBtn.hovered ? "#f1f3f6" : "transparent")
+                    border.color: root.hairline
+                    border.width: 1
+                }
             }
         }
 
+        Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: root.hairline }
+
         Label {
+            Layout.fillWidth: true
             text: qsTr("Data © Fintraffic / Digitraffic (CC BY 4.0)\nMap © OpenStreetMap contributors, © CARTO")
-            color: "#888888"
+            color: "#9aa0a6"
             font.pixelSize: 10
+            wrapMode: Text.WordWrap
         }
     }
 }
