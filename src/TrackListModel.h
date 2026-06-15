@@ -9,6 +9,11 @@
 /// expressed as a QVariantList of QGeoCoordinate, ready to bind to a QML
 /// MapPolyline.path inside a MapItemView.
 ///
+/// Rows carry the segment's stable id (its index in the full network) so that
+/// setVisibleSegments() can diff one viewport against the next and emit only
+/// the incremental insert/remove — the MapItemView then rebuilds just the
+/// polylines that entered or left the view, not the whole layer on every pan.
+///
 /// Owned by TrackService and exposed via its `model` property.
 class TrackListModel : public QAbstractListModel
 {
@@ -28,13 +33,18 @@ public:
     QVariant data(const QModelIndex &index, int role) const override;
     QHash<int, QByteArray> roleNames() const override;
 
-    int count() const { return m_segments.size(); }
+    int count() const { return m_paths.size(); }
 
-    void setSegments(const QVector<QVariantList> &segments);
+    /// Replace the visible set. `ids` and `paths` are parallel and must both be
+    /// sorted ascending by id (TrackService emits them in network order, which
+    /// is ascending). Diffs against the current rows and emits incremental
+    /// insert/remove for only the segments that changed between viewports.
+    void setVisibleSegments(const QVector<int> &ids, const QVector<QVariantList> &paths);
 
 signals:
     void countChanged();
 
 private:
-    QVector<QVariantList> m_segments;
+    QVector<int> m_ids;             ///< segment id (index in the full network), ascending
+    QVector<QVariantList> m_paths;  ///< polyline path per row, parallel to m_ids
 };

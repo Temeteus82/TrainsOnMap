@@ -4,10 +4,12 @@
 
 #include <QByteArray>
 #include <QFile>
+#include <QFutureWatcher>
 #include <QGeoCoordinate>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QtConcurrentRun>
 
 #include <algorithm>
 
@@ -21,34 +23,47 @@ TrackService::TrackService(QObject *parent)
     : QObject(parent)
     , m_model(new TrackListModel(this))
 {
-    loadGeometry();
+    // Parse + project the network off the GUI thread so the ~200 ms startup cost
+    // doesn't block the first frame. The result is applied back on the GUI thread
+    // (QFutureWatcher::finished), then geometryReady() lets QML load the first
+    // viewport.
+    setLoading(true);
+    setStatus(QStringLiteral("Loading rail geometry…"));
+
+    auto *watcher = new QFutureWatcher<QVector<Segment>>(this);
+    connect(watcher, &QFutureWatcher<QVector<Segment>>::finished, this, [this, watcher] {
+        m_all = watcher->result();
+        watcher->deleteLater();
+        setLoading(false);
+        setStatus(m_all.isEmpty()
+                      ? QStringLiteral("Rail geometry could not be loaded")
+                      : QStringLiteral("%1 track segments ready").arg(m_all.size()));
+        emit geometryReady();
+    });
+    watcher->setFuture(QtConcurrent::run(&TrackService::parseGeometry));
 }
 
-void TrackService::loadGeometry()
+QVector<TrackService::Segment> TrackService::parseGeometry()
 {
+    QVector<Segment> segments;
+
     QFile file(QString::fromLatin1(kResourcePath));
-    if (!file.open(QIODevice::ReadOnly)) {
-        setStatus(QStringLiteral("Rail geometry resource missing"));
-        return;
-    }
+    if (!file.open(QIODevice::ReadOnly))
+        return segments;
     const QByteArray raw = qUncompress(file.readAll());
     file.close();
-    if (raw.isEmpty()) {
-        setStatus(QStringLiteral("Rail geometry could not be decompressed"));
-        return;
-    }
+    if (raw.isEmpty())
+        return segments;
 
     const QJsonDocument doc = QJsonDocument::fromJson(raw);
-    if (!doc.isObject()) {
-        setStatus(QStringLiteral("Rail geometry is not valid GeoJSON"));
-        return;
-    }
+    if (!doc.isObject())
+        return segments;
     const QJsonArray features =
         doc.object().value(QStringLiteral("features")).toArray();
 
     // Project one GeoJSON ring (EPSG:3067 easting/northing) to a WGS84 polyline
     // and record its lat/lon bounding box for viewport filtering.
-    const auto addLine = [this](const QJsonArray &coords) {
+    const auto addLine = [&segments](const QJsonArray &coords) {
         Segment seg;
         seg.path.reserve(coords.size());
         seg.minLat = seg.minLon = 1e9;
@@ -68,11 +83,10 @@ void TrackService::loadGeometry()
             seg.maxLon = (std::max)(seg.maxLon, c.longitude());
         }
         if (seg.path.size() >= 2)
-            m_all.push_back(std::move(seg));
+            segments.push_back(std::move(seg));
     };
 
-    m_all.clear();
-    m_all.reserve(features.size());
+    segments.reserve(features.size());
     for (const QJsonValue &fv : features) {
         const QJsonObject geom = fv.toObject().value(QStringLiteral("geometry")).toObject();
         const QString type = geom.value(QStringLiteral("type")).toString();
@@ -85,30 +99,25 @@ void TrackService::loadGeometry()
         }
     }
 
-    setStatus(QStringLiteral("%1 track segments ready").arg(m_all.size()));
-}
-
-void TrackService::load()
-{
-    QVector<QVariantList> all;
-    all.reserve(m_all.size());
-    for (const Segment &s : m_all)
-        all.push_back(s.path);
-    m_model->setSegments(all);
-    setStatus(QStringLiteral("%1 track segments").arg(all.size()));
+    return segments;
 }
 
 void TrackService::loadForBounds(double west, double south, double east, double north)
 {
-    QVector<QVariantList> visible;
-    for (const Segment &s : m_all) {
+    // Segment ids are indices into m_all, so iterating in order yields them
+    // ascending — exactly the ordering TrackListModel's incremental diff expects.
+    QVector<int> ids;
+    QVector<QVariantList> paths;
+    for (int i = 0; i < m_all.size(); ++i) {
+        const Segment &s = m_all.at(i);
         // Keep segments whose bbox intersects the viewport box.
         if (s.maxLat < south || s.minLat > north || s.maxLon < west || s.minLon > east)
             continue;
-        visible.push_back(s.path);
+        ids.push_back(i);
+        paths.push_back(s.path);
     }
-    m_model->setSegments(visible);
-    setStatus(QStringLiteral("%1 track segments").arg(visible.size()));
+    m_model->setVisibleSegments(ids, paths);
+    setStatus(QStringLiteral("%1 track segments").arg(ids.size()));
 }
 
 void TrackService::setLoading(bool loading)

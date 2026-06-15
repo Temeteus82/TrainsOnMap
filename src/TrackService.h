@@ -12,9 +12,10 @@
 ///
 /// The rail network changes rarely, so it ships in the repo instead of being
 /// fetched from the Digitraffic infra-api on every launch. The whole network is
-/// parsed + projected to WGS84 once at startup; loadForBounds() then filters the
-/// in-memory segments to the current viewport (rendering the entire network at
-/// once would be thousands of polylines).
+/// parsed + projected to WGS84 once on a worker thread at startup (geometryReady
+/// fires when done); loadForBounds() then filters the in-memory segments to the
+/// current viewport (rendering the entire network at once would be thousands of
+/// polylines).
 class TrackService : public QObject
 {
     Q_OBJECT
@@ -31,9 +32,6 @@ public:
     QString status() const { return m_status; }
 
 public slots:
-    /// Show the entire network (heavy — thousands of segments).
-    void load();
-
     /// Show only tracks intersecting the given WGS84 bounding box.
     /// Arguments follow the GeoJSON/OGC convention: west, south, east, north.
     void loadForBounds(double west, double south, double east, double north);
@@ -41,6 +39,11 @@ public slots:
 signals:
     void loadingChanged();
     void statusChanged();
+
+    /// Emitted on the GUI thread once the worker has finished parsing +
+    /// projecting the network into m_all (success or failure). QML uses this to
+    /// seed the first viewport load.
+    void geometryReady();
 
 private:
     /// One track segment: its WGS84 polyline plus a lat/lon bbox for fast
@@ -53,8 +56,9 @@ private:
         double maxLon = 0.0;
     };
 
-    /// Parse + project the embedded snapshot into m_all (once, at startup).
-    void loadGeometry();
+    /// Parse + project the embedded snapshot off the GUI thread, returning the
+    /// segments. Pure/thread-safe: touches no member or QObject state.
+    static QVector<Segment> parseGeometry();
     void setLoading(bool loading);
     void setStatus(const QString &status);
 

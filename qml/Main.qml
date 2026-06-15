@@ -86,10 +86,45 @@ ApplicationWindow {
             }
         }
         onSupportedMapTypesChanged: selectBasemap()
+        Component.onCompleted: selectBasemap()
 
-        // The whole national rail network is pre-baked and held in memory, so
-        // load it once; there's no per-viewport fetch to debounce.
-        Component.onCompleted: { selectBasemap(); trackService.load(); }
+        // Rail geometry is held in memory; materialise only the segments in (a
+        // padded) viewport so a pan doesn't reproject the whole ~10k-segment
+        // network. toCoordinate() needs the map ready, so seed the first load
+        // from mapReady, then refresh on a short debounce as the view changes.
+        onMapReadyChanged: if (mapReady) refreshTracks()
+        onVisibleRegionChanged: trackReloadTimer.restart()
+
+        Timer {
+            id: trackReloadTimer
+            interval: 250        // settle delay: fire once the gesture stops
+            onTriggered: map.refreshTracks()
+        }
+
+        // Filter the track model to the current viewport (+25% margin).
+        function refreshTracks() {
+            if (!map.mapReady || map.width <= 0 || map.height <= 0)
+                return
+            const nw = map.toCoordinate(Qt.point(0, 0), false)                  // NW corner
+            const se = map.toCoordinate(Qt.point(map.width, map.height), false) // SE corner
+            if (!nw.isValid || !se.isValid)
+                return
+            // Pad each side so a small pan doesn't expose unloaded edges before
+            // the next debounce fires.
+            const latPad = Math.abs(nw.latitude - se.latitude) * 0.25
+            const lonPad = Math.abs(se.longitude - nw.longitude) * 0.25
+            trackService.loadForBounds(nw.longitude - lonPad,   // west
+                                       se.latitude  - latPad,   // south
+                                       se.longitude + lonPad,   // east
+                                       nw.latitude  + latPad)   // north
+        }
+
+        // Geometry is parsed on a worker thread; seed the first viewport load
+        // once it lands (the map may become ready before or after this fires).
+        Connections {
+            target: trackService
+            function onGeometryReady() { map.refreshTracks() }
+        }
 
         // Track geometry layer (drawn beneath the trains).
         MapItemView {
@@ -167,18 +202,21 @@ ApplicationWindow {
         statusText: trackService.status.length > 0 ? trackService.status : trainClient.status
 
         onRefreshRequested: trainClient.refresh()
-        onLoadTracksRequested: trackService.load()
+        onLoadTracksRequested: map.refreshTracks()
     }
 
-    // Timetable detail panel — slides in from the right when a train is picked.
-    TrainDetailPanel {
-        id: detailPanel
-        details: trainDetails
-        visible: trainDetails.hasSelection
+    // Timetable detail panel — only built once a train is picked, so its
+    // subtree isn't constructed/compiled on the startup path.
+    Loader {
+        id: detailPanelLoader
+        active: trainDetails.hasSelection
         width: 340
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.bottom: parent.bottom
         anchors.margins: 12
+        sourceComponent: TrainDetailPanel {
+            details: trainDetails
+        }
     }
 }
