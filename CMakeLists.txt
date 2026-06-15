@@ -11,7 +11,7 @@ set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
 # QtLocation/QtPositioning require 6.5+. Qml/Quick give us the Qt Quick map UI;
 # Network is used by the Digitraffic REST/GeoJSON clients.
-find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Qml Quick Network Positioning Location WebSockets)
+find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Qml Quick Network Positioning Location WebSockets Concurrent)
 
 qt_standard_project_setup(REQUIRES 6.5)
 
@@ -64,6 +64,7 @@ target_link_libraries(TrainsOnMap PRIVATE
     Qt6::Positioning
     Qt6::Location
     Qt6::WebSockets
+    Qt6::Concurrent
 )
 
 # Place the executable under build/bin/. This also avoids a name clash on

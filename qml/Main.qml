@@ -119,6 +119,13 @@ ApplicationWindow {
                                        nw.latitude  + latPad)   // north
         }
 
+        // Geometry is parsed on a worker thread; seed the first viewport load
+        // once it lands (the map may become ready before or after this fires).
+        Connections {
+            target: trackService
+            function onGeometryReady() { map.refreshTracks() }
+        }
+
         // Track geometry layer (drawn beneath the trains).
         MapItemView {
             model: trackService.model
@@ -198,15 +205,18 @@ ApplicationWindow {
         onLoadTracksRequested: map.refreshTracks()
     }
 
-    // Timetable detail panel — slides in from the right when a train is picked.
-    TrainDetailPanel {
-        id: detailPanel
-        details: trainDetails
-        visible: trainDetails.hasSelection
+    // Timetable detail panel — only built once a train is picked, so its
+    // subtree isn't constructed/compiled on the startup path.
+    Loader {
+        id: detailPanelLoader
+        active: trainDetails.hasSelection
         width: 340
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.bottom: parent.bottom
         anchors.margins: 12
+        sourceComponent: TrainDetailPanel {
+            details: trainDetails
+        }
     }
 }
