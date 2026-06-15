@@ -1,3 +1,5 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import QtQuick.Controls
 import QtLocation
@@ -78,7 +80,7 @@ ApplicationWindow {
 
         // The CARTO tiles arrive as the plugin's "custom" map type; activate it.
         function selectBasemap() {
-            for (var i = 0; i < supportedMapTypes.length; ++i) {
+            for (let i = 0; i < supportedMapTypes.length; ++i) {
                 if (supportedMapTypes[i].style === MapType.CustomMap) {
                     activeMapType = supportedMapTypes[i];
                     return;

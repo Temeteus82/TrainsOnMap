@@ -108,8 +108,9 @@ by contrast, already come as WGS84 GeoJSON Points and need no transform.
 ## Build & run
 
 The toolchain per platform is pinned in [`CMakePresets.json`](CMakePresets.json)
-— **Clang** on Linux/macOS, **MSVC 2022** on Windows — and each preset builds
-into its own folder under `build/` with the executable in a `bin/` subfolder.
+— **Clang** on Linux/macOS, and **MSVC 2022** or **LLVM/Clang** on Windows — and
+each preset builds into its own folder under `build/` with the executable in a
+`bin/` subfolder.
 Point Qt at your kit by exporting `CMAKE_PREFIX_PATH` once (a system Qt is found
 automatically and needs no export).
 
@@ -140,9 +141,24 @@ cmake --build --preset windows-msvc        # Release
 ./build/windows-msvc/bin/Release/TrainsOnMap.exe
 ```
 
-> ✅ Verified on Windows 11 with Qt 6.11.1 (2026-06-15): both this MSVC preset
-> (VS 2022 Build Tools v17.14) and a MinGW kit (Qt's bundled GCC 13 + Ninja)
-> configure and build clean.
+### Windows (LLVM/Clang, PowerShell)
+
+Uses Qt's bundled **llvm-mingw** toolchain (Clang + `lld`). Put its `bin` on
+`PATH` and point `CMAKE_PREFIX_PATH` at the ABI-matching `llvm-mingw_64` kit —
+**not** the `msvc2022_64` kit.
+
+```powershell
+$env:PATH = "C:/Qt/Tools/llvm-mingw1706_64/bin;$env:PATH"
+$env:CMAKE_PREFIX_PATH = "C:/Qt/6.11.1/llvm-mingw_64"
+cmake --preset windows-llvm
+cmake --build --preset windows-llvm        # Release
+./build/windows-llvm/bin/TrainsOnMap.exe
+```
+
+> ✅ Verified on Windows 11 with Qt 6.11.1 (2026-06-15): the MSVC preset
+> (VS 2022 Build Tools v17.14), the LLVM/Clang preset (llvm-mingw Clang 17 +
+> `lld` + Ninja), and a MinGW kit (Qt's bundled GCC 13 + Ninja) all configure
+> and build clean.
 
 > The build runs **windeployqt** automatically, copying the Qt DLLs and the
 > needed plugins (the `windows` platform plugin, the TLS backend for the `wss://`
