@@ -8,6 +8,43 @@ Legend: ✨ feature · 🐛 bug fix · ♻️ change/refactor · ✅ verificatio
 
 ---
 
+## Map framing & sidebar polish
+
+### ✨ Features
+- [x] Sidebar card (`InfoPanel`) redesigned: rounded 12 px card with a soft drop
+      shadow, icon badge + title/subtitle header, hairline dividers, a pulsing
+      green **LIVE** indicator paired with the live-train count, and flat
+      primary/outlined action buttons (custom-styled, `QtQuick.Controls.Basic`).
+
+### 🐛 Bug fixes
+- [x] **Map was not interactive** — Qt 6 removed `MapGestureArea`, so the `Map`
+      had no pan/zoom at all (the old "enabled by default" comment was wrong).
+      Added explicit `DragHandler` (pan), `WheelHandler` (wheel/trackpad zoom),
+      `PinchHandler` (pinch zoom, north-up — no rotation), and `StandardKey`
+      zoom-in/out shortcuts (`Main.qml`).
+
+### ♻️ Changes
+- [x] Map now opens framed on **southern Finland** (the Helsinki–Turku–Tampere
+      rail triangle, centre 61.0 °N, 24.5 °E, zoom 7.0) instead of the capital
+      area; clamped to `minimumZoomLevel` 4.0 (zoom out for the whole country) /
+      `maximumZoomLevel` 18.0 (`Main.qml`).
+- [x] The whole pre-baked rail network (4936 segments) is now rendered: loaded
+      once at startup via `trackService.load()` and held as a static model, so
+      panning/zooming no longer rebuilds polyline delegates. Dropped the
+      per-viewport `loadForBounds` fetch, the `trackZoomThreshold` gate, and the
+      debounce timer (`Main.qml`). Cost: ~+110 MB RSS over the filtered view.
+- [x] Rail stroke bumped to width 2.2, colour `#8c95a0` (was 1.4 / `#b4b8bf`) so
+      the network reads clearly at the overview zoom (`Main.qml`).
+
+### ✅ Verification
+- [x] Visual: southern Finland in view, full rail network drawn as legible grey
+      lines with trains on top; redesigned sidebar shows live count, LIVE pulse,
+      restyled buttons, and "4936 track segments". Wheel-zoom confirmed working.
+- [x] Measured: ~400 MB RSS, ~44 % of a core idle (the idle CPU is dominated by
+      the live train markers, not the static rail polylines).
+
+---
+
 ## Status-ring rules (refinement)
 
 ### ♻️ Changes
