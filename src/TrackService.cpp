@@ -38,8 +38,13 @@ void TrackService::loadGeometry()
         return;
     }
 
+    const QJsonDocument doc = QJsonDocument::fromJson(raw);
+    if (!doc.isObject()) {
+        setStatus(QStringLiteral("Rail geometry is not valid GeoJSON"));
+        return;
+    }
     const QJsonArray features =
-        QJsonDocument::fromJson(raw).object().value(QStringLiteral("features")).toArray();
+        doc.object().value(QStringLiteral("features")).toArray();
 
     // Project one GeoJSON ring (EPSG:3067 easting/northing) to a WGS84 polyline
     // and record its lat/lon bounding box for viewport filtering.
@@ -56,10 +61,11 @@ void TrackService::loadGeometry()
             if (!c.isValid())
                 continue;
             seg.path.append(QVariant::fromValue(c));
-            seg.minLat = std::min(seg.minLat, c.latitude());
-            seg.maxLat = std::max(seg.maxLat, c.latitude());
-            seg.minLon = std::min(seg.minLon, c.longitude());
-            seg.maxLon = std::max(seg.maxLon, c.longitude());
+            // Parenthesised to defeat the windows.h min/max macros (MSVC/MinGW).
+            seg.minLat = (std::min)(seg.minLat, c.latitude());
+            seg.maxLat = (std::max)(seg.maxLat, c.latitude());
+            seg.minLon = (std::min)(seg.minLon, c.longitude());
+            seg.maxLon = (std::max)(seg.maxLon, c.longitude());
         }
         if (seg.path.size() >= 2)
             m_all.push_back(std::move(seg));

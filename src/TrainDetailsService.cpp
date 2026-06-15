@@ -13,9 +13,13 @@
 #include <QNetworkRequest>
 #include <QUrl>
 
+#include <chrono>
+
 namespace {
 constexpr auto kUserAgent = "TrainsOnMap/0.1 (Qt6 scaffolding)";
 constexpr auto kStationsUrl = "https://rata.digitraffic.fi/api/v1/metadata/stations";
+// Abort a stalled request rather than leaving the panel stuck on "Loading…".
+constexpr auto kRequestTimeout = std::chrono::seconds{15};
 
 QString hhmm(const QString &iso)
 {
@@ -90,6 +94,7 @@ TrainDetailsService::TrainDetailsService(QObject *parent)
     , m_net(new QNetworkAccessManager(this))
     , m_model(new TimetableModel(this))
 {
+    m_net->setTransferTimeout(kRequestTimeout);
     fetchStations();   // warm the code->name cache in the background
 }
 

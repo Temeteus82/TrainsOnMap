@@ -59,7 +59,6 @@ private:
     QNetworkAccessManager *m_net = nullptr;
     TrainListModel *m_model = nullptr;
     QTimer m_timer;
-    QTimer m_categoryTimer;
     bool m_active = false;
     QString m_status;
 };

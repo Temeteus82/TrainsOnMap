@@ -9,16 +9,19 @@
 #include <QNetworkRequest>
 #include <QUrl>
 
+#include <chrono>
+
 namespace {
 constexpr auto kLatestUrl = "https://rata.digitraffic.fi/api/v1/train-locations/latest/";
 // Currently-running trains, carrying trainCategory for marker colouring.
 constexpr auto kLiveTrainsUrl = "https://rata.digitraffic.fi/api/v1/live-trains";
 // Digitraffic asks every client to identify itself. Replace with your own app id.
 constexpr auto kUserAgent = "TrainsOnMap/0.1 (Qt6 scaffolding)";
-constexpr int kCategoryRefreshMs = 5 * 60 * 1000;
 // REST is the bootstrap + prune path; MQTT carries live deltas in between, so
 // the snapshot only needs to run slowly. Matches the Swift app's 60 s resync.
 constexpr int kResyncIntervalMs = 60 * 1000;
+// Abort a stalled request rather than leaving the status stuck on "Fetching…".
+constexpr auto kRequestTimeout = std::chrono::seconds{15};
 }
 
 DigitrafficClient::DigitrafficClient(QObject *parent)
@@ -26,13 +29,12 @@ DigitrafficClient::DigitrafficClient(QObject *parent)
     , m_net(new QNetworkAccessManager(this))
     , m_model(new TrainListModel(this))
 {
+    m_net->setTransferTimeout(kRequestTimeout);
+
     m_timer.setInterval(kResyncIntervalMs);
     connect(&m_timer, &QTimer::timeout, this, &DigitrafficClient::refresh);
-
-    // Categories change slowly; refresh them on their own, longer cadence.
-    m_categoryTimer.setInterval(kCategoryRefreshMs);
-    connect(&m_categoryTimer, &QTimer::timeout, this, &DigitrafficClient::refreshCategories);
-    m_categoryTimer.start();
+    // Categories piggyback on refresh() (every kResyncIntervalMs while active),
+    // so they need no separate poll — and stay quiet when polling is stopped.
 }
 
 void DigitrafficClient::setActive(bool active)
