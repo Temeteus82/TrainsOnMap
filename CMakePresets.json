@@ -41,11 +41,25 @@
       "cacheVariables": {
         "CMAKE_PREFIX_PATH": "$penv{CMAKE_PREFIX_PATH}"
       }
+    },
+    {
+      "name": "windows-llvm",
+      "displayName": "Windows (LLVM/Clang, llvm-mingw)",
+      "description": "Clang + lld + Ninja using Qt's bundled llvm-mingw toolchain. Put the llvm-mingw bin (e.g. C:/Qt/Tools/llvm-mingw1706_64/bin) on PATH and set CMAKE_PREFIX_PATH to the ABI-matching kit (e.g. C:/Qt/6.11.1/llvm-mingw_64) -- NOT the msvc kit.",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" },
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/windows-llvm",
+      "cacheVariables": {
+        "CMAKE_CXX_COMPILER": "clang++",
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_PREFIX_PATH": "$penv{CMAKE_PREFIX_PATH}"
+      }
     }
   ],
   "buildPresets": [
     { "name": "linux-clang",   "configurePreset": "linux-clang" },
     { "name": "macos-clang",   "configurePreset": "macos-clang" },
-    { "name": "windows-msvc",  "configurePreset": "windows-msvc", "configuration": "Release" }
+    { "name": "windows-msvc",  "configurePreset": "windows-msvc", "configuration": "Release" },
+    { "name": "windows-llvm",  "configurePreset": "windows-llvm" }
   ]
 }
