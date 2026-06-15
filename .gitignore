@@ -29,6 +29,11 @@ ui_*.h
 .cache/
 compile_commands.json
 
+# Profiler: keep reports, ignore large traces and scratch files
+/profiler/traces/
+/profiler/.last-*
+parse.err
+
 # OS
 Thumbs.db
 .DS_Store
