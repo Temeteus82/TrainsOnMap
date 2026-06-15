@@ -1,3 +1,5 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -65,7 +67,7 @@ Rectangle {
             Layout.alignment: Qt.AlignHCenter
         }
 
-        Rectangle { Layout.fillWidth: true; height: 1; color: "#eeeeee" }
+        Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: "#eeeeee" }
 
         // ---- Timetable ---------------------------------------------------
         ListView {
@@ -77,8 +79,18 @@ Rectangle {
             ScrollBar.vertical: ScrollBar {}
 
             delegate: ItemDelegate {
+                id: stopRow
                 width: ListView.view.width
                 height: rowLayout.implicitHeight + 12
+
+                required property string stationName
+                required property bool cancelled
+                required property string track
+                required property string scheduledArrival
+                required property string estimatedArrival
+                required property string scheduledDeparture
+                required property string estimatedDeparture
+                required property int delayMinutes
 
                 RowLayout {
                     id: rowLayout
@@ -93,14 +105,14 @@ Rectangle {
                         Layout.fillWidth: true
                         spacing: 0
                         Label {
-                            text: model.stationName
+                            text: stopRow.stationName
                             font.pixelSize: 13
-                            font.strikeout: model.cancelled
+                            font.strikeout: stopRow.cancelled
                             elide: Text.ElideRight
                             Layout.fillWidth: true
                         }
                         Label {
-                            text: model.track.length > 0 ? qsTr("Track %1").arg(model.track) : ""
+                            text: stopRow.track.length > 0 ? qsTr("Track %1").arg(stopRow.track) : ""
                             color: "#5f6671"   // ≥ 4.5:1 on the panel
                             font.pixelSize: 10
                             visible: text.length > 0
@@ -114,18 +126,18 @@ Rectangle {
                         Label {
                             Layout.alignment: Qt.AlignRight
                             font.pixelSize: 12
-                            visible: model.scheduledArrival.length > 0
-                            text: model.estimatedArrival.length > 0
-                                  ? qsTr("arr %1 → %2").arg(model.scheduledArrival).arg(model.estimatedArrival)
-                                  : qsTr("arr %1").arg(model.scheduledArrival)
+                            visible: stopRow.scheduledArrival.length > 0
+                            text: stopRow.estimatedArrival.length > 0
+                                  ? qsTr("arr %1 → %2").arg(stopRow.scheduledArrival).arg(stopRow.estimatedArrival)
+                                  : qsTr("arr %1").arg(stopRow.scheduledArrival)
                         }
                         Label {
                             Layout.alignment: Qt.AlignRight
                             font.pixelSize: 12
-                            visible: model.scheduledDeparture.length > 0
-                            text: model.estimatedDeparture.length > 0
-                                  ? qsTr("dep %1 → %2").arg(model.scheduledDeparture).arg(model.estimatedDeparture)
-                                  : qsTr("dep %1").arg(model.scheduledDeparture)
+                            visible: stopRow.scheduledDeparture.length > 0
+                            text: stopRow.estimatedDeparture.length > 0
+                                  ? qsTr("dep %1 → %2").arg(stopRow.scheduledDeparture).arg(stopRow.estimatedDeparture)
+                                  : qsTr("dep %1").arg(stopRow.scheduledDeparture)
                         }
                     }
 
@@ -136,11 +148,11 @@ Rectangle {
                         horizontalAlignment: Text.AlignRight
                         font.pixelSize: 12
                         font.bold: true
-                        color: model.delayMinutes > 0 ? "#c62828"
-                                                      : (model.delayMinutes < 0 ? "#2e7d32" : "#5f6671")
-                        text: model.delayMinutes === 0
+                        color: stopRow.delayMinutes > 0 ? "#c62828"
+                                                        : (stopRow.delayMinutes < 0 ? "#2e7d32" : "#5f6671")
+                        text: stopRow.delayMinutes === 0
                               ? "±0"
-                              : (model.delayMinutes > 0 ? "+" : "") + model.delayMinutes
+                              : (stopRow.delayMinutes > 0 ? "+" : "") + stopRow.delayMinutes
                     }
                 }
             }

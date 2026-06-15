@@ -1,6 +1,5 @@
 import QtQuick
 import QtLocation
-import QtPositioning
 
 /// Delegate for a single train inside a MapItemView. Model roles come from
 /// TrainListModel: coordinate, trainNumber, speed, bearing, trainType, category,
@@ -101,7 +100,7 @@ MapQuickItem {
                     color: "transparent"
                     border.width: 3
                     border.color: marker.ringColor
-                    visible: marker.ringColor != "transparent"
+                    visible: marker.ringColor.a > 0
                 }
 
                 Rectangle {
