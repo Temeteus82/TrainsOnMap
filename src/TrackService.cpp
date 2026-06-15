@@ -104,15 +104,20 @@ QVector<TrackService::Segment> TrackService::parseGeometry()
 
 void TrackService::loadForBounds(double west, double south, double east, double north)
 {
-    QVector<QVariantList> visible;
-    for (const Segment &s : m_all) {
+    // Segment ids are indices into m_all, so iterating in order yields them
+    // ascending — exactly the ordering TrackListModel's incremental diff expects.
+    QVector<int> ids;
+    QVector<QVariantList> paths;
+    for (int i = 0; i < m_all.size(); ++i) {
+        const Segment &s = m_all.at(i);
         // Keep segments whose bbox intersects the viewport box.
         if (s.maxLat < south || s.minLat > north || s.maxLon < west || s.minLon > east)
             continue;
-        visible.push_back(s.path);
+        ids.push_back(i);
+        paths.push_back(s.path);
     }
-    m_model->setSegments(visible);
-    setStatus(QStringLiteral("%1 track segments").arg(visible.size()));
+    m_model->setVisibleSegments(ids, paths);
+    setStatus(QStringLiteral("%1 track segments").arg(ids.size()));
 }
 
 void TrackService::setLoading(bool loading)
