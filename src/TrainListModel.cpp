@@ -12,6 +12,7 @@ constexpr qint64 kStaleGraceSecs = 120;
 constexpr qint64 kStalePositionSecs = 300;   // position older than this reads as stale
 constexpr int kLateMinutes = 5;              // amber "late" ring at this delay or more
 constexpr int kVeryLateMinutes = 15;         // red "very late" ring at this delay or more
+constexpr double kStoppedSpeedKmh = 0.5;     // below this a train counts as stopped/waiting
 }
 
 TrainListModel::TrainListModel(QObject *parent)
@@ -170,8 +171,10 @@ void TrainListModel::setTrainMetadata(const QHash<int, QString> &types,
     m_categoryByNumber = categories;
     m_lineByNumber = commuterLines;
     if (!m_rows.isEmpty())
+        // RingStateRole too: ringStateFor() gates the delay ring on category,
+        // so a category change can change the ring even if status is unchanged.
         emit dataChanged(index(0), index(m_rows.size() - 1),
-                         { CategoryRole, TrainTypeRole, CommuterLineRole });
+                         { CategoryRole, TrainTypeRole, CommuterLineRole, RingStateRole });
 }
 
 void TrainListModel::setTrainStatuses(const QHash<int, TrainStatus> &statuses)
@@ -215,7 +218,9 @@ QString TrainListModel::ringStateFor(const Row &row) const
 
     // Green "ready" ring only for a genuinely on-time, stopped (waiting) train; a
     // running on-time train gets no ring, so the map isn't a wash of green.
-    if (row.pos.speed == 0.0 && st.delayMinutes <= 0)
+    // "Stopped" is a small threshold, not exact 0, so a creeping feed value
+    // (e.g. 0.3 km/h) still reads as waiting.
+    if (row.pos.speed < kStoppedSpeedKmh && st.delayMinutes <= 0)
         return QStringLiteral("green");
     return QStringLiteral("none");
 }

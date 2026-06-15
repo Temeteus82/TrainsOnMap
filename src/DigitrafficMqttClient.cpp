@@ -16,6 +16,9 @@ constexpr auto kBrokerUrl = "wss://rata.digitraffic.fi:443/mqtt";
 constexpr auto kLocationsTopic = "train-locations/#";
 constexpr quint16 kKeepAliveSecs = 60;
 constexpr int kReconnectMs = 5000;
+// Train messages are a few KB; anything near the 256 MB MQTT ceiling means the
+// stream is out of sync. Cap well below that and resync rather than buffer it.
+constexpr int kMaxPacketBytes = 1 << 20;   // 1 MiB
 }
 
 DigitrafficMqttClient::DigitrafficMqttClient(QObject *parent)
@@ -157,6 +160,15 @@ void DigitrafficMqttClient::onBinaryMessage(const QByteArray &message)
             break; // length field not fully arrived yet
 
         const int total = 1 + lengthBytes + remaining;
+        if (total > kMaxPacketBytes) {
+            // Implausibly large frame: the stream is corrupt or out of sync.
+            // Drop everything and let the socket reconnect from a clean MQTT
+            // session instead of buffering toward the protocol ceiling.
+            setStatus(QStringLiteral("Dropping malformed MQTT stream; reconnecting…"));
+            m_rxBuffer.clear();
+            m_socket->close();   // → onSocketDisconnected → reconnect while active
+            return;
+        }
         if (m_rxBuffer.size() < total)
             break; // packet body not fully arrived yet
 
