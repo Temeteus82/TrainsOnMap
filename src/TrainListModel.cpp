@@ -40,11 +40,13 @@ QVariant TrainListModel::data(const QModelIndex &index, int role) const
     case SpeedRole:       return row.pos.speed;
     case BearingRole:     return row.bearing;
     case TimestampRole:   return row.pos.timestamp;
-    case CategoryRole:    return m_categoryByNumber.value(row.pos.trainNumber);
-    case TrainTypeRole:   return m_typeByNumber.value(row.pos.trainNumber);
-    case CommuterLineRole: return m_lineByNumber.value(row.pos.trainNumber);
+    case CategoryRole:    return m_categoryByNumber.value(keyOf(row.pos));
+    case TrainTypeRole:   return m_typeByNumber.value(keyOf(row.pos));
+    case CommuterLineRole: return m_lineByNumber.value(keyOf(row.pos));
     case RingStateRole:   return ringStateFor(row);
-    case DelayMinutesRole: return m_statusByNumber.value(row.pos.trainNumber).delayMinutes;
+    case DelayMinutesRole: return m_statusByNumber.value(keyOf(row.pos)).delayMinutes;
+    case AccuracyRole:    return row.pos.accuracy;
+    case TrackOffsetRole: return row.trackOffsetMeters;
     default:              return {};
     }
 }
@@ -63,27 +65,29 @@ QHash<int, QByteArray> TrainListModel::roleNames() const
         { CommuterLineRole, "commuterLine" },
         { RingStateRole,   "ringState" },
         { DelayMinutesRole, "delayMinutes" },
+        { AccuracyRole,    "accuracy" },
+        { TrackOffsetRole, "trackOffsetMeters" },
     };
 }
 
-double TrainListModel::bearingFor(int trainNumber, const QGeoCoordinate &coordinate)
+double TrainListModel::bearingFor(const TrainKey &key, const QGeoCoordinate &coordinate)
 {
     double bearing = 0.0;
-    const auto prev = m_previous.constFind(trainNumber);
+    const auto prev = m_previous.constFind(key);
     if (prev != m_previous.constEnd() && prev->isValid() && coordinate.isValid()
         && prev->distanceTo(coordinate) > 1.0) {
         bearing = prev->azimuthTo(coordinate);
     }
-    m_previous.insert(trainNumber, coordinate);
+    m_previous.insert(key, coordinate);
     return bearing;
 }
 
 void TrainListModel::updateTrains(const QVector<TrainPosition> &trains)
 {
-    QSet<int> active;
+    QSet<TrainKey> active;
     active.reserve(trains.size());
     for (const TrainPosition &tp : trains)
-        active.insert(tp.trainNumber);
+        active.insert(keyOf(tp));
 
     // Prune trains the snapshot no longer reports, but only once they've aged
     // past the grace window — MQTT may know about a train before REST does, and
@@ -93,7 +97,7 @@ void TrainListModel::updateTrains(const QVector<TrainPosition> &trains)
     bool removed = false;
     for (int i = m_rows.size() - 1; i >= 0; --i) {
         const TrainPosition &pos = m_rows.at(i).pos;
-        if (active.contains(pos.trainNumber))
+        if (active.contains(keyOf(pos)))
             continue;
         if (pos.timestamp.isValid() && pos.timestamp.secsTo(now) < kStaleGraceSecs)
             continue;
@@ -112,7 +116,7 @@ void TrainListModel::updateTrains(const QVector<TrainPosition> &trains)
     // Garbage-collect bearing history down to currently-live trains so it can't
     // grow unbounded over a long session.
     for (auto it = m_previous.begin(); it != m_previous.end();)
-        it = m_indexByNumber.contains(it.key()) ? std::next(it) : m_previous.erase(it);
+        it = m_indexByKey.contains(it.key()) ? std::next(it) : m_previous.erase(it);
 
     if (removed)
         emit countChanged();
@@ -125,47 +129,64 @@ void TrainListModel::upsertTrain(const TrainPosition &train)
 
 void TrainListModel::applyOne(const TrainPosition &train)
 {
-    const auto it = m_indexByNumber.constFind(train.trainNumber);
-    if (it != m_indexByNumber.constEnd()) {
+    const TrainKey key = keyOf(train);
+
+    // Map-match the raw fix to the rail network: snap an on-track fix onto the
+    // rail (so markers ride the rails instead of jittering beside them), and
+    // record how far off the network it was so QML can flag a suspect position.
+    // Off-track fixes are kept raw — the network may simply have a gap there.
+    TrainPosition matched = train;
+    double offset = -1.0;
+    if (m_matcher && matched.coordinate.isValid()) {
+        const TrackMatch m = m_matcher->matchToNetwork(matched.coordinate);
+        offset = m.distanceMeters;
+        if (m.onTrack && m.snapped.isValid())
+            matched.coordinate = m.snapped;
+    }
+
+    const auto it = m_indexByKey.constFind(key);
+    if (it != m_indexByKey.constEnd()) {
         const int rowIndex = it.value();
         Row &row = m_rows[rowIndex];
         // Timestamp guard: the 60 s REST resync lags the MQTT firehose, so a
         // stale snapshot must never overwrite a fresher position — that would
         // record a ~180°-reversed bearing. Drop it.
-        if (train.timestamp.isValid() && row.pos.timestamp.isValid()
-            && train.timestamp < row.pos.timestamp)
+        if (matched.timestamp.isValid() && row.pos.timestamp.isValid()
+            && matched.timestamp < row.pos.timestamp)
             return;
-        row.bearing = bearingFor(train.trainNumber, train.coordinate);
-        row.pos = train;
+        row.bearing = bearingFor(key, matched.coordinate);
+        row.pos = matched;
+        row.trackOffsetMeters = offset;
         const QModelIndex idx = index(rowIndex);
         emit dataChanged(idx, idx,
                          { CoordinateRole, SpeedRole, BearingRole, TimestampRole,
-                           DepartureDateRole, RingStateRole });
+                           DepartureDateRole, RingStateRole, AccuracyRole, TrackOffsetRole });
         return;
     }
 
     const int newRow = m_rows.size();
     beginInsertRows(QModelIndex(), newRow, newRow);
     Row row;
-    row.bearing = bearingFor(train.trainNumber, train.coordinate);
-    row.pos = train;
+    row.bearing = bearingFor(key, matched.coordinate);
+    row.pos = matched;
+    row.trackOffsetMeters = offset;
     m_rows.push_back(row);
-    m_indexByNumber.insert(train.trainNumber, newRow);
+    m_indexByKey.insert(key, newRow);
     endInsertRows();
     emit countChanged();
 }
 
 void TrainListModel::reindex()
 {
-    m_indexByNumber.clear();
-    m_indexByNumber.reserve(m_rows.size());
+    m_indexByKey.clear();
+    m_indexByKey.reserve(m_rows.size());
     for (int i = 0; i < m_rows.size(); ++i)
-        m_indexByNumber.insert(m_rows.at(i).pos.trainNumber, i);
+        m_indexByKey.insert(keyOf(m_rows.at(i).pos), i);
 }
 
-void TrainListModel::setTrainMetadata(const QHash<int, QString> &types,
-                                      const QHash<int, QString> &categories,
-                                      const QHash<int, QString> &commuterLines)
+void TrainListModel::setTrainMetadata(const QHash<TrainKey, QString> &types,
+                                      const QHash<TrainKey, QString> &categories,
+                                      const QHash<TrainKey, QString> &commuterLines)
 {
     m_typeByNumber = types;
     m_categoryByNumber = categories;
@@ -177,7 +198,7 @@ void TrainListModel::setTrainMetadata(const QHash<int, QString> &types,
                          { CategoryRole, TrainTypeRole, CommuterLineRole, RingStateRole });
 }
 
-void TrainListModel::setTrainStatuses(const QHash<int, TrainStatus> &statuses)
+void TrainListModel::setTrainStatuses(const QHash<TrainKey, TrainStatus> &statuses)
 {
     m_statusByNumber = statuses;
     if (!m_rows.isEmpty())
@@ -187,7 +208,7 @@ void TrainListModel::setTrainStatuses(const QHash<int, TrainStatus> &statuses)
 
 QString TrainListModel::ringStateFor(const Row &row) const
 {
-    const TrainStatus st = m_statusByNumber.value(row.pos.trainNumber);
+    const TrainStatus st = m_statusByNumber.value(keyOf(row.pos));
     const bool flaggedRunning = st.known && st.running && !st.cancelled;
 
     // Stale / not running: greyed, no ring.
@@ -205,7 +226,7 @@ QString TrainListModel::ringStateFor(const Row &row) const
     // Delay/readiness rings are only meaningful for scheduled passenger trains.
     // Cargo and special movements (locomotive, shunting, on-track machines) carry
     // no delay indication.
-    const QString category = m_categoryByNumber.value(row.pos.trainNumber);
+    const QString category = m_categoryByNumber.value(keyOf(row.pos));
     if (category != QLatin1String("Long-distance") && category != QLatin1String("Commuter"))
         return QStringLiteral("none");
 

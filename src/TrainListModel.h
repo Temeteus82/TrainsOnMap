@@ -9,6 +9,8 @@
 #include <QVector>
 #include <QtQmlIntegration>
 
+#include "TrackMatcher.h"
+
 /// Live running status for a train, from the bulk /live-trains poll. Combined
 /// with each train's position age + speed to pick a marker status ring.
 struct TrainStatus {
@@ -25,7 +27,33 @@ struct TrainPosition {
     QGeoCoordinate coordinate;   ///< WGS84 (lat, lon)
     double speed = 0.0;          ///< km/h
     QDateTime timestamp;         ///< UTC report time
+    int accuracy = -1;           ///< GPS uncertainty radius in metres; -1 if unreported
 };
+
+/// Digitraffic identifies a train run by the pair (departureDate, trainNumber),
+/// NOT by trainNumber alone — numbers are reused every day, and the same number
+/// can run under two departure dates at once (e.g. an overnight service still in
+/// motion past midnight alongside today's instance). Every per-train map is keyed
+/// on this composite so the two runs never collide.
+struct TrainKey {
+    QString departureDate;
+    int trainNumber = 0;
+
+    bool operator==(const TrainKey &other) const noexcept
+    {
+        return trainNumber == other.trainNumber && departureDate == other.departureDate;
+    }
+};
+
+inline size_t qHash(const TrainKey &key, size_t seed = 0) noexcept
+{
+    return qHashMulti(seed, key.departureDate, key.trainNumber);
+}
+
+inline TrainKey keyOf(const TrainPosition &pos)
+{
+    return { pos.departureDate, pos.trainNumber };
+}
 
 /// Parse one train-locations object (same JSON shape over REST and MQTT).
 inline TrainPosition parseTrainLocation(const QJsonObject &o)
@@ -42,6 +70,8 @@ inline TrainPosition parseTrainLocation(const QJsonObject &o)
     tp.speed = o.value(QStringLiteral("speed")).toDouble();
     tp.timestamp = QDateTime::fromString(o.value(QStringLiteral("timestamp")).toString(),
                                          Qt::ISODateWithMs);
+    // accuracy is the GPS uncertainty radius (m); absent on some fixes → -1.
+    tp.accuracy = o.value(QStringLiteral("accuracy")).toInt(-1);
     return tp;
 }
 
@@ -70,6 +100,8 @@ public:
         CommuterLineRole, ///< "R" / "Z" / "U" / … commuter line letter, "" if none
         RingStateRole,    ///< "green"/"amber"/"red"/"stale"/"none" — marker status ring
         DelayMinutesRole, ///< live delay at the last passed stop (pairs a number with the ring colour)
+        AccuracyRole,     ///< GPS uncertainty radius in metres; -1 if unreported
+        TrackOffsetRole,  ///< metres from the nearest rail (map-matched); -1 if not matched yet
     };
 
     explicit TrainListModel(QObject *parent = nullptr);
@@ -90,17 +122,21 @@ public:
     /// row is touched, so existing markers don't flicker.
     void upsertTrain(const TrainPosition &train);
 
-    /// Supply trainNumber -> type, -> category and -> commuter-line maps (e.g.
+    /// Supply (date,number) -> type, -> category and -> commuter-line maps (e.g.
     /// from /live-trains). Markers are coloured by type/category and labelled by
     /// line/type; existing rows repaint on change.
-    void setTrainMetadata(const QHash<int, QString> &types,
-                          const QHash<int, QString> &categories,
-                          const QHash<int, QString> &commuterLines);
+    void setTrainMetadata(const QHash<TrainKey, QString> &types,
+                          const QHash<TrainKey, QString> &categories,
+                          const QHash<TrainKey, QString> &commuterLines);
 
-    /// Supply trainNumber -> live running status (delay / cancelled / running),
+    /// Supply (date,number) -> live running status (delay / cancelled / running),
     /// e.g. from /live-trains. Drives the marker status ring; existing rows
     /// repaint on change.
-    void setTrainStatuses(const QHash<int, TrainStatus> &statuses);
+    void setTrainStatuses(const QHash<TrainKey, TrainStatus> &statuses);
+
+    /// Set the rail-network map-matcher used to snap/flag incoming GPS fixes.
+    /// Optional: with none set, positions are stored raw. Not owned.
+    void setMatcher(const TrackMatcher *matcher) { m_matcher = matcher; }
 
 signals:
     void countChanged();
@@ -109,6 +145,7 @@ private:
     struct Row {
         TrainPosition pos;
         double bearing = 0.0;
+        double trackOffsetMeters = -1.0;  ///< raw fix's distance to nearest rail; -1 if unmatched
     };
 
     /// The single upsert funnel for every position update, REST or MQTT. Drops
@@ -120,15 +157,17 @@ private:
     void reindex();
 
     /// Bearing from the train's previous coordinate; also records the new one.
-    double bearingFor(int trainNumber, const QGeoCoordinate &coordinate);
+    double bearingFor(const TrainKey &key, const QGeoCoordinate &coordinate);
 
     QVector<Row> m_rows;
-    QHash<int, int> m_indexByNumber;        ///< trainNumber -> row index
-    QHash<int, QGeoCoordinate> m_previous;  ///< trainNumber -> last coord (for bearing)
-    QHash<int, QString> m_categoryByNumber; ///< trainNumber -> category
-    QHash<int, QString> m_typeByNumber;     ///< trainNumber -> train type
-    QHash<int, QString> m_lineByNumber;     ///< trainNumber -> commuter line letter
-    QHash<int, TrainStatus> m_statusByNumber; ///< trainNumber -> live running status
+    QHash<TrainKey, int> m_indexByKey;        ///< (date,number) -> row index
+    QHash<TrainKey, QGeoCoordinate> m_previous;  ///< (date,number) -> last coord (for bearing)
+    QHash<TrainKey, QString> m_categoryByNumber; ///< (date,number) -> category
+    QHash<TrainKey, QString> m_typeByNumber;     ///< (date,number) -> train type
+    QHash<TrainKey, QString> m_lineByNumber;     ///< (date,number) -> commuter line letter
+    QHash<TrainKey, TrainStatus> m_statusByNumber; ///< (date,number) -> live running status
+
+    const TrackMatcher *m_matcher = nullptr;   ///< snaps/flags GPS fixes; not owned
 
     /// Resolve the status-ring state for a row from its position + cached status.
     QString ringStateFor(const Row &row) const;
