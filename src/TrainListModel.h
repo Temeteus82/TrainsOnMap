@@ -69,6 +69,7 @@ public:
         TrainTypeRole,    ///< "IC" / "S" / "PYO" / "HL" / "T" / … (drives marker colour)
         CommuterLineRole, ///< "R" / "Z" / "U" / … commuter line letter, "" if none
         RingStateRole,    ///< "green"/"amber"/"red"/"stale"/"none" — marker status ring
+        DelayMinutesRole, ///< live delay at the last passed stop (pairs a number with the ring colour)
     };
 
     explicit TrainListModel(QObject *parent = nullptr);

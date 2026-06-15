@@ -57,6 +57,9 @@ MapQuickItem {
     // amber = 5–14 min late, red = 15+ min late, stale = greyed/dimmed,
     // none = running on time / under 5 min late / cargo & special trains.
     readonly property bool stale: model.ringState === "stale"
+    // Late tiers also carry a textual "+N min" badge so the state is legible
+    // without relying on the ring colour alone (colour-blind safety).
+    readonly property bool late: model.ringState === "amber" || model.ringState === "red"
     readonly property color ringColor: {
         switch (model.ringState) {
         case "green": return "#18A957";
@@ -146,6 +149,17 @@ MapQuickItem {
                     color: "#3a3f47"
                     style: Text.Outline
                     styleColor: Qt.rgba(1, 1, 1, 0.85)
+                }
+
+                // Lateness as text (paired with the ring colour, not colour alone).
+                Text {
+                    visible: marker.late
+                    text: qsTr("+%1 min").arg(marker.model.delayMinutes)
+                    font.pixelSize: 9
+                    font.bold: true
+                    color: marker.ringColor
+                    style: Text.Outline
+                    styleColor: Qt.rgba(1, 1, 1, 0.9)
                 }
             }
         }

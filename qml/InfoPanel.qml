@@ -22,6 +22,7 @@ Rectangle {
     readonly property color textStrong: "#1a1d21"
     readonly property color textMuted: "#6b7280"
     readonly property color accent: "#1565c0"
+    readonly property color focusRing: "#1565c0"
     readonly property color liveOn: "#18a957"
     readonly property color liveOff: "#b0b6be"
 
@@ -144,6 +145,7 @@ Rectangle {
             Button {
                 id: refreshBtn
                 Layout.fillWidth: true
+                focusPolicy: Qt.StrongFocus
                 text: qsTr("Refresh")
                 onClicked: root.refreshRequested()
                 contentItem: Label {
@@ -159,12 +161,24 @@ Rectangle {
                     implicitHeight: 32
                     color: refreshBtn.down ? Qt.darker(root.accent, 1.15)
                                            : (refreshBtn.hovered ? Qt.lighter(root.accent, 1.08) : root.accent)
+
+                    // Keyboard focus ring (sits in the card margin around the button).
+                    Rectangle {
+                        anchors.fill: parent
+                        anchors.margins: -4
+                        radius: 12
+                        color: "transparent"
+                        border.color: root.focusRing
+                        border.width: 2
+                        visible: refreshBtn.visualFocus
+                    }
                 }
             }
 
             Button {
                 id: tracksBtn
                 Layout.fillWidth: true
+                focusPolicy: Qt.StrongFocus
                 enabled: !root.tracksLoading
                 text: root.tracksLoading ? qsTr("Loading…") : qsTr("Load tracks")
                 onClicked: root.loadTracksRequested()
@@ -180,8 +194,8 @@ Rectangle {
                     radius: 8
                     implicitHeight: 32
                     color: tracksBtn.down ? "#e4e7ec" : (tracksBtn.hovered ? "#f1f3f6" : "transparent")
-                    border.color: root.hairline
-                    border.width: 1
+                    border.color: tracksBtn.visualFocus ? root.focusRing : root.hairline
+                    border.width: tracksBtn.visualFocus ? 2 : 1
                 }
             }
         }
@@ -191,7 +205,7 @@ Rectangle {
         Label {
             Layout.fillWidth: true
             text: qsTr("Data © Fintraffic / Digitraffic (CC BY 4.0)\nMap © OpenStreetMap contributors, © CARTO")
-            color: "#9aa0a6"
+            color: root.textMuted   // ≥ 4.5:1 on the card
             font.pixelSize: 10
             wrapMode: Text.WordWrap
         }

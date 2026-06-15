@@ -54,7 +54,7 @@ Rectangle {
 
         Label {
             text: root.details.status
-            color: "#888888"
+            color: "#5f6671"   // ≥ 4.5:1 on the panel
             font.pixelSize: 11
             visible: text.length > 0
         }
@@ -101,7 +101,7 @@ Rectangle {
                         }
                         Label {
                             text: model.track.length > 0 ? qsTr("Track %1").arg(model.track) : ""
-                            color: "#999999"
+                            color: "#5f6671"   // ≥ 4.5:1 on the panel
                             font.pixelSize: 10
                             visible: text.length > 0
                         }
@@ -137,7 +137,7 @@ Rectangle {
                         font.pixelSize: 12
                         font.bold: true
                         color: model.delayMinutes > 0 ? "#c62828"
-                                                      : (model.delayMinutes < 0 ? "#2e7d32" : "#999999")
+                                                      : (model.delayMinutes < 0 ? "#2e7d32" : "#5f6671")
                         text: model.delayMinutes === 0
                               ? "±0"
                               : (model.delayMinutes > 0 ? "+" : "") + model.delayMinutes
