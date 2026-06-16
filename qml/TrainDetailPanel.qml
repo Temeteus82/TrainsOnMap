@@ -105,7 +105,7 @@ Rectangle {
                         text: "✓"
                         font.pixelSize: 11
                         font.bold: true
-                        color: Theme.onAccent
+                        color: Theme.accentText
                         visible: allToggle.checked
                     }
                 }
