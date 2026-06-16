@@ -34,11 +34,13 @@ MapQuickItem {
         return Qt.hsla(c.hslHue, Math.min(c.hslSaturation, 0.85),
                        Math.max(c.hslLightness, 0.62), 1)
     }
-    // Outline that defines glyph edges against either basemap: a light halo on
-    // light tiles, a dark halo on dark tiles (where dark_all also has light roads
-    // and labels the glyph can otherwise collide with).
-    readonly property color labelHalo: Theme.isDark ? Qt.rgba(0, 0, 0, 0.85)
-                                                     : Qt.rgba(1, 1, 1, 0.85)
+    // O1: a semi-opaque rounded "pill" sits behind the label so it stays legible
+    // on any basemap tile — more robust than the old thin 1 px text outline, which
+    // could wash out where glyph and tile were close in tone.
+    readonly property color pillBg:     Theme.isDark ? Qt.rgba(0.08, 0.09, 0.11, 0.82)
+                                                     : Qt.rgba(1, 1, 1, 0.82)
+    readonly property color pillBorder: Theme.isDark ? Qt.rgba(1, 1, 1, 0.12)
+                                                     : Qt.rgba(0, 0, 0, 0.12)
 
     // trainType -> juliadata fill colour; unmatched types fall to category/speed.
     function colorFor(type, category, speed) {
@@ -127,6 +129,30 @@ MapQuickItem {
                     visible: marker.ringColor.a > 0
                 }
 
+                // O2: selection is a haloed accent ring (accent outer edge + a
+                // light/dark inner halo) — reads on any dot colour, including the
+                // blue/navy types the old single accent border blended into.
+                Rectangle {
+                    anchors.centerIn: parent
+                    width: 21
+                    height: 21
+                    radius: 10.5
+                    color: "transparent"
+                    border.width: 5
+                    border.color: Theme.isDark ? "#0c0e12" : "white"
+                    visible: marker.selected
+                }
+                Rectangle {
+                    anchors.centerIn: parent
+                    width: 21
+                    height: 21
+                    radius: 10.5
+                    color: "transparent"
+                    border.width: 2.5
+                    border.color: Theme.accent
+                    visible: marker.selected
+                }
+
                 Rectangle {
                     id: dot
                     anchors.centerIn: parent
@@ -135,9 +161,8 @@ MapQuickItem {
                     radius: 7.5
                     color: marker.dotColor
                     // Light stroke in dark mode so dark dots separate from dark tiles.
-                    border.color: marker.selected ? Theme.accent
-                                                   : (Theme.isDark ? "#cdd2da" : "#10141a")
-                    border.width: marker.selected ? 3 : 1
+                    border.color: Theme.isDark ? "#cdd2da" : "#10141a"
+                    border.width: 1
                     rotation: marker.model.bearing      // dot/notch rotate to heading
 
                     // Small notch indicating heading.
@@ -152,40 +177,45 @@ MapQuickItem {
                 }
             }
 
-            // Outlined, type-coloured label ("IC 967" / line letter) plus a
-            // km/h sub-line while moving — readable on the light base.
-            Column {
+            // Type-coloured label ("IC 967" / line letter) plus a km/h sub-line
+            // while moving, on a semi-opaque pill (O1) so it reads on any tile.
+            Rectangle {
                 anchors.verticalCenter: dotGroup.verticalCenter
-                spacing: 0
                 visible: marker.labelsVisible
+                radius: 5
+                color: marker.pillBg
+                border.color: marker.pillBorder
+                border.width: 1
+                implicitWidth: labelCol.implicitWidth + 12
+                implicitHeight: labelCol.implicitHeight + 6
 
-                Text {
-                    text: marker.badgeLabel
-                    font.pixelSize: 11
-                    font.bold: true
-                    color: marker.legibleInk(marker.trainColor)
-                    style: Text.Outline
-                    styleColor: marker.labelHalo
-                }
+                Column {
+                    id: labelCol
+                    anchors.centerIn: parent
+                    spacing: 0
 
-                Text {
-                    visible: marker.model.speed > 0
-                    text: Math.round(marker.model.speed) + " km/h"
-                    font.pixelSize: 8
-                    color: Theme.isDark ? "#c9ced6" : "#3a3f47"
-                    style: Text.Outline
-                    styleColor: marker.labelHalo
-                }
+                    Text {
+                        text: marker.badgeLabel
+                        font.pixelSize: 12
+                        font.bold: true
+                        color: marker.legibleInk(marker.trainColor)
+                    }
 
-                // Lateness as text (paired with the ring colour, not colour alone).
-                Text {
-                    visible: marker.late
-                    text: qsTr("+%1 min").arg(marker.model.delayMinutes)
-                    font.pixelSize: 9
-                    font.bold: true
-                    color: marker.ringColor
-                    style: Text.Outline
-                    styleColor: marker.labelHalo
+                    Text {
+                        visible: marker.model.speed > 0
+                        text: Math.round(marker.model.speed) + " km/h"
+                        font.pixelSize: 11   // W1: was 8 px (below the legibility floor)
+                        color: Theme.isDark ? "#c9ced6" : "#3a3f47"
+                    }
+
+                    // Lateness as text (paired with the ring colour, not colour alone).
+                    Text {
+                        visible: marker.late
+                        text: qsTr("+%1 min").arg(marker.model.delayMinutes)
+                        font.pixelSize: 11
+                        font.bold: true
+                        color: marker.ringColor
+                    }
                 }
             }
         }
