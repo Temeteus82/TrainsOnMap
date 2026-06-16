@@ -34,6 +34,9 @@ compile_commands.json
 /profiler/.last-*
 parse.err
 
+# Port-reference docs (not part of the build)
+/trainspotter-qt-docs/
+
 # OS
 Thumbs.db
 .DS_Store
