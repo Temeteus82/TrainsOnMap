@@ -8,6 +8,57 @@ Legend: ✨ feature · 🐛 bug fix · ♻️ change/refactor · ✅ verificatio
 
 ---
 
+## Dark mode, map panning & UI-audit polish
+
+A map-interaction fix, full light/dark/auto theming, three dark-mode/launch bug
+fixes, and the remaining `qt-ui-design` audit items.
+
+### 🐛 Bug fixes
+- [x] **Horizontal panning was throttled** — `Map.center` was two-way bound to the
+      loader's `savedCenter*` (the binding read center *from* them while
+      `onCenterChanged` wrote them *back*), so every `map.pan()` was re-asserted by
+      the binding and horizontal drags barely moved. Center/zoom are now restored
+      imperatively once in `Component.onCompleted`; the handlers only write back for
+      theme-reload persistence (`Main.qml`).
+- [x] **No console window on launch** — the target is a GUI-subsystem app in
+      Release (`WIN32_EXECUTABLE $<NOT:$<CONFIG:Debug>>`); Debug keeps the console
+      attached for `qDebug`/logs (`CMakeLists.txt`). Verified PE subsystem = GUI.
+- [x] **Timetable unreadable in dark mode** — the native-styled `ItemDelegate`
+      painted a white system-palette background, hiding the theme-coloured
+      (near-white) text. Its background is now driven by `Theme`
+      (`TrainDetailPanel.qml`).
+- [x] **Delay badges hidden under the scrollbar** — the timetable row reserves the
+      vertical `ScrollBar` width on the right, and a conflicting `verticalCenter`
+      anchor was removed (`TrainDetailPanel.qml`).
+
+### ✨ / ♻️ UI audit — Criticals (C1–C3) + Warnings/Opportunities (W1–W4, O1–O3)
+- [x] **C1** Theme-aware markers: dark hues lifted for legibility on the dark
+      basemap, light dot stroke in dark mode, theme-aware label/km-h colours.
+- [x] **C2** `Theme.accentText` is dark ink on the light dark-mode accent (white
+      on it was ~2.8:1 → now ~6.4:1).
+- [x] **C3** marker text labels gate on `zoomLevel >= 8.0` (dots only at country
+      scale) — fixes the overlap clutter.
+- [x] **W1** km/h marker sub-label 8 px → 11 px.
+- [x] **W2** new `TypeScale` singleton (caption/body/subhead/title) replaces ~6
+      ad-hoc font sizes across the panels (sizes are px — OS font-scale TODO below).
+- [x] **W3** reduced-motion opt-out (`Theme.reducedMotion`, persisted via
+      `QtCore.Settings`); the LIVE pulse gates on it.
+- [x] **W4** Appearance segments, the detail-panel close button, and the show-all
+      checkbox are keyboard-focusable (Tab + Space/Enter) with focus rings and
+      `Accessible` roles.
+- [x] **O1** marker labels sit on a semi-opaque themed pill (was a 1 px outline).
+- [x] **O2** selection is a haloed accent double-ring that reads on blue/navy dots.
+- [x] **O3** new `AppIcon` (Canvas line-art, theme-recolourable) replaces the
+      emoji glyphs (train / close / check). New singletons registered in CMake:
+      `TypeScale.qml`, `AppIcon.qml`.
+
+### ✅ Verification
+- [x] Clean `windows-llvm` Release build; no QML errors on startup. Screenshot-
+      verified: horizontal + vertical pan, dark-mode markers and timetable, delay
+      badges clear of the scrollbar, and a console-free GUI launch.
+
+---
+
 ## Accessibility — UI audit critical fixes
 
 From the `qt-ui-design` audit. The three **Critical** (WCAG / core-law) findings:
@@ -195,32 +246,28 @@ From the `qt-ui-design` audit. The three **Critical** (WCAG / core-law) findings
       it's unnecessary for now. Revisit only if a type source independent of
       "currently running" is needed.
 
-### UI design audit (qt-ui-design) — non-critical findings
-The three **Critical** accessibility findings (focus rings, colour-blind-safe
-lateness, sub-4.5:1 text contrast) are fixed (see "Accessibility — UI audit
-critical fixes" above). Remaining items:
+### UI design audit (qt-ui-design)
+All audit findings — Criticals **and** the Warnings/Opportunities below — are now
+implemented (see "Dark mode, map panning & UI-audit polish" above).
 
-**🟡 Warnings**
-- [ ] Type sizes are hardcoded `font.pixelSize` (8/10/11/12/13/15/17) — they
-      don't respect the OS "Large font" scale and a single surface uses 5+ sizes.
-      Introduce a `TypeScale` singleton (modular scale) and prefer `pointSize`.
-- [ ] Semantic colours are duplicated literally across all four QML files and
-      disagree (late-red `#E03131` ring vs `#c62828` panel; green `#18A957` vs
-      `#2e7d32`). Introduce a `Theme` singleton of role-based tokens.
-- [ ] Sidebar has redundant/dead affordances: "Load tracks" now re-pushes the
-      same static network (no-op), and the track count is shown twice (count
-      label + `trackService.status`).
-- [ ] Marker clutter at the default zoom (~130 dot+label+km/h markers overlap in
-      the Helsinki triangle) — hide labels below a zoom or cluster nearby trains.
+**✅ Done**
+- [x] `TypeScale` singleton (modular scale) replaced the hardcoded font sizes.
+- [x] `Theme` singleton of role-based colour tokens — drives light/dark/auto and
+      reconciles the previously-divergent semantic colours.
+- [x] Marker label declutter — text hidden below zoom 8 (dots only).
+- [x] Reduced-motion opt-out for the LIVE pulse (`Theme.reducedMotion`).
+- [x] Dark theme for overlays — basemap + all overlay colours follow `Theme`.
+
+**📋 Still open**
+- [ ] Type sizes are px, not `pointSize` — they don't yet honour the OS
+      "Large font" scale (only the count/number of distinct sizes was fixed).
+- [ ] Sidebar redundant affordances: "Load tracks" re-pushes the static network
+      (no-op), and the track count is shown twice (count label + `status`).
 - [ ] Map markers are click-only (`MouseArea`) — not keyboard-reachable; no
-      keyboard pan. Map content isn't input-agnostic.
-- [ ] Action buttons are 32 px tall (below the 44 px desktop / 48 px touch
-      target guidance).
-
-**🟢 Opportunities**
-- [ ] `TrainDetailPanel` is described as "slide-in" but only toggles `visible` —
-      add a 200–300 ms x/opacity enter/exit transition.
-- [ ] No reduced-motion path for the pulsing LIVE dot — gate it on a project
-      accessibility setting.
-- [ ] Overlays are hardcoded light even though the basemap can switch to
-      `dark_all` — a token layer (above) makes a dark theme cheap.
+      keyboard pan.
+- [ ] Action buttons are 32 px tall (below the 44 px desktop / 48 px touch guide).
+- [ ] `TrainDetailPanel` only toggles `visible` — add a 200–300 ms enter/exit
+      transition.
+- [ ] Timetable `ScrollBar` styling needs refinement to match the dark panel.
+- [ ] Dark basemap tile cache: stale `light_all` tiles linger after switching
+      theme (the Qt `osm` plugin caches tiles by coordinates, not by host).
