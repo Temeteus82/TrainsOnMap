@@ -91,8 +91,12 @@ ApplicationWindow {
                 PluginParameter { name: "osm.useragent"; value: "TrainsOnMap/0.1 (Qt6 scaffolding)" }
             }
 
-            center: QtPositioning.coordinate(mapLoader.savedCenterLat, mapLoader.savedCenterLon)
-            zoomLevel: mapLoader.savedZoom
+            // The starting view is restored from the loader's saved* values in
+            // Component.onCompleted. We deliberately do NOT bind center/zoomLevel
+            // to those values: a live binding re-asserts the view on every
+            // savedCenter* write below, which fights map.pan() on each drag event
+            // and throttled horizontal panning to a crawl. Initialise imperatively
+            // once, then only write the saved* values back (see handlers below).
             minimumZoomLevel: 4.0
             maximumZoomLevel: 18.0
 
@@ -119,7 +123,14 @@ ApplicationWindow {
                 }
             }
             onSupportedMapTypesChanged: selectBasemap()
-            Component.onCompleted: selectBasemap()
+            Component.onCompleted: {
+                // Imperative (non-binding) restore of the saved view, so panning
+                // isn't fought by a center/zoomLevel binding.
+                center = QtPositioning.coordinate(mapLoader.savedCenterLat,
+                                                  mapLoader.savedCenterLon)
+                zoomLevel = mapLoader.savedZoom
+                selectBasemap()
+            }
 
             // Rail geometry is held in memory; materialise only the segments in (a
             // padded) viewport so a pan doesn't reproject the whole ~10k-segment
