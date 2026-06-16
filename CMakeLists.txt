@@ -15,8 +15,10 @@ find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Qml Quick Network Positioning 
 
 qt_standard_project_setup(REQUIRES 6.5)
 
-# QML files live in a subdirectory; opt in to the modern qmldir handling.
-if(POLICY QTP0004)
+# QML files live in a subdirectory; opt in to the modern qmldir handling so a
+# qmldir is generated for each QML dir (QTP0004, Qt 6.8+). Guard on the Qt
+# policy var — if(POLICY ...) only matches CMake policies, never Qt ones.
+if(QT_KNOWN_POLICY_QTP0004)
     qt_policy(SET QTP0004 NEW)
 endif()
 
@@ -34,6 +36,9 @@ qt_add_executable(TrainsOnMap
     src/MqttCodec.h
 )
 
+# The theme palette is a QML singleton (one shared instance app-wide).
+set_source_files_properties(qml/Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
+
 qt_add_qml_module(TrainsOnMap
     URI TrainsOnMap
     VERSION 1.0
@@ -42,6 +47,7 @@ qt_add_qml_module(TrainsOnMap
         qml/TrainMarker.qml
         qml/InfoPanel.qml
         qml/TrainDetailPanel.qml
+        qml/Theme.qml
 )
 
 # Pre-baked national rail network (scripts/bake_rails.py), embedded so the app

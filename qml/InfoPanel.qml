@@ -2,6 +2,8 @@ import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
 
+import TrainsOnMap
+
 /// Floating status/control card overlaid on the map.
 Rectangle {
     id: root
@@ -16,19 +18,9 @@ Rectangle {
     signal refreshRequested()
     signal loadTracksRequested()
 
-    // Palette
-    readonly property color cardBg: Qt.rgba(1, 1, 1, 0.96)
-    readonly property color hairline: "#e6e8ec"
-    readonly property color textStrong: "#1a1d21"
-    readonly property color textMuted: "#6b7280"
-    readonly property color accent: "#1565c0"
-    readonly property color focusRing: "#1565c0"
-    readonly property color liveOn: "#18a957"
-    readonly property color liveOff: "#b0b6be"
-
     radius: 12
-    color: cardBg
-    border.color: hairline
+    color: Theme.cardBg
+    border.color: Theme.hairline
     border.width: 1
     implicitWidth: 268
     implicitHeight: layout.implicitHeight + 32
@@ -41,7 +33,7 @@ Rectangle {
         anchors.leftMargin: 1
         anchors.rightMargin: -1
         radius: root.radius
-        color: Qt.rgba(0, 0, 0, 0.06)
+        color: Theme.shadow
     }
 
     ColumnLayout {
@@ -59,7 +51,7 @@ Rectangle {
                 Layout.preferredWidth: 30
                 Layout.preferredHeight: 30
                 radius: 8
-                color: "#eaf1fb"
+                color: Theme.iconBadgeBg
                 Label {
                     anchors.centerIn: parent
                     text: "🚆"
@@ -74,17 +66,17 @@ Rectangle {
                     text: qsTr("Trains on Map")
                     font.bold: true
                     font.pixelSize: 15
-                    color: root.textStrong
+                    color: Theme.textStrong
                 }
                 Label {
                     text: qsTr("Finland · Digitraffic")
                     font.pixelSize: 11
-                    color: root.textMuted
+                    color: Theme.textMuted
                 }
             }
         }
 
-        Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: root.hairline }
+        Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.hairline }
 
         // ---- Live status ---------------------------------------------------
         RowLayout {
@@ -95,7 +87,7 @@ Rectangle {
                 Layout.preferredWidth: 10
                 Layout.preferredHeight: 10
                 radius: 5
-                color: root.streamConnected ? root.liveOn : root.liveOff
+                color: root.streamConnected ? Theme.liveOn : Theme.liveOff
 
                 SequentialAnimation on opacity {
                     running: root.streamConnected
@@ -110,14 +102,14 @@ Rectangle {
                 text: qsTr("%1 live trains").arg(root.trainCount)
                 font.pixelSize: 13
                 font.bold: true
-                color: root.textStrong
+                color: Theme.textStrong
             }
 
             Label {
                 text: root.streamConnected ? qsTr("LIVE") : root.streamStatus
                 font.pixelSize: 10
                 font.bold: true
-                color: root.streamConnected ? root.liveOn : root.textMuted
+                color: root.streamConnected ? Theme.liveOn : Theme.textMuted
             }
         }
 
@@ -125,13 +117,13 @@ Rectangle {
             Layout.fillWidth: true
             text: qsTr("%1 track segments").arg(root.trackCount)
             font.pixelSize: 12
-            color: root.textMuted
+            color: Theme.textMuted
         }
 
         Label {
             Layout.fillWidth: true
             text: root.statusText
-            color: root.textMuted
+            color: Theme.textMuted
             font.pixelSize: 12
             wrapMode: Text.WordWrap
             visible: text.length > 0
@@ -152,15 +144,15 @@ Rectangle {
                     text: refreshBtn.text
                     font.pixelSize: 12
                     font.bold: true
-                    color: "white"
+                    color: Theme.onAccent
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
                 }
                 background: Rectangle {
                     radius: 8
                     implicitHeight: 32
-                    color: refreshBtn.down ? Qt.darker(root.accent, 1.15)
-                                           : (refreshBtn.hovered ? Qt.lighter(root.accent, 1.08) : root.accent)
+                    color: refreshBtn.down ? Qt.darker(Theme.accent, 1.15)
+                                           : (refreshBtn.hovered ? Qt.lighter(Theme.accent, 1.08) : Theme.accent)
 
                     // Keyboard focus ring (sits in the card margin around the button).
                     Rectangle {
@@ -168,7 +160,7 @@ Rectangle {
                         anchors.margins: -4
                         radius: 12
                         color: "transparent"
-                        border.color: root.focusRing
+                        border.color: Theme.focusRing
                         border.width: 2
                         visible: refreshBtn.visualFocus
                     }
@@ -186,26 +178,79 @@ Rectangle {
                     text: tracksBtn.text
                     font.pixelSize: 12
                     font.bold: true
-                    color: tracksBtn.enabled ? root.accent : root.textMuted
+                    color: tracksBtn.enabled ? Theme.accent : Theme.textMuted
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
                 }
                 background: Rectangle {
                     radius: 8
                     implicitHeight: 32
-                    color: tracksBtn.down ? "#e4e7ec" : (tracksBtn.hovered ? "#f1f3f6" : "transparent")
-                    border.color: tracksBtn.visualFocus ? root.focusRing : root.hairline
+                    color: tracksBtn.down ? Theme.subtlePress : (tracksBtn.hovered ? Theme.subtleHover : "transparent")
+                    border.color: tracksBtn.visualFocus ? Theme.focusRing : Theme.hairline
                     border.width: tracksBtn.visualFocus ? 2 : 1
                 }
             }
         }
 
-        Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: root.hairline }
+        Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.hairline }
+
+        // ---- Theme toggle (Auto follows the desktop colour scheme) ---------
+        Label {
+            text: qsTr("Appearance")
+            font.pixelSize: 10
+            font.bold: true
+            color: Theme.textMuted
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 30
+            radius: 8
+            color: Theme.subtleHover
+            border.color: Theme.hairline
+            border.width: 1
+
+            Row {
+                anchors.fill: parent
+                anchors.margins: 3
+
+                Repeater {
+                    model: 3
+
+                    delegate: Item {
+                        id: seg
+                        required property int index
+                        readonly property string mode: ["auto", "light", "dark"][index]
+                        readonly property string label: [qsTr("Auto"), qsTr("Light"), qsTr("Dark")][index]
+                        readonly property bool active: Theme.mode === mode
+                        width: parent.width / 3
+                        height: parent.height
+
+                        Rectangle {
+                            anchors.fill: parent
+                            anchors.margins: 1
+                            radius: 6
+                            color: seg.active ? Theme.accent : "transparent"
+                        }
+                        Label {
+                            anchors.centerIn: parent
+                            text: seg.label
+                            font.pixelSize: 11
+                            font.bold: seg.active
+                            color: seg.active ? Theme.onAccent : Theme.textMuted
+                        }
+                        TapHandler { onTapped: Theme.mode = seg.mode }
+                    }
+                }
+            }
+        }
+
+        Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.hairline }
 
         Label {
             Layout.fillWidth: true
             text: qsTr("Data © Fintraffic / Digitraffic (CC BY 4.0)\nMap © OpenStreetMap contributors, © CARTO")
-            color: root.textMuted   // ≥ 4.5:1 on the card
+            color: Theme.textMuted   // ≥ 4.5:1 on the card
             font.pixelSize: 10
             wrapMode: Text.WordWrap
         }

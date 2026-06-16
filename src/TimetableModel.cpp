@@ -28,6 +28,7 @@ QVariant TimetableModel::data(const QModelIndex &index, int role) const
     case DelayMinutesRole:       return s.delayMinutes;
     case TrackRole:              return s.track;
     case CancelledRole:          return s.cancelled;
+    case StoppingRole:           return s.stopping;
     default:                     return {};
     }
 }
@@ -44,6 +45,7 @@ QHash<int, QByteArray> TimetableModel::roleNames() const
         { DelayMinutesRole,       "delayMinutes" },
         { TrackRole,              "track" },
         { CancelledRole,          "cancelled" },
+        { StoppingRole,           "stopping" },
     };
 }
 

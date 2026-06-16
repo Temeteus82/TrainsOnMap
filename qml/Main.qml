@@ -13,6 +13,12 @@ ApplicationWindow {
     width: 1100
     height: 820
     title: qsTr("Trains on Map — Finland (Digitraffic)")
+    color: Theme.windowBg
+
+    // Ask the (Loader-hosted) map to reload tracks for the current viewport.
+    // Routed as a signal so the call lives inside the Map's typed scope rather
+    // than reaching through the loosely-typed Loader.item.
+    signal requestTrackReload()
 
     // ---- Backend services (C++) -------------------------------------------
     // REST bootstraps the full set of trains and resyncs/prunes every 60 s;
@@ -40,153 +46,184 @@ ApplicationWindow {
     }
 
     // ---- Map ---------------------------------------------------------------
-    // Light, OSM-based cartography (CARTO Positron) — like juliadata.fi's light
-    // map, so the type-coloured trains and rails read clearly. Swap for
-    // "dark_all" / "rastertiles/voyager" to retheme. CARTO renders OSM data.
-    readonly property string basemapStyle: "light_all"
+    // The CARTO basemap (light_all / dark_all) is chosen by Theme. The osm
+    // plugin only reads its tile host at construction, so a theme flip rebuilds
+    // the Plugin + Map via this Loader; the view (centre/zoom) is preserved in
+    // the loader's saved* properties across the reload.
+    Loader {
+        id: mapLoader
+        anchors.fill: parent
+        sourceComponent: mapComponent
 
-    Plugin {
-        id: mapPlugin
-        name: "osm"
-        // Use only our custom tile host, not the bundled online provider list.
-        PluginParameter { name: "osm.mapping.providersrepository.disabled"; value: true }
-        PluginParameter {
-            name: "osm.mapping.custom.host"   // Qt appends "%z/%x/%y.png"
-            value: "https://a.basemaps.cartocdn.com/" + win.basemapStyle + "/"
+        property real savedCenterLat: 61.00   // southern Finland on first launch
+        property real savedCenterLon: 24.50
+        property real savedZoom: 7.0
+
+        // Rebuild the map when the resolved light/dark state changes so the
+        // tiles re-fetch from the matching CARTO host.
+        Connections {
+            target: Theme
+            function onIsDarkChanged() {
+                mapLoader.active = false
+                mapLoader.active = true
+            }
         }
-        PluginParameter {
-            name: "osm.mapping.custom.mapcopyright"
-            value: "© OpenStreetMap contributors, © CARTO"
-        }
-        PluginParameter { name: "osm.mapping.highdpi_tiles"; value: true }
-        PluginParameter { name: "osm.useragent"; value: "TrainsOnMap/0.1 (Qt6 scaffolding)" }
     }
 
-    Map {
-        id: map
-        anchors.fill: parent
-        plugin: mapPlugin
-        // Framed on southern Finland (the dense Helsinki–Turku–Tampere rail
-        // triangle) on startup; zoom out to 4.0 to see the whole country.
-        center: QtPositioning.coordinate(61.00, 24.50)
-        zoomLevel: 7.0
-        minimumZoomLevel: 4.0
-        maximumZoomLevel: 18.0
+    Component {
+        id: mapComponent
 
-        // Anchor point captured when a pinch starts, so the gesture zooms
-        // around the fingers rather than the map centre.
-        property geoCoordinate startCentroid
-        copyrightsVisible: true
-        color: "#e9eaec"          // neutral light backdrop shown while tiles load
+        Map {
+            id: map
+            plugin: Plugin {
+                name: "osm"
+                // Use only our custom tile host, not the bundled provider list.
+                PluginParameter { name: "osm.mapping.providersrepository.disabled"; value: true }
+                PluginParameter {
+                    name: "osm.mapping.custom.host"   // Qt appends "%z/%x/%y.png"
+                    value: "https://a.basemaps.cartocdn.com/" + Theme.basemapStyle + "/"
+                }
+                PluginParameter {
+                    name: "osm.mapping.custom.mapcopyright"
+                    value: "© OpenStreetMap contributors, © CARTO"
+                }
+                PluginParameter { name: "osm.mapping.highdpi_tiles"; value: true }
+                PluginParameter { name: "osm.useragent"; value: "TrainsOnMap/0.1 (Qt6 scaffolding)" }
+            }
 
-        // The CARTO tiles arrive as the plugin's "custom" map type; activate it.
-        function selectBasemap() {
-            for (let i = 0; i < supportedMapTypes.length; ++i) {
-                if (supportedMapTypes[i].style === MapType.CustomMap) {
-                    activeMapType = supportedMapTypes[i];
-                    return;
+            center: QtPositioning.coordinate(mapLoader.savedCenterLat, mapLoader.savedCenterLon)
+            zoomLevel: mapLoader.savedZoom
+            minimumZoomLevel: 4.0
+            maximumZoomLevel: 18.0
+
+            // Persist the view so a theme-driven reload restores it.
+            onCenterChanged: {
+                mapLoader.savedCenterLat = center.latitude
+                mapLoader.savedCenterLon = center.longitude
+            }
+            onZoomLevelChanged: mapLoader.savedZoom = zoomLevel
+
+            // Anchor point captured when a pinch starts, so the gesture zooms
+            // around the fingers rather than the map centre.
+            property geoCoordinate startCentroid
+            copyrightsVisible: true
+            color: Theme.windowBg     // neutral backdrop shown while tiles load
+
+            // The CARTO tiles arrive as the plugin's "custom" map type; activate it.
+            function selectBasemap() {
+                for (let i = 0; i < supportedMapTypes.length; ++i) {
+                    if (supportedMapTypes[i].style === MapType.CustomMap) {
+                        activeMapType = supportedMapTypes[i];
+                        return;
+                    }
                 }
             }
-        }
-        onSupportedMapTypesChanged: selectBasemap()
-        Component.onCompleted: selectBasemap()
+            onSupportedMapTypesChanged: selectBasemap()
+            Component.onCompleted: selectBasemap()
 
-        // Rail geometry is held in memory; materialise only the segments in (a
-        // padded) viewport so a pan doesn't reproject the whole ~10k-segment
-        // network. toCoordinate() needs the map ready, so seed the first load
-        // from mapReady, then refresh on a short debounce as the view changes.
-        onMapReadyChanged: if (mapReady) refreshTracks()
-        onVisibleRegionChanged: trackReloadTimer.restart()
+            // Rail geometry is held in memory; materialise only the segments in (a
+            // padded) viewport so a pan doesn't reproject the whole ~10k-segment
+            // network. toCoordinate() needs the map ready, so seed the first load
+            // from mapReady, then refresh on a short debounce as the view changes.
+            onMapReadyChanged: if (mapReady) refreshTracks()
+            onVisibleRegionChanged: trackReloadTimer.restart()
 
-        Timer {
-            id: trackReloadTimer
-            interval: 250        // settle delay: fire once the gesture stops
-            onTriggered: map.refreshTracks()
-        }
-
-        // Filter the track model to the current viewport (+25% margin).
-        function refreshTracks() {
-            if (!map.mapReady || map.width <= 0 || map.height <= 0)
-                return
-            const nw = map.toCoordinate(Qt.point(0, 0), false)                  // NW corner
-            const se = map.toCoordinate(Qt.point(map.width, map.height), false) // SE corner
-            if (!nw.isValid || !se.isValid)
-                return
-            // Pad each side so a small pan doesn't expose unloaded edges before
-            // the next debounce fires.
-            const latPad = Math.abs(nw.latitude - se.latitude) * 0.25
-            const lonPad = Math.abs(se.longitude - nw.longitude) * 0.25
-            trackService.loadForBounds(nw.longitude - lonPad,   // west
-                                       se.latitude  - latPad,   // south
-                                       se.longitude + lonPad,   // east
-                                       nw.latitude  + latPad)   // north
-        }
-
-        // Geometry is parsed on a worker thread; seed the first viewport load
-        // once it lands (the map may become ready before or after this fires).
-        Connections {
-            target: trackService
-            function onGeometryReady() { map.refreshTracks() }
-        }
-
-        // Track geometry layer (drawn beneath the trains).
-        MapItemView {
-            model: trackService.model
-            delegate: MapPolyline {
-                required property var model
-                line.width: 2.2
-                line.color: "#8c95a0"      // mid grey rail, legible at the overview zoom
-                path: model.path
+            Timer {
+                id: trackReloadTimer
+                interval: 250        // settle delay: fire once the gesture stops
+                onTriggered: map.refreshTracks()
             }
-        }
 
-        // Live train layer.
-        MapItemView {
-            model: trainClient.model
-            delegate: TrainMarker {
-                selected: trainDetails.hasSelection && trainDetails.trainNumber === model.trainNumber
-                onClicked: (trainNumber, departureDate) => trainDetails.show(trainNumber, departureDate)
+            // Filter the track model to the current viewport (+25% margin).
+            function refreshTracks() {
+                if (!map.mapReady || map.width <= 0 || map.height <= 0)
+                    return
+                const nw = map.toCoordinate(Qt.point(0, 0), false)                  // NW corner
+                const se = map.toCoordinate(Qt.point(map.width, map.height), false) // SE corner
+                if (!nw.isValid || !se.isValid)
+                    return
+                // Pad each side so a small pan doesn't expose unloaded edges before
+                // the next debounce fires.
+                const latPad = Math.abs(nw.latitude - se.latitude) * 0.25
+                const lonPad = Math.abs(se.longitude - nw.longitude) * 0.25
+                trackService.loadForBounds(nw.longitude - lonPad,   // west
+                                           se.latitude  - latPad,   // south
+                                           se.longitude + lonPad,   // east
+                                           nw.latitude  + latPad)   // north
             }
-        }
 
-        // ---- Pan / zoom input (Qt 6 needs explicit handlers) --------------
-        // Drag to pan, wheel/trackpad to zoom, pinch to zoom; the map stays
-        // north-up (no rotation handler). Keyboard +/- zoom in steps too.
-        PinchHandler {
-            id: pinch
-            target: null
-            onActiveChanged: if (active)
-                map.startCentroid = map.toCoordinate(pinch.centroid.position, false)
-            onScaleChanged: (delta) => {
-                map.zoomLevel += Math.log2(delta)
-                map.alignCoordinateToPoint(map.startCentroid, pinch.centroid.position)
+            // Geometry is parsed on a worker thread; seed the first viewport load
+            // once it lands (the map may become ready before or after this fires).
+            Connections {
+                target: trackService
+                function onGeometryReady() { map.refreshTracks() }
             }
-            grabPermissions: PointerHandler.TakeOverForbidden
-        }
-        WheelHandler {
-            id: wheel
-            // Magic Mouse / Wayland trackpads report as touchpads (QTBUG-87646).
-            acceptedDevices: Qt.platform.pluginName === "cocoa"
-                             || Qt.platform.pluginName === "wayland"
-                             ? PointerDevice.Mouse | PointerDevice.TouchPad
-                             : PointerDevice.Mouse
-            rotationScale: 1 / 120
-            property: "zoomLevel"
-        }
-        DragHandler {
-            id: drag
-            target: null
-            onTranslationChanged: (delta) => map.pan(-delta.x, -delta.y)
-        }
-        Shortcut {
-            enabled: map.zoomLevel < map.maximumZoomLevel
-            sequence: StandardKey.ZoomIn
-            onActivated: map.zoomLevel = Math.round(map.zoomLevel + 1)
-        }
-        Shortcut {
-            enabled: map.zoomLevel > map.minimumZoomLevel
-            sequence: StandardKey.ZoomOut
-            onActivated: map.zoomLevel = Math.round(map.zoomLevel - 1)
+
+            // "Load tracks" button (relayed via win) → refresh this viewport.
+            Connections {
+                target: win
+                function onRequestTrackReload() { map.refreshTracks() }
+            }
+
+            // Track geometry layer (drawn beneath the trains).
+            MapItemView {
+                model: trackService.model
+                delegate: MapPolyline {
+                    required property var model
+                    line.width: 2.2
+                    line.color: Theme.railColor    // legible on either basemap
+                    path: model.path
+                }
+            }
+
+            // Live train layer.
+            MapItemView {
+                model: trainClient.model
+                delegate: TrainMarker {
+                    selected: trainDetails.hasSelection && trainDetails.trainNumber === model.trainNumber
+                    onClicked: (trainNumber, departureDate) => trainDetails.show(trainNumber, departureDate)
+                }
+            }
+
+            // ---- Pan / zoom input (Qt 6 needs explicit handlers) --------------
+            // Drag to pan, wheel/trackpad to zoom, pinch to zoom; the map stays
+            // north-up (no rotation handler). Keyboard +/- zoom in steps too.
+            PinchHandler {
+                id: pinch
+                target: null
+                onActiveChanged: if (active)
+                    map.startCentroid = map.toCoordinate(pinch.centroid.position, false)
+                onScaleChanged: (delta) => {
+                    map.zoomLevel += Math.log2(delta)
+                    map.alignCoordinateToPoint(map.startCentroid, pinch.centroid.position)
+                }
+                grabPermissions: PointerHandler.TakeOverForbidden
+            }
+            WheelHandler {
+                id: wheel
+                // Magic Mouse / Wayland trackpads report as touchpads (QTBUG-87646).
+                acceptedDevices: Qt.platform.pluginName === "cocoa"
+                                 || Qt.platform.pluginName === "wayland"
+                                 ? PointerDevice.Mouse | PointerDevice.TouchPad
+                                 : PointerDevice.Mouse
+                rotationScale: 1 / 120
+                property: "zoomLevel"
+            }
+            DragHandler {
+                id: drag
+                target: null
+                onTranslationChanged: (delta) => map.pan(-delta.x, -delta.y)
+            }
+            Shortcut {
+                enabled: map.zoomLevel < map.maximumZoomLevel
+                sequence: StandardKey.ZoomIn
+                onActivated: map.zoomLevel = Math.round(map.zoomLevel + 1)
+            }
+            Shortcut {
+                enabled: map.zoomLevel > map.minimumZoomLevel
+                sequence: StandardKey.ZoomOut
+                onActivated: map.zoomLevel = Math.round(map.zoomLevel - 1)
+            }
         }
     }
 
@@ -205,7 +242,7 @@ ApplicationWindow {
         statusText: trackService.status.length > 0 ? trackService.status : trainClient.status
 
         onRefreshRequested: trainClient.refresh()
-        onLoadTracksRequested: map.refreshTracks()
+        onLoadTracksRequested: win.requestTrackReload()
     }
 
     // Timetable detail panel — only built once a train is picked, so its
