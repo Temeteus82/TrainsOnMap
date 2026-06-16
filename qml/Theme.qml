@@ -29,7 +29,9 @@ QtObject {
 
     // ---- Accents ----------------------------------------------------------
     readonly property color accent:      isDark ? "#5b9bf3" : "#1565c0"
-    readonly property color onAccent:    "white"
+    // NB: don't name this "onAccent" — QML reads an on<Capital> identifier as a
+    // signal handler, not a property, and the file fails to compile.
+    readonly property color accentText:  "white"
     readonly property color focusRing:   isDark ? "#7eb0f6" : "#1565c0"
     readonly property color iconBadgeBg: isDark ? "#1d2c40" : "#eaf1fb"
     readonly property color subtleHover: isDark ? "#262a30" : "#f1f3f6"

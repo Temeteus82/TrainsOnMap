@@ -144,7 +144,7 @@ Rectangle {
                     text: refreshBtn.text
                     font.pixelSize: 12
                     font.bold: true
-                    color: Theme.onAccent
+                    color: Theme.accentText
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
                 }
@@ -237,7 +237,7 @@ Rectangle {
                             text: seg.label
                             font.pixelSize: 11
                             font.bold: seg.active
-                            color: seg.active ? Theme.onAccent : Theme.textMuted
+                            color: seg.active ? Theme.accentText : Theme.textMuted
                         }
                         TapHandler { onTapped: Theme.mode = seg.mode }
                     }
