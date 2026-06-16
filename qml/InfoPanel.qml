@@ -52,10 +52,11 @@ Rectangle {
                 Layout.preferredHeight: 30
                 radius: 8
                 color: Theme.iconBadgeBg
-                Label {
+                AppIcon {
                     anchors.centerIn: parent
-                    text: "🚆"
-                    font.pixelSize: 16
+                    name: "train"
+                    color: Theme.accent
+                    size: TypeScale.iconMd
                 }
             }
 
@@ -65,12 +66,12 @@ Rectangle {
                 Label {
                     text: qsTr("Trains on Map")
                     font.bold: true
-                    font.pixelSize: 15
+                    font.pixelSize: TypeScale.subhead
                     color: Theme.textStrong
                 }
                 Label {
                     text: qsTr("Finland · Digitraffic")
-                    font.pixelSize: 11
+                    font.pixelSize: TypeScale.caption
                     color: Theme.textMuted
                 }
             }
@@ -84,30 +85,38 @@ Rectangle {
             spacing: 8
 
             Rectangle {
+                id: liveDot
                 Layout.preferredWidth: 10
                 Layout.preferredHeight: 10
                 radius: 5
                 color: root.streamConnected ? Theme.liveOn : Theme.liveOff
 
+                // W3: the pulse is non-essential motion — skip it when the user
+                // has opted into reduced motion (and keep the dot fully opaque).
                 SequentialAnimation on opacity {
-                    running: root.streamConnected
+                    id: livePulse
+                    running: root.streamConnected && !Theme.reducedMotion
                     loops: Animation.Infinite
                     NumberAnimation { to: 0.35; duration: 900; easing.type: Easing.InOutQuad }
                     NumberAnimation { to: 1.0;  duration: 900; easing.type: Easing.InOutQuad }
+                }
+                Binding {
+                    target: liveDot; property: "opacity"; value: 1.0
+                    when: !livePulse.running
                 }
             }
 
             Label {
                 Layout.fillWidth: true
                 text: qsTr("%1 live trains").arg(root.trainCount)
-                font.pixelSize: 13
+                font.pixelSize: TypeScale.body
                 font.bold: true
                 color: Theme.textStrong
             }
 
             Label {
                 text: root.streamConnected ? qsTr("LIVE") : root.streamStatus
-                font.pixelSize: 10
+                font.pixelSize: TypeScale.caption
                 font.bold: true
                 color: root.streamConnected ? Theme.liveOn : Theme.textMuted
             }
@@ -116,7 +125,7 @@ Rectangle {
         Label {
             Layout.fillWidth: true
             text: qsTr("%1 track segments").arg(root.trackCount)
-            font.pixelSize: 12
+            font.pixelSize: TypeScale.body
             color: Theme.textMuted
         }
 
@@ -124,7 +133,7 @@ Rectangle {
             Layout.fillWidth: true
             text: root.statusText
             color: Theme.textMuted
-            font.pixelSize: 12
+            font.pixelSize: TypeScale.body
             wrapMode: Text.WordWrap
             visible: text.length > 0
         }
@@ -142,7 +151,7 @@ Rectangle {
                 onClicked: root.refreshRequested()
                 contentItem: Label {
                     text: refreshBtn.text
-                    font.pixelSize: 12
+                    font.pixelSize: TypeScale.body
                     font.bold: true
                     color: Theme.accentText
                     horizontalAlignment: Text.AlignHCenter
@@ -176,7 +185,7 @@ Rectangle {
                 onClicked: root.loadTracksRequested()
                 contentItem: Label {
                     text: tracksBtn.text
-                    font.pixelSize: 12
+                    font.pixelSize: TypeScale.body
                     font.bold: true
                     color: tracksBtn.enabled ? Theme.accent : Theme.textMuted
                     horizontalAlignment: Text.AlignHCenter
@@ -197,7 +206,7 @@ Rectangle {
         // ---- Theme toggle (Auto follows the desktop colour scheme) ---------
         Label {
             text: qsTr("Appearance")
-            font.pixelSize: 10
+            font.pixelSize: TypeScale.caption
             font.bold: true
             color: Theme.textMuted
         }
@@ -217,6 +226,9 @@ Rectangle {
                 Repeater {
                     model: 3
 
+                    // W4: each segment is keyboard-focusable and operable (Tab to
+                    // reach, Space/Enter to select) with a visible focus ring, and
+                    // exposes itself to assistive tech as a radio button.
                     delegate: Item {
                         id: seg
                         required property int index
@@ -226,16 +238,38 @@ Rectangle {
                         width: parent.width / 3
                         height: parent.height
 
+                        activeFocusOnTab: true
+                        Accessible.role: Accessible.RadioButton
+                        Accessible.name: label
+                        Accessible.checkable: true
+                        Accessible.checked: active
+                        Keys.onPressed: (event) => {
+                            if (event.key === Qt.Key_Space || event.key === Qt.Key_Return
+                                    || event.key === Qt.Key_Enter) {
+                                Theme.mode = seg.mode
+                                event.accepted = true
+                            }
+                        }
+
                         Rectangle {
                             anchors.fill: parent
                             anchors.margins: 1
                             radius: 6
                             color: seg.active ? Theme.accent : "transparent"
                         }
+                        // Keyboard focus ring.
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: 6
+                            color: "transparent"
+                            border.color: Theme.focusRing
+                            border.width: 2
+                            visible: seg.activeFocus
+                        }
                         Label {
                             anchors.centerIn: parent
                             text: seg.label
-                            font.pixelSize: 11
+                            font.pixelSize: TypeScale.caption
                             font.bold: seg.active
                             color: seg.active ? Theme.accentText : Theme.textMuted
                         }
@@ -251,7 +285,7 @@ Rectangle {
             Layout.fillWidth: true
             text: qsTr("Data © Fintraffic / Digitraffic (CC BY 4.0)\nMap © OpenStreetMap contributors, © CARTO")
             color: Theme.textMuted   // ≥ 4.5:1 on the card
-            font.pixelSize: 10
+            font.pixelSize: TypeScale.caption
             wrapMode: Text.WordWrap
         }
     }

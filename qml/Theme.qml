@@ -1,6 +1,7 @@
 pragma Singleton
 
 import QtQuick
+import QtCore
 
 /// App-wide palette + theme state. `mode` is "auto" (follow the desktop colour
 /// scheme), "light", or "dark"; `isDark` resolves it against the system setting.
@@ -12,6 +13,16 @@ QtObject {
     // "auto" | "light" | "dark". Set from the sidebar toggle; "auto" tracks the
     // desktop via QStyleHints::colorScheme (Qt 6.8+).
     property string mode: "auto"
+
+    // W3 (UI audit): reduced-motion opt-out. Qt has no `prefers-reduced-motion`
+    // equivalent, so expose a project-level flag instead; non-essential animations
+    // (e.g. the live-dot pulse) gate on this. Persisted via QSettings so it sticks
+    // across launches and can be flipped without a rebuild.
+    property bool reducedMotion: false
+    property Settings _settings: Settings {
+        category: "Appearance"
+        property alias reducedMotion: theme.reducedMotion
+    }
 
     readonly property bool systemDark: Application.styleHints.colorScheme === Qt.ColorScheme.Dark
     readonly property bool isDark: mode === "dark" || (mode === "auto" && systemDark)

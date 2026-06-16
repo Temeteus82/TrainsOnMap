@@ -32,13 +32,13 @@ Rectangle {
                 Label {
                     text: root.details.title
                     font.bold: true
-                    font.pixelSize: 17
+                    font.pixelSize: TypeScale.title
                     color: Theme.textStrong
                 }
                 Label {
                     text: root.details.subtitle
                     color: Theme.textMuted
-                    font.pixelSize: 12
+                    font.pixelSize: TypeScale.body
                     visible: text.length > 0
                 }
             }
@@ -46,31 +46,52 @@ Rectangle {
                 text: qsTr("CANCELLED")
                 color: "white"
                 padding: 4
-                font.pixelSize: 11
+                font.pixelSize: TypeScale.caption
                 font.bold: true
                 background: Rectangle { color: Theme.cancelledBg; radius: 4 }
                 visible: root.details.cancelled
             }
+            // Close button — keyboard-focusable (W4) with a drawn icon (O3).
             Rectangle {
+                id: closeBtn
                 Layout.preferredWidth: 26
                 Layout.preferredHeight: 26
                 radius: 6
                 color: closeHover.hovered ? Theme.subtleHover : "transparent"
-                Label {
+                activeFocusOnTab: true
+                Accessible.role: Accessible.Button
+                Accessible.name: qsTr("Close")
+                AppIcon {
                     anchors.centerIn: parent
-                    text: "✕"
-                    font.pixelSize: 14
+                    name: "close"
                     color: Theme.textMuted
+                    size: TypeScale.iconSm
+                }
+                // Keyboard focus ring.
+                Rectangle {
+                    anchors.fill: parent
+                    radius: 6
+                    color: "transparent"
+                    border.color: Theme.focusRing
+                    border.width: 2
+                    visible: closeBtn.activeFocus
                 }
                 HoverHandler { id: closeHover }
                 TapHandler { onTapped: root.details.clear() }
+                Keys.onPressed: (event) => {
+                    if (event.key === Qt.Key_Space || event.key === Qt.Key_Return
+                            || event.key === Qt.Key_Enter) {
+                        root.details.clear()
+                        event.accepted = true
+                    }
+                }
             }
         }
 
         Label {
             text: root.details.status
             color: Theme.textMuted
-            font.pixelSize: 11
+            font.pixelSize: TypeScale.caption
             visible: text.length > 0
         }
 
@@ -83,11 +104,25 @@ Rectangle {
         Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.hairline }
 
         // ---- Show-all toggle (reveals passed-through timing points) -------
+        // Keyboard-focusable checkbox (W4) with a drawn tick (O3).
         Item {
             id: allToggle
             Layout.fillWidth: true
             implicitHeight: 24
             property bool checked: false
+
+            activeFocusOnTab: true
+            Accessible.role: Accessible.CheckBox
+            Accessible.name: qsTr("Show all timing points")
+            Accessible.checkable: true
+            Accessible.checked: checked
+            Keys.onPressed: (event) => {
+                if (event.key === Qt.Key_Space || event.key === Qt.Key_Return
+                        || event.key === Qt.Key_Enter) {
+                    allToggle.checked = !allToggle.checked
+                    event.accepted = true
+                }
+            }
 
             RowLayout {
                 anchors.fill: parent
@@ -98,21 +133,21 @@ Rectangle {
                     Layout.preferredHeight: 16
                     radius: 4
                     color: allToggle.checked ? Theme.accent : "transparent"
-                    border.color: allToggle.checked ? Theme.accent : Theme.hairline
-                    border.width: 1.5
-                    Label {
+                    border.color: allToggle.activeFocus ? Theme.focusRing
+                                  : (allToggle.checked ? Theme.accent : Theme.hairline)
+                    border.width: allToggle.activeFocus ? 2 : 1.5
+                    AppIcon {
                         anchors.centerIn: parent
-                        text: "✓"
-                        font.pixelSize: 11
-                        font.bold: true
+                        name: "check"
                         color: Theme.accentText
+                        size: 12
                         visible: allToggle.checked
                     }
                 }
                 Label {
                     Layout.fillWidth: true
                     text: qsTr("Show all timing points")
-                    font.pixelSize: 12
+                    font.pixelSize: TypeScale.body
                     color: Theme.textStrong
                 }
             }
@@ -126,12 +161,20 @@ Rectangle {
             clip: true
             model: root.details.model
             spacing: 0
-            ScrollBar.vertical: ScrollBar {}
+            ScrollBar.vertical: ScrollBar { id: vbar }
 
             delegate: ItemDelegate {
                 id: stopRow
                 width: ListView.view.width
                 clip: true
+
+                // The native Controls style paints ItemDelegate's background from
+                // the light system palette (white), which hid the theme-coloured
+                // (near-white) row text in dark mode. Drive it from the app theme
+                // instead so the dark card shows through and text stays legible.
+                background: Rectangle {
+                    color: stopRow.hovered ? Theme.subtleHover : "transparent"
+                }
 
                 required property string stationName
                 required property bool cancelled
@@ -157,8 +200,9 @@ Rectangle {
                     id: rowLayout
                     anchors.fill: parent
                     anchors.leftMargin: stopRow.stopping ? 6 : 18   // indent passed points
-                    anchors.rightMargin: 6
-                    anchors.verticalCenter: parent.verticalCenter
+                    // Reserve the scrollbar's width on the right so the (rightmost)
+                    // delay-badge column isn't hidden under the overlaid ScrollBar.
+                    anchors.rightMargin: 12 + (vbar.visible ? vbar.width : 0)
                     spacing: 10
 
                     // Station + track / "passing"
@@ -167,7 +211,7 @@ Rectangle {
                         spacing: 0
                         Label {
                             text: stopRow.stationName
-                            font.pixelSize: stopRow.stopping ? 13 : 12
+                            font.pixelSize: TypeScale.body
                             font.strikeout: stopRow.cancelled
                             color: stopRow.stopping ? Theme.textStrong : Theme.textMuted
                             elide: Text.ElideRight
@@ -178,7 +222,7 @@ Rectangle {
                                   ? (stopRow.track.length > 0 ? qsTr("Track %1").arg(stopRow.track) : "")
                                   : qsTr("passing")
                             color: Theme.textMuted
-                            font.pixelSize: 10
+                            font.pixelSize: TypeScale.caption
                             font.italic: !stopRow.stopping
                             visible: text.length > 0
                         }
@@ -191,7 +235,7 @@ Rectangle {
                         visible: stopRow.stopping
                         Label {
                             Layout.alignment: Qt.AlignRight
-                            font.pixelSize: 12
+                            font.pixelSize: TypeScale.body
                             color: Theme.textStrong
                             visible: stopRow.scheduledArrival.length > 0
                             text: stopRow.estimatedArrival.length > 0
@@ -200,7 +244,7 @@ Rectangle {
                         }
                         Label {
                             Layout.alignment: Qt.AlignRight
-                            font.pixelSize: 12
+                            font.pixelSize: TypeScale.body
                             color: Theme.textStrong
                             visible: stopRow.scheduledDeparture.length > 0
                             text: stopRow.estimatedDeparture.length > 0
@@ -213,7 +257,7 @@ Rectangle {
                     Label {
                         Layout.alignment: Qt.AlignRight
                         visible: !stopRow.stopping && stopRow.passTime.length > 0
-                        font.pixelSize: 12
+                        font.pixelSize: TypeScale.body
                         color: Theme.textMuted
                         text: stopRow.passEst.length > 0
                               ? qsTr("%1 → %2").arg(stopRow.passTime).arg(stopRow.passEst)
@@ -225,7 +269,7 @@ Rectangle {
                         Layout.alignment: Qt.AlignRight
                         Layout.preferredWidth: 42
                         horizontalAlignment: Text.AlignRight
-                        font.pixelSize: 12
+                        font.pixelSize: TypeScale.body
                         font.bold: true
                         visible: stopRow.stopping
                         color: stopRow.delayMinutes > 0 ? Theme.delayLate

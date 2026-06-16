@@ -36,8 +36,10 @@ qt_add_executable(TrainsOnMap
     src/MqttCodec.h
 )
 
-# The theme palette is a QML singleton (one shared instance app-wide).
-set_source_files_properties(qml/Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
+# The theme palette and the type scale are QML singletons (one shared instance
+# app-wide).
+set_source_files_properties(qml/Theme.qml     PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
+set_source_files_properties(qml/TypeScale.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 
 qt_add_qml_module(TrainsOnMap
     URI TrainsOnMap
@@ -48,6 +50,8 @@ qt_add_qml_module(TrainsOnMap
         qml/InfoPanel.qml
         qml/TrainDetailPanel.qml
         qml/Theme.qml
+        qml/TypeScale.qml
+        qml/AppIcon.qml
 )
 
 # Pre-baked national rail network (scripts/bake_rails.py), embedded so the app
@@ -81,7 +85,9 @@ target_link_libraries(TrainsOnMap PRIVATE
 # (Windows is unaffected — it emits TrainsOnMap.exe.)
 set_target_properties(TrainsOnMap PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
-    WIN32_EXECUTABLE OFF        # keep the console attached for log output during development
+    # GUI-subsystem app in Release (no stray console window on launch); Debug
+    # keeps the console attached so qDebug/log output is visible while developing.
+    WIN32_EXECUTABLE $<NOT:$<CONFIG:Debug>>
     MACOSX_BUNDLE OFF
 )
 
