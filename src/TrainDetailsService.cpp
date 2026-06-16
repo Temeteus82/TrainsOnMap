@@ -41,17 +41,17 @@ QString estimate(const QJsonObject &row, const QString &scheduled)
     return est == scheduled ? QString() : est;   // only surface when it differs
 }
 
-// Build merged stops from timeTableRows, keeping only rows the predicate accepts.
-template <typename Predicate>
-QVector<TimetableStop> buildStops(const QJsonArray &rows, Predicate accept)
+// Build merged timing points from timeTableRows — every station the train
+// passes, with ARRIVAL+DEPARTURE rows folded into one entry. Each point is
+// tagged `stopping` (a booked stop) or not (passed through); the UI hides the
+// non-stopping ones until the user asks to see all timing points.
+QVector<TimetableStop> buildStops(const QJsonArray &rows)
 {
     QVector<TimetableStop> stops;
     int current = -1;
 
     for (const QJsonValue &rv : rows) {
         const QJsonObject row = rv.toObject();
-        if (!accept(row))
-            continue;
 
         const QString code = row.value(QStringLiteral("stationShortCode")).toString();
         if (current < 0 || stops[current].stationShortCode != code) {
@@ -84,7 +84,26 @@ QVector<TimetableStop> buildStops(const QJsonArray &rows, Predicate accept)
         const QString track = row.value(QStringLiteral("commercialTrack")).toString();
         if (!track.isEmpty())
             s.track = track;
+
+        if (row.value(QStringLiteral("commercialStop")).toBool())
+            s.sawCommercial = true;
+        if (row.value(QStringLiteral("trainStopping")).toBool())
+            s.sawTrainStopping = true;
     }
+
+    // Decide which points are "stops". Prefer commercial passenger stops; if the
+    // run has none (e.g. freight), fall back to any booked stopping point; if it
+    // has neither, treat everything as a stop so the panel is never empty.
+    bool anyCommercial = false;
+    bool anyStopping = false;
+    for (const TimetableStop &s : stops) {
+        anyCommercial = anyCommercial || s.sawCommercial;
+        anyStopping = anyStopping || s.sawTrainStopping;
+    }
+    for (TimetableStop &s : stops)
+        s.stopping = anyCommercial ? s.sawCommercial
+                                   : (anyStopping ? s.sawTrainStopping : true);
+
     return stops;
 }
 }
@@ -193,24 +212,18 @@ void TrainDetailsService::applyTrainObject(const QJsonObject &train, bool live)
     emit selectionChanged();
 
     const QJsonArray rows = train.value(QStringLiteral("timeTableRows")).toArray();
+    m_stops = buildStops(rows);
 
-    // Prefer commercial passenger stops; fall back to any stopping point, then all rows.
-    m_stops = buildStops(rows, [](const QJsonObject &r) {
-        return r.value(QStringLiteral("commercialStop")).toBool();
-    });
-    if (m_stops.isEmpty()) {
-        m_stops = buildStops(rows, [](const QJsonObject &r) {
-            return r.value(QStringLiteral("trainStopping")).toBool();
-        });
-    }
-    if (m_stops.isEmpty())
-        m_stops = buildStops(rows, [](const QJsonObject &) { return true; });
+    int stopCount = 0;
+    for (const TimetableStop &s : m_stops)
+        if (s.stopping)
+            ++stopCount;
 
     rebuildStops();
     setStatus(live ? QStringLiteral("%1 stops · live %2")
-                         .arg(m_stops.size())
+                         .arg(stopCount)
                          .arg(QTime::currentTime().toString(QStringLiteral("HH:mm:ss")))
-                   : QStringLiteral("%1 stops").arg(m_stops.size()));
+                   : QStringLiteral("%1 stops").arg(stopCount));
 }
 
 void TrainDetailsService::onStreamTrainMessage(const QByteArray &payload)

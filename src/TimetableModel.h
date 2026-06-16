@@ -17,6 +17,11 @@ struct TimetableStop {
     int delayMinutes = 0;         ///< latest known difference (departure preferred)
     QString track;                ///< commercial track, may be empty
     bool cancelled = false;
+    bool stopping = true;         ///< true = a commercial/booked stop; false = passed through
+
+    // Build-time accumulators (not exposed as roles); used to resolve `stopping`.
+    bool sawCommercial = false;
+    bool sawTrainStopping = false;
 };
 
 /// List model of a single train's timetable, consumed by the detail panel.
@@ -39,6 +44,7 @@ public:
         DelayMinutesRole,
         TrackRole,
         CancelledRole,
+        StoppingRole,
     };
 
     explicit TimetableModel(QObject *parent = nullptr);
