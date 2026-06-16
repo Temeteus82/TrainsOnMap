@@ -1,6 +1,8 @@
 import QtQuick
 import QtLocation
 
+import TrainsOnMap
+
 /// Delegate for a single train inside a MapItemView. Model roles come from
 /// TrainListModel: coordinate, trainNumber, speed, bearing, trainType, category,
 /// commuterLine.
@@ -13,8 +15,30 @@ MapQuickItem {
 
     required property var model
     property bool selected: false
+    // Show the text badges only when zoomed in enough to read them; at country
+    // scale the labels collide into an unreadable mass, so we render dots only.
+    property bool labelsVisible: true
 
     signal clicked(int trainNumber, string departureDate)
+
+    // The juliadata palette is tuned for the light basemap. On the dark basemap
+    // the darkest hues (navy cargo, dark-red/green, purple) become illegible as
+    // 11 px text, so lift their lightness in dark mode while keeping the hue
+    // identity. Achromatic greys (the stopped/unknown fallbacks) get a fixed
+    // light ink instead, since Qt.hsla() can't reconstruct a hueless colour.
+    function legibleInk(c) {
+        if (!Theme.isDark)
+            return c
+        if (c.hslSaturation < 0.15)
+            return "#d6dae0"
+        return Qt.hsla(c.hslHue, Math.min(c.hslSaturation, 0.85),
+                       Math.max(c.hslLightness, 0.62), 1)
+    }
+    // Outline that defines glyph edges against either basemap: a light halo on
+    // light tiles, a dark halo on dark tiles (where dark_all also has light roads
+    // and labels the glyph can otherwise collide with).
+    readonly property color labelHalo: Theme.isDark ? Qt.rgba(0, 0, 0, 0.85)
+                                                     : Qt.rgba(1, 1, 1, 0.85)
 
     // trainType -> juliadata fill colour; unmatched types fall to category/speed.
     function colorFor(type, category, speed) {
@@ -110,7 +134,9 @@ MapQuickItem {
                     height: 15
                     radius: 7.5
                     color: marker.dotColor
-                    border.color: marker.selected ? "#1565c0" : "#10141a"
+                    // Light stroke in dark mode so dark dots separate from dark tiles.
+                    border.color: marker.selected ? Theme.accent
+                                                   : (Theme.isDark ? "#cdd2da" : "#10141a")
                     border.width: marker.selected ? 3 : 1
                     rotation: marker.model.bearing      // dot/notch rotate to heading
 
@@ -131,23 +157,24 @@ MapQuickItem {
             Column {
                 anchors.verticalCenter: dotGroup.verticalCenter
                 spacing: 0
+                visible: marker.labelsVisible
 
                 Text {
                     text: marker.badgeLabel
                     font.pixelSize: 11
                     font.bold: true
-                    color: marker.trainColor
+                    color: marker.legibleInk(marker.trainColor)
                     style: Text.Outline
-                    styleColor: Qt.rgba(1, 1, 1, 0.85)   // light halo for the light base
+                    styleColor: marker.labelHalo
                 }
 
                 Text {
                     visible: marker.model.speed > 0
                     text: Math.round(marker.model.speed) + " km/h"
                     font.pixelSize: 8
-                    color: "#3a3f47"
+                    color: Theme.isDark ? "#c9ced6" : "#3a3f47"
                     style: Text.Outline
-                    styleColor: Qt.rgba(1, 1, 1, 0.85)
+                    styleColor: marker.labelHalo
                 }
 
                 // Lateness as text (paired with the ring colour, not colour alone).
@@ -158,7 +185,7 @@ MapQuickItem {
                     font.bold: true
                     color: marker.ringColor
                     style: Text.Outline
-                    styleColor: Qt.rgba(1, 1, 1, 0.9)
+                    styleColor: marker.labelHalo
                 }
             }
         }
