@@ -4,20 +4,28 @@ A Qt6 desktop app that shows **live Finnish train positions** and **railway trac
 geometry** on an interactive map, using the open
 [Digitraffic railway API](https://www.digitraffic.fi/rautatieliikenne/) from Fintraffic.
 
-This repository is **scaffolding**: it compiles into a working app (live trains
-appear out of the box), with clearly marked extension points.
+Live trains appear out of the box. The app supports light/dark/auto theming and a
+keyboard-accessible UI, with a clean split between a C++ networking/model backend
+and a QML map front-end, plus clearly marked extension points.
 
 ## Features
 
-- **Light OpenStreetMap base layer** — CARTO *Positron* tiles (OSM data, light
-  minimal cartography like juliadata.fi's map) via the Qt Location `osm` plugin's
-  custom-host mechanism, so the coloured trains and rails are the focus. One-line
-  restyle (`dark_all`, Voyager, …) via the `basemapStyle` property in `Main.qml`.
+- **OpenStreetMap base layer with light/dark theming** — CARTO *Positron*
+  (`light_all`) / *Dark Matter* (`dark_all`) tiles via the Qt Location `osm`
+  plugin's custom-host mechanism, so the coloured trains and rails stay the focus.
+  An **Appearance** toggle (Auto / Light / Dark) reskins the whole app — basemap,
+  overlays, and markers — through the `Theme` singleton; *Auto* follows the
+  desktop colour scheme.
 - **Live train markers** streamed over **MQTT** (push, real-time), seeded by one
   REST snapshot at startup; **coloured by train type** like juliadata.fi
   (S/Pendolino = green, IC = red, PYO/night = navy, commuter = green,
-  cargo = navy, other = grey) and rotated to heading. A status dot shows the
-  live connection.
+  cargo = navy, other = grey) and rotated to heading. Type/number/km-h labels sit
+  on a contrast pill and appear once zoomed in (dots only at country scale); the
+  selected train gets a highlight ring. A status dot shows the live connection.
+- **Accessible, themeable UI** — role-based colour tokens and a shared type scale
+  (`Theme` / `TypeScale` singletons); keyboard-focusable controls with visible
+  focus rings; colour-blind-safe train state (colour **and** ring **and** text);
+  a reduced-motion opt-out; and crisp, theme-recolourable icons (`AppIcon`).
 - **Click a train** to open a timetable panel: stops, scheduled vs. estimated
   arrival/departure times, live delay, and track, with station codes resolved to
   names from the metadata API. While open, the panel **updates live** from the
@@ -53,8 +61,11 @@ main.cpp                    Bootstraps the QML engine, loads TrainsOnMap/Main.qm
 └─ qml/
     ├─ Main.qml             Map + MapItemView layers + InfoPanel + TrainDetailPanel
     ├─ TrainMarker.qml      Clickable MapQuickItem delegate for one train
-    ├─ InfoPanel.qml        Floating status/controls card
-    └─ TrainDetailPanel.qml Slide-in timetable for the selected train
+    ├─ InfoPanel.qml        Floating status/controls card (incl. Appearance toggle)
+    ├─ TrainDetailPanel.qml Slide-in timetable for the selected train
+    ├─ Theme.qml            Singleton: light/dark/auto palette + map basemap style
+    ├─ TypeScale.qml        Singleton: modular type scale (caption/body/subhead/title)
+    └─ AppIcon.qml          Canvas line-art icons (train / close / check), theme-tinted
 ```
 
 C++ types are registered to QML via `QML_ELEMENT` under the `TrainsOnMap` module,
@@ -91,10 +102,12 @@ by contrast, already come as WGS84 GeoJSON Points and need no transform.
 
 ## Prerequisites
 
-- **Qt 6.5 or newer** with the `Quick`, `Qml`, `Network`, `Positioning`,
-  `Location`, and `WebSockets` modules (Qt Location ships the `osm` map plugin).
-- **CMake ≥ 3.21**, **Ninja**, and a C++17 compiler (MSVC 2019+ or MinGW on
-  Windows; GCC or Clang on Linux/macOS).
+- **Qt 6.5 or newer** with the `Quick`, `Qml`, `QuickControls2`, `Network`,
+  `Positioning`, `Location`, `WebSockets`, and `Concurrent` modules (Qt Location
+  ships the `osm` map plugin; the *Auto* theme follows the desktop colour scheme,
+  and the reduced-motion setting persists via `QtCore`'s `Settings`).
+- **CMake ≥ 3.21**, **Ninja**, and a C++17 compiler (MSVC 2022 or the bundled
+  llvm-mingw / MinGW on Windows; GCC or Clang on Linux/macOS).
 
 > Qt Location is an optional component in the Qt installer — make sure
 > **Qt Positioning** and **Qt Location** are ticked for your kit.
@@ -113,6 +126,11 @@ each preset builds into its own folder under `build/` with the executable in a
 `bin/` subfolder.
 Point Qt at your kit by exporting `CMAKE_PREFIX_PATH` once (a system Qt is found
 automatically and needs no export).
+
+On Windows the **`windows-llvm`** preset (Qt's bundled llvm-mingw Clang + `lld`,
+Release) is the recommended default; `windows-msvc` (VS 2022) is also supported.
+The `windows-llvm` and `windows-msvc` presets build **Release**; the Linux/macOS
+presets build **Debug** (override with `-DCMAKE_BUILD_TYPE=…` if needed).
 
 ### Linux (Clang)
 
@@ -163,7 +181,13 @@ cmake --build --preset windows-llvm        # Release
 > The build runs **windeployqt** automatically, copying the Qt DLLs and the
 > needed plugins (the `windows` platform plugin, the TLS backend for the `wss://`
 > MQTT feed, and the QML / QtLocation geoservices / QtPositioning plugins) next
-> to the `.exe`, so it runs without a Qt install on `PATH`.
+> to the `.exe`, so it runs without a Qt install on `PATH`. (Plugins land in
+> subfolders; the core `Qt6*.dll` sit beside the `.exe` because the Windows loader
+> resolves implicitly-linked DLLs from the application directory.)
+>
+> **Release builds are GUI apps** — no console window on launch. **Debug** builds
+> keep a console attached for `qDebug` / log output (`WIN32_EXECUTABLE` is enabled
+> only for non-Debug configurations).
 
 ### Qt Creator
 
@@ -174,21 +198,29 @@ matching compiler, and Run.
 
 - **Live stream:** `DigitrafficMqttClient { active: true }` in `Main.qml` — set
   `false` to disable MQTT and rely on the REST seed (or wire up polling).
-- **Basemap style:** `basemapStyle` in `Main.qml` — `"light_all"` (default),
-  `"dark_all"`, `"light_nolabels"`, or `"rastertiles/voyager"` (CARTO styles).
+- **Appearance & basemap:** the **Auto / Light / Dark** toggle in the sidebar sets
+  `Theme.mode`, which resolves `Theme.isDark`. `Theme.basemapStyle`
+  (`light_all` / `dark_all`) and every overlay colour follow it — all defined in
+  `Theme.qml`; edit the CARTO style strings or palette tokens there.
+- **Reduced motion:** `Theme.reducedMotion` (persisted via `QtCore.Settings`,
+  category `Appearance`) — when `true`, non-essential animation (the LIVE pulse)
+  is skipped. Type scale lives in `TypeScale.qml`.
 - **Train colours:** the type/category→colour map is in `TrainMarker.qml`
   (`colorFor()`); tweak the hex values or add train types there.
-- **Start region:** `Map { center; zoomLevel }` in `Main.qml`.
-- **Track endpoint:** `TrackService { endpoint: "…" }` — point at a different
-  infra-api version or a self-hosted GeoJSON.
-- **Track auto-load zoom:** `trackZoomThreshold` in `Main.qml` — below this zoom
-  the viewport covers too much of the network to fetch, so loading is skipped.
+- **Marker labels:** `labelsVisible: map.zoomLevel >= 8.0` on the `TrainMarker`
+  delegate in `Main.qml` — below this zoom only dots are drawn, to avoid clutter.
+- **Start region:** the `mapLoader` `savedCenterLat` / `savedCenterLon` /
+  `savedZoom` properties in `Main.qml` (the view is restored from these and
+  preserved across a theme-driven map reload).
+- **Rail geometry:** shipped pre-baked and offline in `resources/rails.geojson.qz`
+  (no network fetch). Re-generate with `python3 scripts/bake_rails.py` when the
+  rail topology changes; `TrackService` filters it to the viewport in memory.
 
 ## Ideas for next steps
 
-- Smoothly animate marker movement between updates.
-- Periodically re-seed from REST to prune trains that stopped reporting.
-- Cache/throttle track loads; style tracks by line category.
+- Smoothly animate marker movement between position updates.
+- Style rail tracks by line category.
 - Highlight the selected train's route on the map from its timetable stops.
-- Declutter overlapping number labels at low zoom (hide labels below a zoom, or
-  cluster nearby trains).
+- Theme the timetable scrollbar to match the dark panel.
+- Fix the dark-basemap tile cache: stale `light_all` tiles linger in places after
+  switching theme (the Qt `osm` plugin caches tiles by coordinates, not by host).
