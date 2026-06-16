@@ -192,6 +192,9 @@ ApplicationWindow {
                 model: trainClient.model
                 delegate: TrainMarker {
                     selected: trainDetails.hasSelection && trainDetails.trainNumber === model.trainNumber
+                    // Dots only at country scale; reveal the text badges once
+                    // zoomed in enough that they no longer collide into a blur.
+                    labelsVisible: map.zoomLevel >= 8.0
                     onClicked: (trainNumber, departureDate) => trainDetails.show(trainNumber, departureDate)
                 }
             }
