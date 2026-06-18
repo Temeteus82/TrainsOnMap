@@ -138,6 +138,15 @@ public:
     /// Optional: with none set, positions are stored raw. Not owned.
     void setMatcher(const TrackMatcher *matcher) { m_matcher = matcher; }
 
+    /// Supply station short-code -> WGS84 coordinate (from /metadata/stations).
+    /// Used to pin a stopped, off-network train to the station it's booked at.
+    void setStationCoords(const QHash<QString, QGeoCoordinate> &coords) { m_stationCoords = coords; }
+
+    /// Supply (date,number) -> ordered route station codes (from /live-trains'
+    /// timeTableRows). Combined with the station coords, lets a parked train be
+    /// snapped to its nearest scheduled station when it has drifted off-network.
+    void setTrainRoutes(const QHash<TrainKey, QVector<QString>> &routes) { m_routeByKey = routes; }
+
 signals:
     void countChanged();
 
@@ -159,6 +168,11 @@ private:
     /// Bearing from the train's previous coordinate; also records the new one.
     double bearingFor(const TrainKey &key, const QGeoCoordinate &coordinate);
 
+    /// Nearest scheduled-route station to `fix` within the station-snap radius, or
+    /// an invalid coordinate if the train has no known route, no station coords are
+    /// loaded yet, or none is close enough.
+    QGeoCoordinate nearestRouteStation(const TrainKey &key, const QGeoCoordinate &fix) const;
+
     QVector<Row> m_rows;
     QHash<TrainKey, int> m_indexByKey;        ///< (date,number) -> row index
     QHash<TrainKey, QGeoCoordinate> m_previous;  ///< (date,number) -> last coord (for bearing)
@@ -166,6 +180,8 @@ private:
     QHash<TrainKey, QString> m_typeByNumber;     ///< (date,number) -> train type
     QHash<TrainKey, QString> m_lineByNumber;     ///< (date,number) -> commuter line letter
     QHash<TrainKey, TrainStatus> m_statusByNumber; ///< (date,number) -> live running status
+    QHash<QString, QGeoCoordinate> m_stationCoords; ///< station short code -> coord
+    QHash<TrainKey, QVector<QString>> m_routeByKey; ///< (date,number) -> route station codes
 
     const TrackMatcher *m_matcher = nullptr;   ///< snaps/flags GPS fixes; not owned
 

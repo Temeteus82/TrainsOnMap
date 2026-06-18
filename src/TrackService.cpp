@@ -26,6 +26,13 @@ constexpr auto kResourcePath = ":/data/rails.geojson.qz";
 constexpr double kSnapAcceptMeters = 150.0;
 constexpr double kSearchMeters = 600.0;
 constexpr double kMetresPerDegLat = 111320.0;   // ~constant; lon scaled by cos(lat)
+
+// Direction-aware snapping: when a heading is supplied, a candidate track is
+// charged this many metres for being perpendicular to the train's travel, scaled
+// by (1 - |alignment|). So a cross-cutting track must be >this much nearer than
+// an aligned one to win — enough to reject the crossing track at a junction
+// without overriding a genuinely closer parallel track that runs the same way.
+constexpr double kHeadingPenaltyMeters = 120.0;
 }
 
 TrackService::TrackService(QObject *parent)
@@ -111,7 +118,7 @@ QVector<TrackService::Segment> TrackService::parseGeometry()
     return segments;
 }
 
-TrackMatch TrackService::matchToNetwork(const QGeoCoordinate &fix) const
+TrackMatch TrackService::matchToNetwork(const QGeoCoordinate &fix, double headingDeg) const
 {
     TrackMatch match;   // snapped invalid, distance -1, onTrack false
     if (!fix.isValid() || m_all.isEmpty())
@@ -125,7 +132,18 @@ TrackMatch TrackService::matchToNetwork(const QGeoCoordinate &fix) const
     const double latMargin = kSearchMeters / kMetresPerDegLat;
     const double lonMargin = kSearchMeters / mPerLon;
 
-    double best = kSearchMeters;   // ignore anything farther than the search radius
+    // Heading as a unit vector in the local plane (east = sin, north = cos).
+    // Bidirectional: a rail carries trains both ways, so alignment uses the
+    // absolute dot product (a track anti-parallel to travel is still "aligned").
+    const bool useHeading = headingDeg >= 0.0;
+    const double headingRad = headingDeg * tm35fin::kPi / 180.0;
+    const double hx = std::sin(headingRad);   // east component
+    const double hy = std::cos(headingRad);   // north component
+
+    // Selection is by an effective cost (distance + a misalignment penalty); the
+    // returned distance/onTrack use the true geometric distance of the winner.
+    double bestCost = kSearchMeters;   // also gates out anything past the search radius
+    double bestDist = kSearchMeters;
     double bestX = 0.0, bestY = 0.0;
     bool found = false;
 
@@ -151,8 +169,19 @@ TrackMatch TrackService::matchToNetwork(const QGeoCoordinate &fix) const
                 t = (std::clamp)(t, 0.0, 1.0);
                 const double cx = ax + t * dx, cy = ay + t * dy;
                 const double dist = std::sqrt(cx * cx + cy * cy);
-                if (dist < best) {
-                    best = dist;
+
+                // Charge a cross-cutting segment a heading penalty so an aligned
+                // track wins ties at junctions/parallel runs; a degenerate
+                // zero-length segment carries no direction, so it pays nothing.
+                double cost = dist;
+                if (useHeading && len2 > 0.0) {
+                    const double inv = 1.0 / std::sqrt(len2);
+                    const double align = std::abs(dx * inv * hx + dy * inv * hy);
+                    cost += kHeadingPenaltyMeters * (1.0 - align);
+                }
+                if (cost < bestCost) {
+                    bestCost = cost;
+                    bestDist = dist;
                     bestX = cx;
                     bestY = cy;
                     found = true;
@@ -169,8 +198,8 @@ TrackMatch TrackService::matchToNetwork(const QGeoCoordinate &fix) const
 
     match.snapped = QGeoCoordinate(fix.latitude() + bestY / kMetresPerDegLat,
                                    fix.longitude() + bestX / mPerLon);
-    match.distanceMeters = best;
-    match.onTrack = best <= kSnapAcceptMeters;
+    match.distanceMeters = bestDist;
+    match.onTrack = bestDist <= kSnapAcceptMeters;
     return match;
 }
 

@@ -1,5 +1,6 @@
 #include "DigitrafficClient.h"
 
+#include <QGeoCoordinate>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -15,6 +16,8 @@ namespace {
 constexpr auto kLatestUrl = "https://rata.digitraffic.fi/api/v1/train-locations/latest/";
 // Currently-running trains, carrying trainCategory for marker colouring.
 constexpr auto kLiveTrainsUrl = "https://rata.digitraffic.fi/api/v1/live-trains";
+// Station metadata (short code -> name + coordinate); fetched once at startup.
+constexpr auto kStationsUrl = "https://rata.digitraffic.fi/api/v1/metadata/stations";
 // Digitraffic asks every client to identify itself. Replace with your own app id.
 constexpr auto kUserAgent = "TrainsOnMap/0.1 (Qt6 scaffolding)";
 // REST is the bootstrap + prune path; MQTT carries live deltas in between, so
@@ -35,6 +38,8 @@ DigitrafficClient::DigitrafficClient(QObject *parent)
     connect(&m_timer, &QTimer::timeout, this, &DigitrafficClient::refresh);
     // Categories piggyback on refresh() (every kResyncIntervalMs while active),
     // so they need no separate poll — and stay quiet when polling is stopped.
+
+    fetchStations();   // one-shot: station coordinates for parked-train pinning
 }
 
 void DigitrafficClient::setActive(bool active)
@@ -110,10 +115,12 @@ void DigitrafficClient::handleCategories(QNetworkReply *reply)
     QHash<TrainKey, QString> categories;
     QHash<TrainKey, QString> commuterLines;
     QHash<TrainKey, TrainStatus> statuses;
+    QHash<TrainKey, QVector<QString>> routes;
     types.reserve(arr.size());
     categories.reserve(arr.size());
     commuterLines.reserve(arr.size());
     statuses.reserve(arr.size());
+    routes.reserve(arr.size());
     for (const QJsonValue &v : arr) {
         const QJsonObject o = v.toObject();
         // Key on (departureDate, trainNumber): the number alone is reused daily
@@ -130,17 +137,59 @@ void DigitrafficClient::handleCategories(QNetworkReply *reply)
         st.cancelled = o.value("cancelled").toBool();
         st.running = o.value("runningCurrently").toBool();
         // Current delay = differenceInMinutes of the most recently passed stop
-        // (the last timetable row that already has an actualTime).
+        // (the last timetable row that already has an actualTime). In the same
+        // pass, collect the route's station codes (ARRIVAL+DEPARTURE rows repeat a
+        // code, so de-dupe consecutively) for parked-train station snapping.
         const QJsonArray rows = o.value("timeTableRows").toArray();
+        QVector<QString> route;
+        route.reserve(rows.size());
         for (const QJsonValue &rv : rows) {
             const QJsonObject row = rv.toObject();
             if (!row.value("actualTime").toString().isEmpty())
                 st.delayMinutes = row.value("differenceInMinutes").toInt();
+            const QString code = row.value("stationShortCode").toString();
+            if (!code.isEmpty() && (route.isEmpty() || route.last() != code))
+                route.push_back(code);
         }
         statuses.insert(key, st);
+        if (!route.isEmpty())
+            routes.insert(key, route);
     }
     m_model->setTrainMetadata(types, categories, commuterLines);
     m_model->setTrainStatuses(statuses);
+    m_model->setTrainRoutes(routes);
+}
+
+void DigitrafficClient::fetchStations()
+{
+    QNetworkRequest req{QUrl(QString::fromLatin1(kStationsUrl))};
+    req.setRawHeader("Digitraffic-User", kUserAgent);
+    QNetworkReply *reply = m_net->get(req);
+    connect(reply, &QNetworkReply::finished, this, [this, reply] { handleStations(reply); });
+}
+
+void DigitrafficClient::handleStations(QNetworkReply *reply)
+{
+    reply->deleteLater();
+    if (reply->error() != QNetworkReply::NoError)
+        return;   // parked-train station snapping just stays disabled
+
+    const QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
+    if (!doc.isArray())
+        return;
+
+    const QJsonArray arr = doc.array();
+    QHash<QString, QGeoCoordinate> coords;
+    coords.reserve(arr.size());
+    for (const QJsonValue &v : arr) {
+        const QJsonObject o = v.toObject();
+        const QString code = o.value("stationShortCode").toString();
+        const double lat = o.value("latitude").toDouble();
+        const double lon = o.value("longitude").toDouble();
+        if (!code.isEmpty())
+            coords.insert(code, QGeoCoordinate(lat, lon));
+    }
+    m_model->setStationCoords(coords);
 }
 
 void DigitrafficClient::handleReply(QNetworkReply *reply)

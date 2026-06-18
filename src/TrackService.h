@@ -35,7 +35,8 @@ public:
     /// TrackMatcher: snap a WGS84 fix to the nearest in-memory rail segment.
     /// Reads m_all on the GUI thread (where positions are applied); returns an
     /// empty match until the network has finished loading.
-    TrackMatch matchToNetwork(const QGeoCoordinate &fix) const override;
+    TrackMatch matchToNetwork(const QGeoCoordinate &fix,
+                              double headingDeg = -1.0) const override;
 
 public slots:
     /// Show only tracks intersecting the given WGS84 bounding box.

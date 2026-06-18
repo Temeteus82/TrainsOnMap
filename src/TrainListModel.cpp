@@ -13,6 +13,21 @@ constexpr qint64 kStalePositionSecs = 300;   // position older than this reads a
 constexpr int kLateMinutes = 5;              // amber "late" ring at this delay or more
 constexpr int kVeryLateMinutes = 15;         // red "very late" ring at this delay or more
 constexpr double kStoppedSpeedKmh = 0.5;     // below this a train counts as stopped/waiting
+
+// Below this speed the heading from successive fixes is GPS noise, not travel
+// direction, so it's not fed to the (direction-aware) map-matcher; likewise a
+// move shorter than this between two fixes yields an unreliable azimuth.
+constexpr double kHeadingMinSpeedKmh = 5.0;
+constexpr double kHeadingMinMoveMeters = 8.0;
+
+// Stopped-train handling (tier-1 continuity, parts #2/#5). A parked train's
+// fixes jitter by tens of metres and can re-snap onto a neighbouring track each
+// poll; once it's snapped, hold that point while successive fixes stay within
+// this radius. If instead the parked fix is off the network entirely and a
+// scheduled station sits within the station-snap radius, pin it there (the train
+// is sitting in a station whose throat the GPS has drifted out of).
+constexpr double kStoppedHoldMeters = 40.0;
+constexpr double kStationSnapMeters = 250.0;
 }
 
 TrainListModel::TrainListModel(QObject *parent)
@@ -82,6 +97,28 @@ double TrainListModel::bearingFor(const TrainKey &key, const QGeoCoordinate &coo
     return bearing;
 }
 
+QGeoCoordinate TrainListModel::nearestRouteStation(const TrainKey &key,
+                                                   const QGeoCoordinate &fix) const
+{
+    const auto route = m_routeByKey.constFind(key);
+    if (route == m_routeByKey.constEnd() || m_stationCoords.isEmpty())
+        return {};
+
+    QGeoCoordinate best;
+    double bestDist = kStationSnapMeters;
+    for (const QString &code : *route) {
+        const auto it = m_stationCoords.constFind(code);
+        if (it == m_stationCoords.constEnd() || !it->isValid())
+            continue;
+        const double d = fix.distanceTo(*it);
+        if (d < bestDist) {
+            bestDist = d;
+            best = *it;
+        }
+    }
+    return best;
+}
+
 void TrainListModel::updateTrains(const QVector<TrainPosition> &trains)
 {
     QSet<TrainKey> active;
@@ -138,10 +175,40 @@ void TrainListModel::applyOne(const TrainPosition &train)
     TrainPosition matched = train;
     double offset = -1.0;
     if (m_matcher && matched.coordinate.isValid()) {
-        const TrackMatch m = m_matcher->matchToNetwork(matched.coordinate);
+        const auto prev = m_previous.constFind(key);
+        const bool havePrev = prev != m_previous.constEnd() && prev->isValid();
+        const bool stopped = train.speed < kStoppedSpeedKmh;
+
+        // Estimate the direction of travel from the last stored position so the
+        // matcher can prefer the track the train runs along (vs. one it crosses).
+        // Skipped when stopped or barely moved — the azimuth would be noise.
+        double heading = -1.0;
+        if (havePrev && train.speed >= kHeadingMinSpeedKmh
+            && prev->distanceTo(matched.coordinate) > kHeadingMinMoveMeters)
+            heading = prev->azimuthTo(matched.coordinate);
+
+        const TrackMatch m = m_matcher->matchToNetwork(matched.coordinate, heading);
         offset = m.distanceMeters;
-        if (m.onTrack && m.snapped.isValid())
-            matched.coordinate = m.snapped;
+        QGeoCoordinate snapped = (m.onTrack && m.snapped.isValid()) ? m.snapped
+                                                                    : matched.coordinate;
+
+        if (stopped) {
+            // #2 Continuity: a parked train's jittering fixes shouldn't drag the
+            // marker around (or hop it to a neighbouring track). Once we have a
+            // snapped point and the new fix is still nearby, keep that point.
+            if (havePrev && prev->distanceTo(matched.coordinate) < kStoppedHoldMeters) {
+                snapped = *prev;
+            } else if (!m.onTrack) {
+                // #5 Stopped and off the network: pin to the nearest scheduled
+                // station if one is close — the train is in a station the GPS has
+                // drifted out of. (Skipped while running: a moving off-track fix is
+                // a genuine geometry gap, not a station stop.)
+                const QGeoCoordinate st = nearestRouteStation(key, matched.coordinate);
+                if (st.isValid())
+                    snapped = st;
+            }
+        }
+        matched.coordinate = snapped;
     }
 
     const auto it = m_indexByKey.constFind(key);
