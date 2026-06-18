@@ -11,7 +11,7 @@ set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
 # QtLocation/QtPositioning require 6.5+. Qml/Quick give us the Qt Quick map UI;
 # Network is used by the Digitraffic REST/GeoJSON clients.
-find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Qml Quick Network Positioning Location WebSockets Concurrent)
+find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Qml Quick Network Positioning Location WebSockets Concurrent Test)
 
 qt_standard_project_setup(REQUIRES 6.5)
 
@@ -28,6 +28,7 @@ qt_add_executable(TrainsOnMap
     src/TrainListModel.h        src/TrainListModel.cpp
     src/TrackService.h          src/TrackService.cpp
     src/TrackMatcher.h
+    src/RailGraph.h             src/RailGraph.cpp
     src/TrackListModel.h        src/TrackListModel.cpp
     src/TrainDetailsService.h   src/TrainDetailsService.cpp
     src/TimetableModel.h        src/TimetableModel.cpp
@@ -118,3 +119,19 @@ endif()
 install(TARGETS TrainsOnMap
     BUNDLE  DESTINATION .
     RUNTIME DESTINATION bin)
+
+# ---- Tests (Tier-2 routing core) ---------------------------------------------
+# RailGraph is pure (QtCore + QtPositioning), so it's unit-tested directly with
+# QtTest — both on a synthetic fixture network and a smoke test over the real
+# baked blob. Run with: ctest --test-dir build/<preset> --output-on-failure
+# (the test exe needs the Qt kit's bin on PATH for its DLLs).
+enable_testing()
+qt_add_executable(tst_railgraph
+    tests/tst_railgraph.cpp
+    src/RailGraph.h src/RailGraph.cpp
+    src/Projection.h)
+target_include_directories(tst_railgraph PRIVATE src)
+target_link_libraries(tst_railgraph PRIVATE Qt6::Core Qt6::Positioning Qt6::Test)
+target_compile_definitions(tst_railgraph PRIVATE
+    RAILS_BLOB="${CMAKE_CURRENT_SOURCE_DIR}/resources/rails.geojson.qz")
+add_test(NAME railgraph COMMAND tst_railgraph)

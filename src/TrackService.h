@@ -1,10 +1,14 @@
 #pragma once
 
+#include <QHash>
 #include <QObject>
 #include <QVariantList>
 #include <QVector>
 #include <QtQmlIntegration>
 
+#include <memory>
+
+#include "RailGraph.h"
 #include "TrackListModel.h"
 #include "TrackMatcher.h"
 
@@ -12,11 +16,15 @@
 /// in the binary (`:/data/rails.geojson.qz`, produced by `scripts/bake_rails.py`).
 ///
 /// The rail network changes rarely, so it ships in the repo instead of being
-/// fetched from the Digitraffic infra-api on every launch. The whole network is
-/// parsed + projected to WGS84 once on a worker thread at startup (geometryReady
-/// fires when done); loadForBounds() then filters the in-memory segments to the
-/// current viewport (rendering the entire network at once would be thousands of
-/// polylines).
+/// fetched from the Digitraffic infra-api on every launch. The schema-v2 blob is
+/// parsed into a RailGraph (geometry + identity + topology + station crosswalk)
+/// once on a worker thread at startup (geometryReady fires when done). The whole
+/// network is also flattened into render Segments; loadForBounds() then filters
+/// them to the current viewport.
+///
+/// Tier 2: matchOnRoute() constrains a fix to a train's scheduled route polyline
+/// (resolved off-thread by precomputeRoutes()), and platform-snaps a stopped
+/// train to its booked commercialTrack.
 class TrackService : public QObject, public TrackMatcher
 {
     Q_OBJECT
@@ -33,44 +41,59 @@ public:
     QString status() const { return m_status; }
 
     /// TrackMatcher: snap a WGS84 fix to the nearest in-memory rail segment.
-    /// Reads m_all on the GUI thread (where positions are applied); returns an
-    /// empty match until the network has finished loading.
     TrackMatch matchToNetwork(const QGeoCoordinate &fix,
                               double headingDeg = -1.0) const override;
+
+    /// TrackMatcher (Tier 2): snap a fix against the train's scheduled route.
+    TrackMatch matchOnRoute(const QGeoCoordinate &fix,
+                            const RouteMatchRequest &req) const override;
+
+    /// Resolve + cache route polylines for the given station sequences off the
+    /// GUI thread (routes are static per run, so this runs once per refresh and
+    /// dedupes identical routes). Cheap no-op until the network has loaded.
+    void precomputeRoutes(const QVector<QVector<QString>> &routes);
 
 public slots:
     /// Show only tracks intersecting the given WGS84 bounding box.
     /// Arguments follow the GeoJSON/OGC convention: west, south, east, north.
     void loadForBounds(double west, double south, double east, double north);
 
+    /// The resolved route polyline for an ordered station sequence, as a
+    /// QVariantList of QGeoCoordinate ready to bind to a MapPolyline.path. Empty
+    /// until precomputeRoutes() has resolved it. Used by the debug route overlay.
+    QVariantList routePolyline(const QStringList &stationCodes) const;
+
 signals:
     void loadingChanged();
     void statusChanged();
-
-    /// Emitted on the GUI thread once the worker has finished parsing +
-    /// projecting the network into m_all (success or failure). QML uses this to
-    /// seed the first viewport load.
     void geometryReady();
+    void routesReady();
 
 private:
-    /// One track segment: its WGS84 polyline plus a lat/lon bbox for fast
-    /// viewport filtering.
+    /// One render segment: a WGS84 polyline plus a lat/lon bbox for viewport cull.
     struct Segment {
-        QVariantList path;   ///< QGeoCoordinate list, bind to MapPolyline.path
+        QVariantList path;
         double minLat = 0.0;
         double maxLat = 0.0;
         double minLon = 0.0;
         double maxLon = 0.0;
     };
 
-    /// Parse + project the embedded snapshot off the GUI thread, returning the
-    /// segments. Pure/thread-safe: touches no member or QObject state.
-    static QVector<Segment> parseGeometry();
+    /// Worker-thread result: the parsed graph plus the flattened render segments.
+    struct Loaded {
+        std::shared_ptr<RailGraph> graph;
+        QVector<Segment> segments;
+    };
+
+    static Loaded loadNetwork();
     void setLoading(bool loading);
     void setStatus(const QString &status);
 
     TrackListModel *m_model = nullptr;
-    QVector<Segment> m_all;   ///< the whole network, projected to WGS84
+    QVector<Segment> m_all;                 ///< render segments (and Tier-1 matcher)
+    std::shared_ptr<RailGraph> m_graph;     ///< Tier-2 network; null until loaded
+    QHash<QString, RailGraph::RoutePolyline> m_routePolys;  ///< routeKey -> polyline
+    bool m_precomputing = false;
     bool m_loading = false;
     QString m_status;
 };
