@@ -18,7 +18,13 @@ class TrackMatcher
 public:
     virtual ~TrackMatcher() = default;
 
-    /// Nearest point on the network to `fix`. Returns an empty match (distance
-    /// < 0) when the network isn't loaded yet or `fix` is invalid.
-    virtual TrackMatch matchToNetwork(const QGeoCoordinate &fix) const = 0;
+    /// Nearest point on the network to `fix`. `headingDeg` is the train's
+    /// direction of travel (0 = north, clockwise) or < 0 when unknown; when
+    /// supplied, a candidate track whose tangent aligns with it is preferred
+    /// over a slightly nearer but cross-cutting one (so a fix near a junction
+    /// snaps to the track the train is actually running on, not the one it
+    /// crosses). Returns an empty match (distance < 0) when the network isn't
+    /// loaded yet or `fix` is invalid.
+    virtual TrackMatch matchToNetwork(const QGeoCoordinate &fix,
+                                      double headingDeg = -1.0) const = 0;
 };

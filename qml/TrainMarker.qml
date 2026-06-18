@@ -1,5 +1,6 @@
 import QtQuick
 import QtLocation
+import QtPositioning
 
 import TrainsOnMap
 
@@ -97,6 +98,20 @@ MapQuickItem {
     readonly property color dotColor: stale ? "#9AA0A6" : trainColor
 
     coordinate: model.coordinate
+
+    // Glide along the rail between the (roughly periodic) position fixes instead
+    // of teleporting on each one. Successive fixes are already snapped onto the
+    // rail, so a short tween between two of them tracks the line closely; a fresh
+    // fix simply retargets the animation in flight. Honour the reduced-motion
+    // opt-out — then the coordinate snaps straight to each fix with no animation.
+    Behavior on coordinate {
+        enabled: !Theme.reducedMotion
+        CoordinateAnimation {
+            duration: 1000
+            easing.type: Easing.Linear
+        }
+    }
+
     // Anchor the coordinate at the centre of the dot (the label floats right).
     anchorPoint.x: dotGroup.width / 2
     anchorPoint.y: dotGroup.height / 2

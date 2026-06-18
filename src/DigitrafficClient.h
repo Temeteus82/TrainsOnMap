@@ -62,6 +62,10 @@ signals:
 private:
     void handleReply(QNetworkReply *reply);
     void handleCategories(QNetworkReply *reply);
+    /// One-shot at startup: load station short-code -> coordinate so the model can
+    /// pin a parked, off-network train to its scheduled station.
+    void fetchStations();
+    void handleStations(QNetworkReply *reply);
     void setStatus(const QString &status);
 
     QNetworkAccessManager *m_net = nullptr;
