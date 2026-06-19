@@ -100,22 +100,29 @@ Rectangle {
         }
 
         // Tier-2 map-match diagnostics: which track the live fix snapped to, how
-        // far the raw fix was, and whether it matched the scheduled route.
+        // far the raw fix was, whether it matched the scheduled route, and the
+        // reported GPS accuracy (#1 — surfaces the quality the marker flags).
         Label {
             Layout.fillWidth: true
             wrapMode: Text.WordWrap
             color: Theme.textMuted
             font.pixelSize: TypeScale.caption
-            visible: root.matchInfo && root.matchInfo.offset !== undefined
-                     && root.matchInfo.offset >= 0
+            visible: root.matchInfo
+                     && ((root.matchInfo.offset !== undefined && root.matchInfo.offset >= 0)
+                         || (root.matchInfo.accuracy !== undefined && root.matchInfo.accuracy >= 0))
             text: {
-                if (!root.matchInfo || root.matchInfo.offset === undefined)
+                if (!root.matchInfo)
                     return ""
-                var s = root.matchInfo.onRoute ? qsTr("on route") : qsTr("nearest track")
-                s += " · " + qsTr("%1 m off").arg(Math.round(root.matchInfo.offset))
+                var parts = []
+                if (root.matchInfo.offset !== undefined && root.matchInfo.offset >= 0) {
+                    var where = root.matchInfo.onRoute ? qsTr("on route") : qsTr("nearest track")
+                    parts.push(where + " · " + qsTr("%1 m off").arg(Math.round(root.matchInfo.offset)))
+                }
+                if (root.matchInfo.accuracy !== undefined && root.matchInfo.accuracy >= 0)
+                    parts.push(qsTr("±%1 m GPS").arg(root.matchInfo.accuracy))
                 if (root.matchInfo.tunniste && root.matchInfo.tunniste.length > 0)
-                    s += " · " + root.matchInfo.tunniste
-                return s
+                    parts.push(root.matchInfo.tunniste)
+                return parts.join(" · ")
             }
         }
 

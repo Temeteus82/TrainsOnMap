@@ -91,6 +91,13 @@ public:
     /// one resolved polyline).
     static QString routeKey(const QVector<QString> &stationCodes);
 
+    /// Canonical station-code sequence for a route: drops empty codes and
+    /// collapses consecutive duplicates (timetable ARRIVAL+DEPARTURE rows repeat
+    /// a code). Shared so the precompute key (DigitrafficClient) and the overlay
+    /// key (TrainDetailsService::routeStations) are built identically and can't
+    /// diverge into a silent lookup miss (R8, the robust form of #10).
+    static QStringList canonicalRouteCodes(const QStringList &rawCodes);
+
     const QHash<QString, Station> &stations() const { return m_stations; }
     const QVector<Track> &tracks() const { return m_tracks; }
 

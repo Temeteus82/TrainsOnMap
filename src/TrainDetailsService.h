@@ -6,6 +6,7 @@
 #include <QStringList>
 #include <QtQmlIntegration>
 
+#include "RailGraph.h"
 #include "TimetableModel.h"
 
 class QNetworkAccessManager;
@@ -53,15 +54,16 @@ public:
     bool cancelled() const { return m_cancelled; }
     QStringList routeStations() const
     {
-        // Skip empty short codes: DigitrafficClient does the same when building
-        // the precompute key, so including them here would make the '|'-joined
-        // key diverge and the route-overlay lookup silently miss (#10).
-        QStringList codes;
-        codes.reserve(m_stops.size());
+        // Build the overlay key through the same canonicaliser DigitrafficClient
+        // uses for the precompute key — skip empties AND collapse consecutive
+        // duplicates — so the two '|'-joined keys can't diverge and silently miss
+        // (R8, the robust form of #10: an empty code adjacent to a repeated one
+        // previously left a duplicate here that the precompute key didn't have).
+        QStringList raw;
+        raw.reserve(m_stops.size());
         for (const TimetableStop &s : m_stops)
-            if (!s.stationShortCode.isEmpty())
-                codes.push_back(s.stationShortCode);
-        return codes;
+            raw.push_back(s.stationShortCode);
+        return RailGraph::canonicalRouteCodes(raw);
     }
 
 public slots:
