@@ -20,17 +20,19 @@ train's scheduled path:
                           `commercialTrack`)
       seuraavatRaiteet    next tracks       -> directed graph edges
       viereisetRaiteet    adjacent/parallel -> disambiguation hints
-      rautatieliikennepaikat  owning operating-point OID(s) (track -> station)
       ratakmvalit         line number + km chainage (linear referencing)
+    (The per-track `rautatieliikennepaikat` owning-OID list is intentionally NOT
+    kept — the app never reads it; see TRACK_PROPS.)
   * `stations`: timetable `stationShortCode` -> { uic, opOid, name, match,
     distM, tracks:[track OID] }.  The station <-> infra crosswalk is resolved
-    here (offline) by UIC code against the union of operating points
-    (`rautatieliikennepaikat`) and their finer parts (`liikennepaikanosat`),
-    falling back to normalised name then nearest-point geometry. See the module
-    notes for why no single key suffices.
-  * `operatingPoints`: infra operating-point / part OID -> `stationShortCode`
-    (the reverse crosswalk, so a track's `rautatieliikennepaikat` OID can be
-    named).
+    here (offline) by UIC code against the union of the operating-points layer
+    (infra `rautatieliikennepaikat.geojson`) and their finer parts
+    (`liikennepaikanosat`), falling back to normalised name then nearest-point
+    geometry. See the module notes for why no single key suffices.
+
+The reverse `operatingPoints` map (OID -> stationShortCode) is no longer emitted:
+the app resolves stations via the `stations.tracks` lists alone, so baking the
+reverse direction was dead weight (#15).
 
 Why the crosswalk is non-trivial (verified against live data, 2026-06):
   * infra `lyhenne` ("Hel", "Psl") is NOT the timetable `stationShortCode`
@@ -83,13 +85,16 @@ STEP = 150_000
 # Track properties kept per feature (everything Tier-2 matching needs; the bulky
 # rest — speed limits, electrification, elements, etc. — is dropped). `geometria`
 # is dropped because the GeoJSON `geometry` already carries the centreline.
+# `rautatieliikennepaikat` (per-track owning operating-point OIDs) used to be kept
+# but the app never reads it — the station->track crosswalk is resolved here at
+# bake time from the ops' own `raiteet`, and RailGraph::loadFromJson ignores the
+# property entirely — so it's dropped to shrink the blob (#15).
 TRACK_PROPS = (
     "tunniste",
     "paaraide",
     "kaupallinenNumero",
     "seuraavatRaiteet",
     "viereisetRaiteet",
-    "rautatieliikennepaikat",
     "ratakmvalit",
 )
 
@@ -185,11 +190,9 @@ def collect_tracks():
 
 
 def build_crosswalk(track_ids):
-    """Resolve timetable stationShortCode <-> infra tracks.
+    """Resolve timetable stationShortCode -> infra tracks.
 
-    Returns (stations, operating_points):
-      stations[shortCode] = {uic, opOid, name, match, distM, tracks:[OID]}
-      operating_points[OID] = shortCode    (reverse; op and part OIDs)
+    Returns stations[shortCode] = {uic, opOid, name, match, distM, tracks:[OID]}.
 
     `track_ids` is the set of track OIDs we actually baked, so member-track lists
     only reference geometry that ships in this blob.
@@ -237,7 +240,6 @@ def build_crosswalk(track_ids):
             geo_pts.append((lat, lon, p))
 
     out = {}
-    op_to_code = {}
     counts = {"uic": 0, "name": 0, "geo": 0, "unresolved": 0}
     for s in stations:
         code = s.get("stationShortCode")
@@ -271,20 +273,19 @@ def build_crosswalk(track_ids):
             "distM": round(dist, 1),
             "tracks": member_tracks(entry),
         }
-        op_to_code[oid] = code
 
     resolved = len(out)
     no_tracks = sum(1 for v in out.values() if not v["tracks"])
     print(f"  crosswalk: {resolved} stations resolved "
           f"(uic={counts['uic']} name={counts['name']} geo={counts['geo']}), "
           f"{counts['unresolved']} unresolved, {no_tracks} resolved-but-no-tracks")
-    return out, op_to_code
+    return out
 
 
 def main():
     tracks = collect_tracks()
     track_ids = set(tracks.keys())
-    stations, operating_points = build_crosswalk(track_ids)
+    stations = build_crosswalk(track_ids)
 
     out_fc = {
         "type": "FeatureCollection",
@@ -293,7 +294,6 @@ def main():
         "crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:EPSG::3067"}},
         "features": list(tracks.values()),
         "stations": stations,
-        "operatingPoints": operating_points,
     }
     raw = json.dumps(out_fc, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     blob = struct.pack(">I", len(raw)) + zlib.compress(raw, 9)   # qCompress format
