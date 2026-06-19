@@ -51,6 +51,19 @@ ApplicationWindow {
         onTriggered: win.selMatch = trainClient.model.matchInfoFor(
                          trainDetails.trainNumber, trainDetails.departureDate)
     }
+    // Reset/refresh selMatch the instant the selection changes. The Timer above
+    // keeps running across a selection change (running stays true), so without
+    // this the ring/connector/diagnostics would show the *previous* train's data
+    // for up to 750 ms until the next tick (#9).
+    Connections {
+        target: trainDetails
+        function onSelectionChanged() {
+            win.selMatch = trainDetails.hasSelection
+                ? trainClient.model.matchInfoFor(trainDetails.trainNumber,
+                                                 trainDetails.departureDate)
+                : ({})
+        }
+    }
 
     // ---- Backend services (C++) -------------------------------------------
     // REST bootstraps the full set of trains and resyncs/prunes every 60 s;

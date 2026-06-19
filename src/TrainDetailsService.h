@@ -53,10 +53,14 @@ public:
     bool cancelled() const { return m_cancelled; }
     QStringList routeStations() const
     {
+        // Skip empty short codes: DigitrafficClient does the same when building
+        // the precompute key, so including them here would make the '|'-joined
+        // key diverge and the route-overlay lookup silently miss (#10).
         QStringList codes;
         codes.reserve(m_stops.size());
         for (const TimetableStop &s : m_stops)
-            codes.push_back(s.stationShortCode);
+            if (!s.stationShortCode.isEmpty())
+                codes.push_back(s.stationShortCode);
         return codes;
     }
 

@@ -27,16 +27,13 @@ public:
         QString tunniste;             ///< stable track OID
         bool paaraide = false;        ///< main-track flag (running lines preferred)
         QString kaupallinenNumero;    ///< platform / commercial track number
-        QString ratanumero;           ///< primary line number (first ratakmvali)
         QVector<QGeoCoordinate> path; ///< centreline, projected to WGS84
         double lengthMeters = 0.0;
         double minLat = 0, maxLat = 0, minLon = 0, maxLon = 0;
-        int nodeA = -1;               ///< endpoint node id (start)
-        int nodeB = -1;               ///< endpoint node id (end)
+        // Endpoint-node ids live only as locals in loadFromJson (adjacency build).
     };
 
     struct Station {
-        QString opOid;
         QString name;
         QVector<int> tracks;          ///< indices into the track vector
     };
@@ -68,7 +65,9 @@ public:
 
     /// Ordered track indices forming a connected path through `stationCodes`
     /// (consecutive station pairs joined by Dijkstra over the derived graph).
-    /// Empty when no station resolves; gaps are skipped rather than failing.
+    /// Empty when fewer than two stations resolve, or when any consecutive pair
+    /// is unroutable — an internal gap aborts the whole route rather than
+    /// stitching a chord across it (the caller then falls back to Tier-1).
     QVector<int> routePath(const QVector<QString> &stationCodes) const;
 
     /// Build a chainage-parameterised polyline from an ordered track-index path.

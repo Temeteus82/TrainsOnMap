@@ -1,6 +1,8 @@
 #pragma once
 
 #include <QGeoCoordinate>
+
+#include <algorithm>
 #include <cmath>
 
 /// Conversions between EPSG:3067 (ETRS-TM35FIN, the CRS the Digitraffic
@@ -100,6 +102,66 @@ inline void fromWgs84(double latDeg, double lonDeg, double &E, double &N)
                      * (A * A / 2
                         + (5 - T + 9 * C + 4 * C * C) * std::pow(A, 4) / 24
                         + (61 - 58 * T + T * T + 600 * C - 330 * ep2) * std::pow(A, 6) / 720));
+}
+
+// --- Local tangent-plane nearest-point-on-segment matching -------------------
+// Shared by Tier-1 (TrackService::matchToNetwork), route projection
+// (RailGraph::projectOntoRoute) and platform snapping (RailGraph::nearestOnTrack)
+// so the snap maths lives in exactly one place.
+
+// (Near-)constant metres per degree of latitude; longitude is scaled by cos(lat).
+inline constexpr double kMetresPerDegLat = 111320.0;
+
+/// Metres per degree of longitude at `fix`'s latitude, clamped away from 0 near
+/// the poles so the tangent plane stays well-conditioned.
+inline double metresPerDegLon(const QGeoCoordinate &fix)
+{
+    const double cosLat = std::cos(fix.latitude() * kPi / 180.0);
+    return kMetresPerDegLat * (std::max)(0.05, cosLat);
+}
+
+/// Result of projecting a fix onto a segment [a,b] in a local east/north tangent
+/// plane (metres) centred on the fix.
+struct SegmentHit {
+    double dist = 0.0;     ///< distance fix -> nearest point on the segment (m)
+    double t = 0.0;        ///< clamped parameter along the segment (0..1)
+    double east = 0.0;     ///< east offset (m) of the nearest point from the fix
+    double north = 0.0;    ///< north offset (m) of the nearest point from the fix
+    double dirEast = 0.0;  ///< segment direction east component (b - a, m)
+    double dirNorth = 0.0; ///< segment direction north component (b - a, m)
+    double len2 = 0.0;     ///< squared segment length (m^2)
+};
+
+/// Project `fix` onto segment [a,b]. `mPerLon` must be metresPerDegLon(fix).
+inline SegmentHit projectToSegment(const QGeoCoordinate &fix, double mPerLon,
+                                   const QGeoCoordinate &a, const QGeoCoordinate &b)
+{
+    const double ax = (a.longitude() - fix.longitude()) * mPerLon;
+    const double ay = (a.latitude() - fix.latitude()) * kMetresPerDegLat;
+    const double bx = (b.longitude() - fix.longitude()) * mPerLon;
+    const double by = (b.latitude() - fix.latitude()) * kMetresPerDegLat;
+    const double dx = bx - ax, dy = by - ay;
+    const double len2 = dx * dx + dy * dy;
+    double t = len2 > 0.0 ? -(ax * dx + ay * dy) / len2 : 0.0;
+    t = (std::clamp)(t, 0.0, 1.0);
+    const double cx = ax + t * dx, cy = ay + t * dy;
+    SegmentHit h;
+    h.dist = std::sqrt(cx * cx + cy * cy);
+    h.t = t;
+    h.east = cx;
+    h.north = cy;
+    h.dirEast = dx;
+    h.dirNorth = dy;
+    h.len2 = len2;
+    return h;
+}
+
+/// Convert an east/north offset (m) from `fix` back to a WGS84 coordinate.
+inline QGeoCoordinate offsetToCoord(const QGeoCoordinate &fix, double mPerLon,
+                                    double east, double north)
+{
+    return QGeoCoordinate(fix.latitude() + north / kMetresPerDegLat,
+                          fix.longitude() + east / mPerLon);
 }
 
 } // namespace tm35fin

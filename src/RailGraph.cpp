@@ -14,7 +14,6 @@
 
 namespace {
 constexpr int kSchemaVersion = 2;
-constexpr double kMetresPerDegLat = 111320.0;
 
 // Endpoint-node quantisation: two track ends within this grid (metres, in the
 // source EPSG:3067 CRS) are treated as the same switch/join node. 10 m closes the
@@ -27,11 +26,15 @@ constexpr double kNodeGridMeters = 10.0;
 constexpr double kSidingPenalty = 1.4;
 
 // Route projection windowing (metres). Around the predicted chainage we search
-// this far back / forward; a windowed best worse than the accept distance forces
-// a global re-acquire (the train left its predicted spot — diversion or gap).
+// this far back / forward. A windowed projection is trusted for continuity as
+// long as the fix is within kRouteReacquireMeters of it; only when the fix is
+// farther than that — i.e. the train genuinely left its predicted spot — do we
+// fall back to an unconstrained global re-acquire. This stops a fix near a
+// parallel/earlier limb (nearer in 2D, far in chainage) from yanking the marker
+// off its booked progression onto the wrong limb.
 constexpr double kWindowBack = 150.0;
 constexpr double kWindowFwd = 400.0;
-constexpr double kRouteAcceptMeters = 120.0;
+constexpr double kRouteReacquireMeters = 300.0;
 
 // Pack two 32-bit grid cells into one key.
 inline qint64 cellKey(double e, double n)
@@ -127,18 +130,17 @@ bool RailGraph::loadFromJson(const QByteArray &json)
         t.tunniste = props.value(QStringLiteral("tunniste")).toString();
         t.paaraide = props.value(QStringLiteral("paaraide")).toBool();
         t.kaupallinenNumero = props.value(QStringLiteral("kaupallinenNumero")).toString();
-        const QJsonArray rkv = props.value(QStringLiteral("ratakmvalit")).toArray();
-        if (!rkv.isEmpty())
-            t.ratanumero = rkv.at(0).toObject().value(QStringLiteral("ratanumero")).toString();
-        t.nodeA = nodeFor(firstE, firstN);
-        t.nodeB = nodeFor(lastE, lastN);
+        // Endpoint nodes are only needed to build the adjacency below, so they
+        // stay function-local rather than living on every Track for the run.
+        const int nodeA = nodeFor(firstE, firstN);
+        const int nodeB = nodeFor(lastE, lastN);
 
         const int idx = m_tracks.size();
         if (!t.tunniste.isEmpty())
             m_indexByTunniste.insert(t.tunniste, idx);
-        nodeTracks[t.nodeA].append(idx);
-        if (t.nodeB != t.nodeA)
-            nodeTracks[t.nodeB].append(idx);
+        nodeTracks[nodeA].append(idx);
+        if (nodeB != nodeA)
+            nodeTracks[nodeB].append(idx);
 
         QStringList vier;
         for (const QJsonValue &vv : props.value(QStringLiteral("viereisetRaiteet")).toArray())
@@ -176,7 +178,6 @@ bool RailGraph::loadFromJson(const QByteArray &json)
     for (auto it = stationsObj.constBegin(); it != stationsObj.constEnd(); ++it) {
         const QJsonObject so = it.value().toObject();
         Station st;
-        st.opOid = so.value(QStringLiteral("opOid")).toString();
         st.name = so.value(QStringLiteral("name")).toString();
         for (const QJsonValue &tv : so.value(QStringLiteral("tracks")).toArray()) {
             const auto ti = m_indexByTunniste.constFind(tv.toString());
@@ -256,13 +257,19 @@ QVector<int> RailGraph::routePath(const QVector<QString> &stationCodes) const
     QVector<int> full;
     int arrival = -1;
     full = dijkstra(sets.at(0), QSet<int>(sets.at(1).cbegin(), sets.at(1).cend()), arrival);
+    if (full.isEmpty())
+        return {};                          // first leg unroutable -> route unresolved
     for (int k = 2; k < sets.size(); ++k) {
-        const QVector<int> src = arrival >= 0 ? QVector<int>{arrival} : sets.at(k - 1);
+        // Each leg continues from the previous arrival track. If a leg is
+        // unroutable we must NOT skip it and stitch the next one on: that would
+        // join two graph-non-adjacent tracks and draw a multi-km chord across the
+        // gap (inflating all chainage past it). Abort the whole route to an
+        // unresolved state so the train falls back to Tier-1 instead.
         const QVector<int> leg =
-            dijkstra(src, QSet<int>(sets.at(k).cbegin(), sets.at(k).cend()), arrival);
+            dijkstra(QVector<int>{arrival}, QSet<int>(sets.at(k).cbegin(), sets.at(k).cend()), arrival);
         if (leg.isEmpty())
-            continue;                       // gap: skip this leg, keep the rest
-        for (int j = (full.isEmpty() ? 0 : 1); j < leg.size(); ++j)
+            return {};
+        for (int j = 1; j < leg.size(); ++j)
             full.append(leg.at(j));
     }
     // Collapse any accidental consecutive repeats.
@@ -287,10 +294,17 @@ RailGraph::RoutePolyline RailGraph::buildPolyline(const QVector<int> &trackPath)
         // Orient each track so it continues from the polyline's current end.
         if (rp.points.isEmpty()) {
             if (trackPath.size() > 1) {
-                // Orient the first track toward the second.
+                // Orient the first track so its shared join with track[1] ends up
+                // last. track[1]'s digitisation direction is arbitrary, so compare
+                // each of this track's ends to the *nearer* of track[1]'s two ends
+                // (the join), not to track[1].first() — otherwise a non-colinear
+                // junction can reverse the leading segment the wrong way.
                 const Track &next = m_tracks.at(trackPath.at(1));
-                const QGeoCoordinate ref = next.path.first();
-                if (seg.first().distanceTo(ref) < seg.last().distanceTo(ref))
+                const double firstToJoin = (std::min)(seg.first().distanceTo(next.path.first()),
+                                                      seg.first().distanceTo(next.path.last()));
+                const double lastToJoin = (std::min)(seg.last().distanceTo(next.path.first()),
+                                                     seg.last().distanceTo(next.path.last()));
+                if (firstToJoin < lastToJoin)
                     std::reverse(seg.begin(), seg.end());
             }
         } else {
@@ -322,8 +336,7 @@ RailGraph::RouteProjection RailGraph::projectOntoRoute(const RoutePolyline &rp,
     if (!rp.isValid() || !fix.isValid())
         return result;
 
-    const double cosLat = std::cos(fix.latitude() * tm35fin::kPi / 180.0);
-    const double mPerLon = kMetresPerDegLat * (std::max)(0.05, cosLat);
+    const double mPerLon = tm35fin::metresPerDegLon(fix);
 
     // Search a chainage window [lo, hi]; an empty window (lo<0, hi=inf) scans all.
     const auto search = [&](double lo, double hi) -> RouteProjection {
@@ -332,25 +345,14 @@ RailGraph::RouteProjection RailGraph::projectOntoRoute(const RoutePolyline &rp,
         for (int i = 1; i < rp.points.size(); ++i) {
             if (rp.chainage.at(i) < lo || rp.chainage.at(i - 1) > hi)
                 continue;
-            const QGeoCoordinate &A = rp.points.at(i - 1);
-            const QGeoCoordinate &B = rp.points.at(i);
-            const double ax = (A.longitude() - fix.longitude()) * mPerLon;
-            const double ay = (A.latitude() - fix.latitude()) * kMetresPerDegLat;
-            const double bx = (B.longitude() - fix.longitude()) * mPerLon;
-            const double by = (B.latitude() - fix.latitude()) * kMetresPerDegLat;
-            const double dx = bx - ax, dy = by - ay;
-            const double len2 = dx * dx + dy * dy;
-            double tt = len2 > 0.0 ? -(ax * dx + ay * dy) / len2 : 0.0;
-            tt = (std::clamp)(tt, 0.0, 1.0);
-            const double cx = ax + tt * dx, cy = ay + tt * dy;
-            const double dist = std::sqrt(cx * cx + cy * cy);
-            if (dist < bestDist) {
-                bestDist = dist;
-                best.offsetMeters = dist;
-                best.snapped = QGeoCoordinate(fix.latitude() + cy / kMetresPerDegLat,
-                                              fix.longitude() + cx / mPerLon);
+            const tm35fin::SegmentHit h =
+                tm35fin::projectToSegment(fix, mPerLon, rp.points.at(i - 1), rp.points.at(i));
+            if (h.dist < bestDist) {
+                bestDist = h.dist;
+                best.offsetMeters = h.dist;
+                best.snapped = tm35fin::offsetToCoord(fix, mPerLon, h.east, h.north);
                 const double segLen = rp.chainage.at(i) - rp.chainage.at(i - 1);
-                best.chainage = rp.chainage.at(i - 1) + tt * segLen;
+                best.chainage = rp.chainage.at(i - 1) + h.t * segLen;
             }
         }
         return best;
@@ -358,8 +360,14 @@ RailGraph::RouteProjection RailGraph::projectOntoRoute(const RoutePolyline &rp,
 
     if (prevChainage >= 0.0) {
         const double centre = prevChainage + advanceMeters;
-        RouteProjection windowed = search(prevChainage - kWindowBack, centre + kWindowFwd);
-        if (windowed.isValid() && windowed.offsetMeters <= kRouteAcceptMeters)
+        const RouteProjection windowed = search(prevChainage - kWindowBack, centre + kWindowFwd);
+        // Trust the windowed (continuity-preserving) hit unless the fix is far
+        // enough from it that the train has clearly left the window. A global
+        // search here can return a parallel/earlier limb that's nearer in 2D but
+        // kilometres away in chainage; the caller's onTrack gate still decides
+        // whether to keep a windowed hit just over the snap distance or fall to
+        // Tier-1, so we never need to jump limbs just because it missed by a few m.
+        if (windowed.isValid() && windowed.offsetMeters <= kRouteReacquireMeters)
             return windowed;
     }
     return search(-1.0, std::numeric_limits<double>::infinity());
@@ -373,25 +381,13 @@ QGeoCoordinate RailGraph::nearestOnTrack(int trackIndex, const QGeoCoordinate &f
     if (trackIndex < 0 || trackIndex >= m_tracks.size() || !fix.isValid())
         return snapped;
     const Track &t = m_tracks.at(trackIndex);
-    const double cosLat = std::cos(fix.latitude() * tm35fin::kPi / 180.0);
-    const double mPerLon = kMetresPerDegLat * (std::max)(0.05, cosLat);
+    const double mPerLon = tm35fin::metresPerDegLon(fix);
     for (int i = 1; i < t.path.size(); ++i) {
-        const QGeoCoordinate &A = t.path.at(i - 1);
-        const QGeoCoordinate &B = t.path.at(i);
-        const double ax = (A.longitude() - fix.longitude()) * mPerLon;
-        const double ay = (A.latitude() - fix.latitude()) * kMetresPerDegLat;
-        const double bx = (B.longitude() - fix.longitude()) * mPerLon;
-        const double by = (B.latitude() - fix.latitude()) * kMetresPerDegLat;
-        const double dx = bx - ax, dy = by - ay;
-        const double len2 = dx * dx + dy * dy;
-        double tt = len2 > 0.0 ? -(ax * dx + ay * dy) / len2 : 0.0;
-        tt = (std::clamp)(tt, 0.0, 1.0);
-        const double cx = ax + tt * dx, cy = ay + tt * dy;
-        const double dist = std::sqrt(cx * cx + cy * cy);
-        if (dist < outDist) {
-            outDist = dist;
-            snapped = QGeoCoordinate(fix.latitude() + cy / kMetresPerDegLat,
-                                     fix.longitude() + cx / mPerLon);
+        const tm35fin::SegmentHit h =
+            tm35fin::projectToSegment(fix, mPerLon, t.path.at(i - 1), t.path.at(i));
+        if (h.dist < outDist) {
+            outDist = h.dist;
+            snapped = tm35fin::offsetToCoord(fix, mPerLon, h.east, h.north);
         }
     }
     return snapped;

@@ -202,7 +202,7 @@ def build_crosswalk(track_ids):
     print(f"  infra: {len(ops)} operating points, {len(parts)} parts; "
           f"{len(stations)} timetable stations")
 
-    op_by_oid = {p["tunniste"]: p for p in ops}
+    op_by_oid = {p["tunniste"]: p for p in ops if p.get("tunniste")}
 
     def member_tracks(entry):
         """Tracks for an op/part, falling back to the parent op when a part has
@@ -256,19 +256,22 @@ def build_crosswalk(track_ids):
                 d = haversine_m(lat, lon, best[0], best[1])
                 if d <= GEO_MATCH_MAX_M:
                     match, dist, entry = "geo", d, best[2]
-        if entry is None:
+        # A matched entry with no stable OID can't be cross-walked (it keys the
+        # station<->op map); treat it as unresolved rather than KeyError-ing.
+        oid = entry.get("tunniste") if entry is not None else None
+        if oid is None:
             counts["unresolved"] += 1
             continue
         counts[match] += 1
         out[code] = {
             "uic": uic,
-            "opOid": entry["tunniste"],
+            "opOid": oid,
             "name": entry.get("nimi"),
             "match": match,
             "distM": round(dist, 1),
             "tracks": member_tracks(entry),
         }
-        op_to_code[entry["tunniste"]] = code
+        op_to_code[oid] = code
 
     resolved = len(out)
     no_tracks = sum(1 for v in out.values() if not v["tracks"])

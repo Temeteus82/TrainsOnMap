@@ -211,6 +211,17 @@ void TrainListModel::applyOne(const TrainPosition &train)
 {
     const TrainKey key = keyOf(train);
 
+    // Timestamp staleness guard, ahead of map-matching: the 60 s REST resync lags
+    // the MQTT firehose, so an out-of-order snapshot must never overwrite a fresher
+    // position (it would record a ~180°-reversed bearing). Drop it here, before the
+    // route projection / platform snap, so that work isn't burned fleet-wide on
+    // every resync only to be discarded below (#11).
+    const auto existing = m_indexByKey.constFind(key);
+    if (existing != m_indexByKey.constEnd() && train.timestamp.isValid()
+        && m_rows.at(existing.value()).pos.timestamp.isValid()
+        && train.timestamp < m_rows.at(existing.value()).pos.timestamp)
+        return;
+
     // Map-match the raw fix to the rail network: snap an on-track fix onto the
     // rail (so markers ride the rails instead of jittering beside them), and
     // record how far off the network it was so QML can flag a suspect position.
@@ -246,6 +257,13 @@ void TrainListModel::applyOne(const TrainPosition &train)
                 dtSecs = r.pos.timestamp.secsTo(train.timestamp);
         }
         const double advance = dtSecs > 0 ? (train.speed / 3.6) * double(dtSecs) : 0.0;
+
+        // Carry the route chainage forward by default: it's only overwritten when
+        // a Tier-2 match is accepted below. A transient Tier-1 fallback (briefly
+        // off-route, or route not yet resolved) must not wipe it to -1 — that
+        // would force the next Tier-2 attempt into a full-route global search
+        // instead of a windowed continuation (marker jump on self-parallel routes).
+        newChainage = prevChainage;
 
         QGeoCoordinate snapped = raw;
         bool accepted = false;
@@ -300,12 +318,7 @@ void TrainListModel::applyOne(const TrainPosition &train)
     if (it != m_indexByKey.constEnd()) {
         const int rowIndex = it.value();
         Row &row = m_rows[rowIndex];
-        // Timestamp guard: the 60 s REST resync lags the MQTT firehose, so a
-        // stale snapshot must never overwrite a fresher position — that would
-        // record a ~180°-reversed bearing. Drop it.
-        if (matched.timestamp.isValid() && row.pos.timestamp.isValid()
-            && matched.timestamp < row.pos.timestamp)
-            return;
+        // Staleness was already rejected at the top of applyOne (#11).
         row.bearing = bearingFor(key, matched.coordinate);
         row.pos = matched;
         row.trackOffsetMeters = offset;
