@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QDateTime>
 #include <QObject>
 #include <QTimer>
 #include <QtQmlIntegration>
@@ -49,8 +50,10 @@ public slots:
     /// Fetch the latest positions once, immediately.
     void refresh();
 
-    /// Refresh the trainNumber -> category map from /live-trains (used to colour
-    /// markers). Called by refresh() and on a periodic timer.
+    /// Refresh marker metadata (category/type/line), running status and scheduled
+    /// routes from /live-trains. Pulls only version-deltas (?version=<max seen>)
+    /// most cycles, with a periodic full resync to bound memory and let the route
+    /// cache evict departed trains. Called by refresh() (i.e. on the resync timer).
     void refreshCategories();
 
 signals:
@@ -61,7 +64,9 @@ signals:
 
 private:
     void handleReply(QNetworkReply *reply);
-    void handleCategories(QNetworkReply *reply);
+    /// @param full  true for an authoritative full snapshot (accumulated maps are
+    ///              reset first); false for an incremental version-delta merge.
+    void handleCategories(QNetworkReply *reply, bool full);
     /// One-shot at startup: load station short-code -> coordinate so the model can
     /// pin a parked, off-network train to its scheduled station.
     void fetchStations();
@@ -74,4 +79,20 @@ private:
     QTimer m_timer;
     bool m_active = false;
     QString m_status;
+
+    // ---- /live-trains incremental polling state ----------------------------
+    // Highest Train.version seen since the last full snapshot; the next delta
+    // request asks for trains modified after this. Reset to 0 on a full resync.
+    qint64 m_liveVersion = 0;
+    // When the last full (non-delta) /live-trains snapshot was issued; drives the
+    // periodic resync. Invalid until the first pull, so the first one is full.
+    QDateTime m_lastFullCategories;
+    // Accumulated per-train state, kept in sync across deltas and pushed to the
+    // model in full each cycle (the model setters replace wholesale). Keyed by
+    // (departureDate, trainNumber). A full resync clears and rebuilds these.
+    QHash<TrainKey, QString> m_accTypes;
+    QHash<TrainKey, QString> m_accCategories;
+    QHash<TrainKey, QString> m_accLines;
+    QHash<TrainKey, TrainStatus> m_accStatuses;
+    QHash<TrainKey, TrainRoute> m_accRoutes;
 };
