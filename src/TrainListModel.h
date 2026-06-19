@@ -158,7 +158,7 @@ public:
 
     /// Diagnostics for the route-matched position of one train (for the debug
     /// overlay / detail panel): { rawLat, rawLon, snapLat, snapLon, offset,
-    /// tunniste, onRoute }. Empty map if the train isn't present.
+    /// tunniste, onRoute, accuracy }. Empty map if the train isn't present.
     Q_INVOKABLE QVariantMap matchInfoFor(int trainNumber, const QString &departureDate) const;
 
 signals:

@@ -1,5 +1,7 @@
 #include "DigitrafficClient.h"
 
+#include "RailGraph.h"
+
 #include <QGeoCoordinate>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -145,7 +147,8 @@ void DigitrafficClient::handleCategories(QNetworkReply *reply)
         // stop, for route-constrained matching + platform snapping.
         const QJsonArray rows = o.value("timeTableRows").toArray();
         TrainRoute route;
-        route.codes.reserve(rows.size());
+        QStringList rawCodes;
+        rawCodes.reserve(rows.size());
         for (const QJsonValue &rv : rows) {
             const QJsonObject row = rv.toObject();
             if (!row.value("actualTime").toString().isEmpty())
@@ -153,12 +156,14 @@ void DigitrafficClient::handleCategories(QNetworkReply *reply)
             const QString code = row.value("stationShortCode").toString();
             if (code.isEmpty())
                 continue;
-            if (route.codes.isEmpty() || route.codes.last() != code)
-                route.codes.push_back(code);
+            rawCodes.push_back(code);
             const QString track = row.value("commercialTrack").toString();
             if (!track.isEmpty() && row.value("trainStopping").toBool())
                 route.commercialTrack.insert(code, track);
         }
+        // Skip empties + collapse consecutive duplicates via the shared helper, so
+        // this key matches TrainDetailsService::routeStations exactly (R8).
+        route.codes = RailGraph::canonicalRouteCodes(rawCodes);
         statuses.insert(key, st);
         if (!route.codes.isEmpty()) {
             routeSequences.push_back(route.codes);

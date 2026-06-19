@@ -62,6 +62,16 @@ ApplicationWindow {
                 ? trainClient.model.matchInfoFor(trainDetails.trainNumber,
                                                  trainDetails.departureDate)
                 : ({})
+            // Pin the selected train's route so it isn't evicted from the route
+            // cache (and its overlay/Tier-2 match lost) if the train drops out of
+            // the live fleet while still selected (R7). Empty list unpins.
+            trackService.pinRoute(trainDetails.hasSelection ? trainDetails.routeStations : [])
+        }
+        // routeStations resolves asynchronously after the timetable loads, so
+        // (re)pin when it arrives or changes for the current selection.
+        function onRouteStationsChanged() {
+            if (trainDetails.hasSelection)
+                trackService.pinRoute(trainDetails.routeStations)
         }
     }
 

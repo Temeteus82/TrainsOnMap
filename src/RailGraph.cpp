@@ -26,15 +26,26 @@ constexpr double kNodeGridMeters = 10.0;
 constexpr double kSidingPenalty = 1.4;
 
 // Route projection windowing (metres). Around the predicted chainage we search
-// this far back / forward. A windowed projection is trusted for continuity as
-// long as the fix is within kRouteReacquireMeters of it; only when the fix is
-// farther than that — i.e. the train genuinely left its predicted spot — do we
+// kWindowBack behind / kWindowFwd ahead. A windowed projection is trusted for
+// continuity as long as the fix is within kRouteReacquireMeters of it; only when
+// the fix is farther — i.e. the train genuinely left its predicted spot — do we
 // fall back to an unconstrained global re-acquire. This stops a fix near a
 // parallel/earlier limb (nearer in 2D, far in chainage) from yanking the marker
 // off its booked progression onto the wrong limb.
+//
+// kRouteReacquireMeters (300) is deliberately 2x the caller's snap-accept
+// distance (TrackService::kSnapAcceptMeters = 150): a hysteresis margin that
+// keeps *windowing* across a fix that's momentarily 150–300 m off-route instead
+// of re-acquiring globally. It is NOT the on-track gate — the caller re-applies
+// its 150 m snap-accept to the returned hit, so a windowed hit in the (150, 300]
+// band is returned here but rejected as off-track upstream, dropping that one fix
+// to Tier-1. Tradeoff (R5): for a fix in that band a global search *might* have
+// found a genuine <150 m on-route hit just outside the window on a sparse
+// polyline; the continuity guarantee is judged worth that rare miss. The
+// reacquireRespectsHysteresisBand test pins both sides of the 300 m boundary.
 constexpr double kWindowBack = 150.0;
 constexpr double kWindowFwd = 400.0;
-constexpr double kRouteReacquireMeters = 300.0;
+constexpr double kRouteReacquireMeters = 300.0;   // 2x kSnapAcceptMeters (hysteresis)
 
 // Pack two 32-bit grid cells into one key.
 inline qint64 cellKey(double e, double n)
@@ -193,6 +204,19 @@ bool RailGraph::loadFromJson(const QByteArray &json)
 QString RailGraph::routeKey(const QVector<QString> &stationCodes)
 {
     return QStringList(stationCodes.cbegin(), stationCodes.cend()).join(QLatin1Char('|'));
+}
+
+QStringList RailGraph::canonicalRouteCodes(const QStringList &rawCodes)
+{
+    QStringList out;
+    out.reserve(rawCodes.size());
+    for (const QString &code : rawCodes) {
+        if (code.isEmpty())
+            continue;
+        if (out.isEmpty() || out.last() != code)
+            out.push_back(code);
+    }
+    return out;
 }
 
 QVector<int> RailGraph::routePath(const QVector<QString> &stationCodes) const

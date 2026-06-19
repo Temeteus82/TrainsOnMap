@@ -129,6 +129,36 @@ private:
         })";
     }
 
+    // Two parallel limbs 300 m apart joined by a connector, so the route doubles
+    // back: outbound A (y=0), connector B (x=501000, y 0->300), inbound C (y=300).
+    // Chainage: A 0..~1000, B ~1000..1300, C ~1300..2300. Used to pin the
+    // kRouteReacquireMeters (300 m) hysteresis band (finding R5).
+    static QByteArray reacquireBlob()
+    {
+        return R"({
+          "schemaVersion": 2,
+          "features": [
+            { "type":"Feature",
+              "geometry":{"type":"MultiLineString","coordinates":[[[500000,6700000],[501000,6700000]]]},
+              "properties":{"tunniste":"A","paaraide":true,"kaupallinenNumero":"1",
+                            "ratakmvalit":[],"viereisetRaiteet":[]}},
+            { "type":"Feature",
+              "geometry":{"type":"MultiLineString","coordinates":[[[501000,6700000],[501000,6700300]]]},
+              "properties":{"tunniste":"B","paaraide":true,"kaupallinenNumero":"1",
+                            "ratakmvalit":[],"viereisetRaiteet":[]}},
+            { "type":"Feature",
+              "geometry":{"type":"MultiLineString","coordinates":[[[501000,6700300],[500000,6700300]]]},
+              "properties":{"tunniste":"C","paaraide":true,"kaupallinenNumero":"1",
+                            "ratakmvalit":[],"viereisetRaiteet":[]}}
+          ],
+          "stations": {
+            "WST": {"opOid":"ow","name":"West","tracks":["A"]},
+            "TRN": {"opOid":"ot","name":"Turn","tracks":["B"]},
+            "WND": {"opOid":"oe","name":"WestEnd","tracks":["C"]}
+          }
+        })";
+    }
+
 private slots:
     void rejectsNonV2Blob()
     {
@@ -233,6 +263,46 @@ private slots:
                  qPrintable(QStringLiteral("chainage=%1 (jumped to parallel limb)").arg(p.chainage)));
         QVERIFY2(p.offsetMeters > 100.0,
                  qPrintable(QStringLiteral("offset=%1").arg(p.offsetMeters)));
+    }
+
+    // Finding R5: kRouteReacquireMeters (300 m) is the hysteresis boundary for
+    // trusting a windowed hit over a global re-acquire. A fix in the (150, 300]
+    // band must stay windowed (continuity) even when a nearer hit exists on a
+    // parallel limb; a fix beyond 300 m must re-acquire globally onto it.
+    void reacquireRespectsHysteresisBand()
+    {
+        RailGraph g;
+        QVERIFY(g.loadFromJson(reacquireBlob()));
+        const RailGraph::RoutePolyline rp = g.buildPolyline(
+            g.routePath({QStringLiteral("WST"), QStringLiteral("TRN"), QStringLiteral("WND")}));
+        QVERIFY(rp.isValid());
+
+        // Within the band: 250 m off the outbound limb (chainage ~300) but only
+        // ~50 m from the inbound limb (chainage ~2000). prevChainage=300 windows
+        // the outbound leg; 250 m <= 300 m, so the windowed hit is trusted and the
+        // nearer inbound hit must NOT win.
+        const QGeoCoordinate inBand = tm35fin::toWgs84(500300, 6700250);
+        const RailGraph::RouteProjection pIn = g.projectOntoRoute(rp, inBand, 300.0, 0.0);
+        QVERIFY(pIn.isValid());
+        QVERIFY2(pIn.chainage < 700.0,
+                 qPrintable(QStringLiteral("chainage=%1 (should stay on outbound limb)")
+                                .arg(pIn.chainage)));
+        QVERIFY2(pIn.offsetMeters > 200.0,
+                 qPrintable(QStringLiteral("offset=%1 (should be the ~250 m windowed hit)")
+                                .arg(pIn.offsetMeters)));
+
+        // Beyond the band: 400 m off the outbound limb, ~100 m from the inbound
+        // limb. 400 m > 300 m, so the window is abandoned and the global search
+        // re-acquires onto the (nearer) inbound limb far ahead in chainage.
+        const QGeoCoordinate beyond = tm35fin::toWgs84(500300, 6700400);
+        const RailGraph::RouteProjection pOut = g.projectOntoRoute(rp, beyond, 300.0, 0.0);
+        QVERIFY(pOut.isValid());
+        QVERIFY2(pOut.chainage > 1300.0,
+                 qPrintable(QStringLiteral("chainage=%1 (should re-acquire onto inbound limb)")
+                                .arg(pOut.chainage)));
+        QVERIFY2(pOut.offsetMeters < 150.0,
+                 qPrintable(QStringLiteral("offset=%1 (should be the ~100 m inbound hit)")
+                                .arg(pOut.offsetMeters)));
     }
 
     void projectsFixOntoRoute()

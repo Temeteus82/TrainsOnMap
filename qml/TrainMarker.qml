@@ -97,6 +97,15 @@ MapQuickItem {
     // Greyed when stale, else the type colour.
     readonly property color dotColor: stale ? "#9AA0A6" : trainColor
 
+    // Position-quality flag (#1). A fix with poor GPS accuracy, or one that sits
+    // far enough off any rail that it was kept raw (not snapped, offset beyond the
+    // ~150 m snap-accept), is an approximate position. Flag it so the marker isn't
+    // read as a precise location when it's really a guess; the exact figures show
+    // in the detail panel. accuracy/trackOffsetMeters are -1 when unknown.
+    readonly property int accuracyMeters: model.accuracy
+    readonly property real offsetMeters: model.trackOffsetMeters
+    readonly property bool suspect: accuracyMeters > 100 || offsetMeters > 150
+
     coordinate: model.coordinate
 
     // Glide along the rail between the (roughly periodic) position fixes instead
@@ -119,7 +128,9 @@ MapQuickItem {
     sourceItem: Item {
         width: row.width
         height: row.height
-        opacity: marker.stale ? 0.5 : 1.0   // dim a stale / not-running train
+        // Dim a stale / not-running train most; a suspect (low-confidence
+        // position) train a little, so it reads as present-but-approximate (#1).
+        opacity: marker.stale ? 0.5 : (marker.suspect ? 0.72 : 1.0)
 
         Row {
             id: row
@@ -142,6 +153,22 @@ MapQuickItem {
                     border.width: 3
                     border.color: marker.ringColor
                     visible: marker.ringColor.a > 0
+                }
+
+                // Position-quality outline (#1): a thin neutral ring just outside
+                // the dot marks a suspect (poor-accuracy / off-rail) fix. Neutral
+                // grey on purpose, so it never reads as one of the coloured delay
+                // status rings above.
+                Rectangle {
+                    anchors.centerIn: parent
+                    width: 23
+                    height: 23
+                    radius: 11.5
+                    color: "transparent"
+                    border.width: 1.5
+                    border.color: Theme.isDark ? "#b9bec6" : "#5f6368"
+                    opacity: 0.85
+                    visible: marker.suspect
                 }
 
                 // O2: selection is a haloed accent ring (accent outer edge + a

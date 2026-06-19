@@ -151,6 +151,7 @@ QVariantMap TrainListModel::matchInfoFor(int trainNumber, const QString &departu
     info.insert(QStringLiteral("offset"), row.trackOffsetMeters);
     info.insert(QStringLiteral("tunniste"), row.matchedTunniste);
     info.insert(QStringLiteral("onRoute"), row.onRoute);
+    info.insert(QStringLiteral("accuracy"), row.pos.accuracy);   // GPS radius (m), -1 if none
     if (row.rawCoordinate.isValid()) {
         info.insert(QStringLiteral("rawLat"), row.rawCoordinate.latitude());
         info.insert(QStringLiteral("rawLon"), row.rawCoordinate.longitude());
@@ -230,8 +231,29 @@ void TrainListModel::applyOne(const TrainPosition &train)
     const QGeoCoordinate raw = train.coordinate;
     double offset = -1.0;
     QString matchedTunniste;
-    double newChainage = -1.0;
     bool onRoute = false;
+
+    // Carry the per-train route chainage forward by default. It's only
+    // overwritten when a Tier-2 match is accepted below; a transient miss must
+    // not wipe it to -1, which would force the next Tier-2 attempt into a
+    // full-route global search instead of a windowed continuation (a marker jump
+    // on self-parallel routes, #3). This is hoisted out of the raw.isValid()
+    // block on purpose (R1): an invalid fix skips matching entirely, so leaving
+    // the carry-forward inside it would reset chainage to -1 and reopen exactly
+    // the global re-acquire this is meant to prevent on the next valid fix.
+    //
+    // Scope (R4): this only bridges *transient* Tier-1 fallbacks (a single bad
+    // fix, a brief off-route blip, or a not-yet-resolved route). Across a
+    // sustained off-route stretch the frozen chainage lags the train, the window
+    // eventually misses, and projectOntoRoute falls back to a global re-acquire.
+    // That's an accepted limitation: dead-reckoning the chainage instead would
+    // mis-advance a genuinely diverted train that isn't on the booked route.
+    double prevChainage = -1.0;
+    const auto rit = m_indexByKey.constFind(key);
+    if (rit != m_indexByKey.constEnd())
+        prevChainage = m_rows.at(rit.value()).chainage;
+    double newChainage = prevChainage;
+
     if (m_matcher && raw.isValid()) {
         const auto prev = m_previous.constFind(key);
         const bool havePrev = prev != m_previous.constEnd() && prev->isValid();
@@ -245,25 +267,15 @@ void TrainListModel::applyOne(const TrainPosition &train)
             && prev->distanceTo(raw) > kHeadingMinMoveMeters)
             heading = prev->azimuthTo(raw);
 
-        // Carry the per-train route position + estimate the progress since the
-        // last fix (speed·Δt), so the route matcher can window its search.
-        double prevChainage = -1.0;
+        // Estimate the progress since the last fix (speed·Δt) so the route matcher
+        // can window its search around the carried chainage.
         qint64 dtSecs = 0;
-        const auto rit = m_indexByKey.constFind(key);
         if (rit != m_indexByKey.constEnd()) {
             const Row &r = m_rows.at(rit.value());
-            prevChainage = r.chainage;
             if (r.pos.timestamp.isValid() && train.timestamp.isValid())
                 dtSecs = r.pos.timestamp.secsTo(train.timestamp);
         }
         const double advance = dtSecs > 0 ? (train.speed / 3.6) * double(dtSecs) : 0.0;
-
-        // Carry the route chainage forward by default: it's only overwritten when
-        // a Tier-2 match is accepted below. A transient Tier-1 fallback (briefly
-        // off-route, or route not yet resolved) must not wipe it to -1 — that
-        // would force the next Tier-2 attempt into a full-route global search
-        // instead of a windowed continuation (marker jump on self-parallel routes).
-        newChainage = prevChainage;
 
         QGeoCoordinate snapped = raw;
         bool accepted = false;
