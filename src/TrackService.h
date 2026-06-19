@@ -86,6 +86,11 @@ private:
     };
 
     static Loaded loadNetwork();
+    /// Resolve any not-yet-cached routes in m_pendingRoutes off-thread, evicting
+    /// departed routes first. Re-entrant-safe: a no-op while a precompute is in
+    /// flight (the finished handler re-runs it) or before the graph has loaded
+    /// (geometryReady re-runs it).
+    void kickPrecompute();
     void setLoading(bool loading);
     void setStatus(const QString &status);
 
@@ -93,6 +98,10 @@ private:
     QVector<Segment> m_all;                 ///< render segments (and Tier-1 matcher)
     std::shared_ptr<RailGraph> m_graph;     ///< Tier-2 network; null until loaded
     QHash<QString, RailGraph::RoutePolyline> m_routePolys;  ///< routeKey -> polyline
+    ///< Latest requested route set (stashed so precompute can be re-driven once
+    ///< the graph is ready / a busy precompute finishes, and so departed routes
+    ///< can be evicted from m_routePolys).
+    QVector<QVector<QString>> m_pendingRoutes;
     bool m_precomputing = false;
     bool m_loading = false;
     QString m_status;
