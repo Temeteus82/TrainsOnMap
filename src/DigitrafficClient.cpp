@@ -11,7 +11,9 @@
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QUrl>
+#include <QUrlQuery>
 
+#include <algorithm>
 #include <chrono>
 
 namespace {
@@ -25,6 +27,11 @@ constexpr auto kUserAgent = "TrainsOnMap/0.1 (Qt6 scaffolding)";
 // REST is the bootstrap + prune path; MQTT carries live deltas in between, so
 // the snapshot only needs to run slowly. Matches the Swift app's 60 s resync.
 constexpr int kResyncIntervalMs = 60 * 1000;
+// /live-trains is polled with ?version= deltas in between, but a full snapshot is
+// re-pulled at least this often to GC accumulated state and let the route cache
+// evict trains that quietly left the fleet (a finished train may never appear in
+// a delta). At the 60 s resync that's one full pull per ~5 deltas.
+constexpr qint64 kFullCategoriesIntervalMs = 5 * 60 * 1000;
 // Abort a stalled request rather than leaving the status stuck on "Fetching…".
 constexpr auto kRequestTimeout = std::chrono::seconds{15};
 }
@@ -95,46 +102,69 @@ void DigitrafficClient::refresh()
 
 void DigitrafficClient::refreshCategories()
 {
-    QNetworkRequest req{QUrl(QString::fromLatin1(kLiveTrainsUrl))};
+    // Decide between a full snapshot and an incremental version-delta. Full when
+    // we have no baseline yet (first call, or a prior full was cleared to 0) or
+    // the periodic resync window has elapsed; otherwise ask only for trains
+    // modified after the highest version we've already merged.
+    const QDateTime now = QDateTime::currentDateTimeUtc();
+    const bool full = m_liveVersion == 0 || !m_lastFullCategories.isValid()
+                      || m_lastFullCategories.msecsTo(now) >= kFullCategoriesIntervalMs;
+
+    QUrl url(QString::fromLatin1(kLiveTrainsUrl));
+    if (full) {
+        m_lastFullCategories = now;
+    } else {
+        QUrlQuery query;
+        query.addQueryItem(QStringLiteral("version"), QString::number(m_liveVersion));
+        url.setQuery(query);
+    }
+
+    QNetworkRequest req{url};
     req.setRawHeader("Digitraffic-User", kUserAgent);
 
     QNetworkReply *reply = m_net->get(req);
-    connect(reply, &QNetworkReply::finished, this, [this, reply] { handleCategories(reply); });
+    connect(reply, &QNetworkReply::finished, this,
+            [this, reply, full] { handleCategories(reply, full); });
 }
 
-void DigitrafficClient::handleCategories(QNetworkReply *reply)
+void DigitrafficClient::handleCategories(QNetworkReply *reply, bool full)
 {
     reply->deleteLater();
     if (reply->error() != QNetworkReply::NoError)
-        return;   // markers just stay neutral until the next refresh
+        return;   // markers keep their last colours until the next refresh
 
     const QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
     if (!doc.isArray())
         return;
 
+    // A full snapshot is authoritative: drop the accumulated state (and the
+    // version baseline) first, so trains that have left the fleet fall out and the
+    // route cache can evict them. A delta merges onto what we already have.
+    if (full) {
+        m_accTypes.clear();
+        m_accCategories.clear();
+        m_accLines.clear();
+        m_accStatuses.clear();
+        m_accRoutes.clear();
+        m_liveVersion = 0;
+    }
+
     const QJsonArray arr = doc.array();
-    QHash<TrainKey, QString> types;
-    QHash<TrainKey, QString> categories;
-    QHash<TrainKey, QString> commuterLines;
-    QHash<TrainKey, TrainStatus> statuses;
-    QHash<TrainKey, TrainRoute> routes;
-    QVector<QVector<QString>> routeSequences;   // for off-thread route precompute
-    types.reserve(arr.size());
-    categories.reserve(arr.size());
-    commuterLines.reserve(arr.size());
-    statuses.reserve(arr.size());
-    routes.reserve(arr.size());
-    routeSequences.reserve(arr.size());
     for (const QJsonValue &v : arr) {
         const QJsonObject o = v.toObject();
         // Key on (departureDate, trainNumber): the number alone is reused daily
         // and can be in motion under two dates at once. See TrainKey.
         const TrainKey key{o.value("departureDate").toString(), o.value("trainNumber").toInt()};
-        types.insert(key, o.value("trainType").toString());
-        categories.insert(key, o.value("trainCategory").toString());
+        // Advance the delta baseline to the newest version we've merged. Each
+        // train object carries the full state (a delta is not a patch), so a plain
+        // upsert keeps the accumulated maps correct.
+        m_liveVersion = std::max(m_liveVersion, o.value("version").toInteger(0));
+
+        m_accTypes.insert(key, o.value("trainType").toString());
+        m_accCategories.insert(key, o.value("trainCategory").toString());
         // commuterLineID is "" for non-commuter trains; kept as-is so the badge
         // label can test for emptiness.
-        commuterLines.insert(key, o.value("commuterLineID").toString());
+        m_accLines.insert(key, o.value("commuterLineID").toString());
 
         TrainStatus st;
         st.known = true;
@@ -142,9 +172,8 @@ void DigitrafficClient::handleCategories(QNetworkReply *reply)
         st.running = o.value("runningCurrently").toBool();
         // Current delay = differenceInMinutes of the most recently passed stop
         // (the last timetable row that already has an actualTime). In the same
-        // pass, collect the route's station codes (ARRIVAL+DEPARTURE rows repeat a
-        // code, so de-dupe consecutively) plus the booked commercialTrack per
-        // stop, for route-constrained matching + platform snapping.
+        // pass, collect the route's station codes plus the booked commercialTrack
+        // per stop, for route-constrained matching + platform snapping.
         const QJsonArray rows = o.value("timeTableRows").toArray();
         TrainRoute route;
         QStringList rawCodes;
@@ -164,17 +193,27 @@ void DigitrafficClient::handleCategories(QNetworkReply *reply)
         // Skip empties + collapse consecutive duplicates via the shared helper, so
         // this key matches TrainDetailsService::routeStations exactly (R8).
         route.codes = RailGraph::canonicalRouteCodes(rawCodes);
-        statuses.insert(key, st);
-        if (!route.codes.isEmpty()) {
-            routeSequences.push_back(route.codes);
-            routes.insert(key, std::move(route));
-        }
+
+        m_accStatuses.insert(key, st);
+        if (!route.codes.isEmpty())
+            m_accRoutes.insert(key, std::move(route));
+        else
+            m_accRoutes.remove(key);   // schedule disappeared on this update
     }
-    m_model->setTrainMetadata(types, categories, commuterLines);
-    m_model->setTrainStatuses(statuses);
-    m_model->setTrainRoutes(routes);
-    if (m_matcher)
+
+    // Push the full accumulated state to the model (the setters replace wholesale)
+    // and re-drive route precompute/eviction against the whole known fleet.
+    m_model->setTrainMetadata(m_accTypes, m_accCategories, m_accLines);
+    m_model->setTrainStatuses(m_accStatuses);
+    m_model->setTrainRoutes(m_accRoutes);
+
+    if (m_matcher) {
+        QVector<QVector<QString>> routeSequences;
+        routeSequences.reserve(m_accRoutes.size());
+        for (auto it = m_accRoutes.constBegin(); it != m_accRoutes.constEnd(); ++it)
+            routeSequences.push_back(it.value().codes);
         m_matcher->precomputeRoutes(routeSequences);
+    }
 }
 
 void DigitrafficClient::fetchStations()
