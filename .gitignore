@@ -37,6 +37,10 @@ parse.err
 # Port-reference docs (not part of the build)
 /trainspotter-qt-docs/
 
+# Python (scripts/bake_rails.py)
+__pycache__/
+*.pyc
+
 # OS
 Thumbs.db
 .DS_Store
