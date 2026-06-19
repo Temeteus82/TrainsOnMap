@@ -32,10 +32,12 @@ then **#3, #4, #6** (continuity + startup), then the rest.
 ## A. Correctness — fix before relying on Tier-2
 
 ### [x] 1. routePath splices non-adjacent tracks across an unroutable middle leg
-**Fixed:** `routePath` now aborts to an empty (unresolved) path on any unroutable
-leg instead of stitching a chord; the train falls back to Tier-1 for the whole
-route. Regression test `gappedRouteResolvesToNoPath` (4-station middle-gap fixture).
-`src/RailGraph.cpp:260` (the `arrival >= 0 ? … : sets.at(k-1)` stitch).
+**Fixed:** `routePath` no longer stitches a chord across an unroutable leg. It now
+keeps the routable *prefix* (R6, 2026-06-20: on a gap it `break`s and returns the
+legs resolved so far — a connected path, no chord — so the train gets Tier-2 up to
+the gap and Tier-1 beyond; the originally-shipped fix aborted the whole route to
+Tier-1). Regression test `gappedRouteKeepsRoutablePrefixWithoutChord` (4-station
+middle-gap fixture). `src/RailGraph.cpp:260` (the `arrival >= 0 ? … : sets.at(k-1)` stitch).
 - **Problem:** when a middle leg is unroutable, `dijkstra` has reset `arrival`
   to -1, so the next leg starts from the *previous station's* whole track set and
   is appended onto `full` with `j=1`, joining two tracks that aren't graph-adjacent.
@@ -215,7 +217,7 @@ plus `operatingPoints` and per-track `rautatieliikennepaikat` in the blob.
 
 ### Also worth doing alongside
 - ~~Add the two missing fixture tests called out in #1 and #2 (gapped route;
-  reversed-digitisation L-junction)~~ — **done** (`gappedRouteResolvesToNoPath`,
+  reversed-digitisation L-junction)~~ — **done** (`gappedRouteKeepsRoutablePrefixWithoutChord`,
   `buildPolylineOrientsReversedLJunction`); both verified to fail on the pre-fix code.
 - The remaining live on-map eyeballing from the Tier-2 plan
   (`docs/track-accuracy-tier2-plan.md`, step 5) still stands.

@@ -287,12 +287,16 @@ QVector<int> RailGraph::routePath(const QVector<QString> &stationCodes) const
         // Each leg continues from the previous arrival track. If a leg is
         // unroutable we must NOT skip it and stitch the next one on: that would
         // join two graph-non-adjacent tracks and draw a multi-km chord across the
-        // gap (inflating all chainage past it). Abort the whole route to an
-        // unresolved state so the train falls back to Tier-1 instead.
+        // gap (inflating all chainage past it). Instead stop at the gap and keep
+        // the routable *prefix* (R6): `full` so far is one connected path (still no
+        // chord), so the train gets route-constrained Tier-2 up to the gap and
+        // falls back to Tier-1 beyond it — strictly better than dropping the whole
+        // journey to Tier-1. (A gap in the very first leg leaves no prefix, handled
+        // by the empty-`full` early return above.)
         const QVector<int> leg =
             dijkstra(QVector<int>{arrival}, QSet<int>(sets.at(k).cbegin(), sets.at(k).cend()), arrival);
         if (leg.isEmpty())
-            return {};
+            break;
         for (int j = 1; j < leg.size(); ++j)
             full.append(leg.at(j));
     }

@@ -194,20 +194,34 @@ private slots:
             QVERIFY(rp.chainage.at(i) >= rp.chainage.at(i - 1));
     }
 
-    // Finding #1: an internal gap must abort the route rather than splicing a
-    // chord from the pre-gap track straight onto the post-gap track.
-    void gappedRouteResolvesToNoPath()
+    // Finding #1 / R6: an internal gap must never splice a chord from the pre-gap
+    // track onto the post-gap one. The route truncates to the routable prefix
+    // (Tier-2 up to the gap, Tier-1 beyond) rather than aborting entirely.
+    void gappedRouteKeepsRoutablePrefixWithoutChord()
     {
         RailGraph g;
         QVERIFY(g.loadFromJson(gappedBlob()));
+
+        // S0->S1->S2->S3 has a disconnected S1->S2 middle leg. The result is the
+        // routable S0->S1 prefix (2 tracks) — a short connected path (~200 m),
+        // never a chord spanning the ~100 km gap to the second island.
         const QVector<int> gapped =
             g.routePath({QStringLiteral("S0"), QStringLiteral("S1"),
                          QStringLiteral("S2"), QStringLiteral("S3")});
-        QVERIFY2(gapped.isEmpty(), "gapped route must resolve to no path, not a chord");
-        QVERIFY(!g.buildPolyline(gapped).isValid());
+        QCOMPARE(gapped.size(), 2);
+        const RailGraph::RoutePolyline rp = g.buildPolyline(gapped);
+        QVERIFY(rp.isValid());
+        QVERIFY2(rp.length < 1000.0,
+                 qPrintable(QStringLiteral("prefix length=%1 — chord across the gap?").arg(rp.length)));
+        for (int i = 1; i < rp.chainage.size(); ++i)
+            QVERIFY(rp.chainage.at(i) >= rp.chainage.at(i - 1));
 
-        // A fully-connected sub-route on the same network still resolves, so the
-        // abort isn't over-eager.
+        // A gap in the *first* leg leaves no prefix -> unresolved (Tier-1 only).
+        const QVector<int> noPrefix =
+            g.routePath({QStringLiteral("S0"), QStringLiteral("S2")});
+        QVERIFY2(noPrefix.isEmpty(), "first-leg gap must resolve to no path");
+
+        // A fully-connected sub-route still resolves, so truncation isn't over-eager.
         const QVector<int> ok = g.routePath({QStringLiteral("S0"), QStringLiteral("S1")});
         QCOMPARE(ok.size(), 2);
         QVERIFY(g.buildPolyline(ok).isValid());

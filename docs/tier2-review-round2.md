@@ -105,11 +105,15 @@ sides of the 300 m boundary (windowed hit trusted ≤300; global re-acquire >300
   documented multiplier instead of a bare 300.
 
 ### [x] R6. routePath aborts the whole route on a single unroutable leg
-**Accepted as-is (documented tradeoff, no code change).** This is one of the two
-options finding #1 explicitly sanctioned, and the abort path is already
-thoroughly commented in `routePath` (a chord across the gap would inflate all
-downstream chainage). Keeping the routable prefix is a larger change deferred
-until a real route is observed losing Tier-2 to a single mid-route gap.
+**Implemented (2026-06-20).** `routePath` now keeps the routable *prefix*: on an
+unroutable leg it `break`s and returns the legs resolved so far — one connected
+path, so still no chord — instead of aborting the whole route. The train gets
+route-constrained Tier-2 up to the gap and Tier-1 beyond, rather than dropping its
+whole journey to Tier-1. A gap in the very first leg still yields an unresolved
+route (no prefix). Test renamed to `gappedRouteKeepsRoutablePrefixWithoutChord`
+(asserts the ~200 m prefix, the no-chord length bound, and the first-leg-gap empty
+case). The full multi-segment form (keeping routable legs *after* a gap as separate
+polylines) remains the larger, still-deferred option.
 `src/RailGraph.cpp:268`.
 - **Problem:** one unroutable consecutive station-pair anywhere now returns `{}`
   for the entire route (previously the bad leg was skipped and the rest kept).

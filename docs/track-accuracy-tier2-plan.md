@@ -39,7 +39,7 @@ sections* its timetable implies, so:
 | `geometria` | track centreline (already baked) |
 | `paaraide` | is-main-track flag → weight running lines over sidings/loops |
 | `kaupallinenNumero` | platform/track number → matches timetable `commercialTrack` |
-| `seuraavatRaiteet` | ~~**next tracks** → directed graph edges~~ — **nearly empty in live data** (27/4936 features, 38 refs). Baked, but unusable as the routing graph; see step 3. |
+| `seuraavatRaiteet` | ~~**next tracks** → directed graph edges~~ — **nearly empty in live data** (27/4936 features, 38 refs), unusable as the routing graph (see step 3). Was baked initially; **no longer baked** (dropped alongside the #15 trim). |
 | `viereisetRaiteet` | adjacent/parallel tracks → disambiguation hints (rich: 2354/4936 features, 23 k refs) |
 | `rautatieliikennepaikat` | owning operating point(s) → station ↔ track crosswalk (4928/4936 features) |
 | `ratakmvalit` | line number + km chainage → linear referencing / ordering (**100 %** populated) |
@@ -73,13 +73,17 @@ as passenger stops; per-train Tier-1 fallback covers them.
 
 ### 1. Re-bake with identity + topology (`scripts/bake_rails.py`) — ✅ DONE
 - ✅ Keeps per feature: `tunniste`, `paaraide`, `kaupallinenNumero`,
-  `seuraavatRaiteet`, `viereisetRaiteet`, `rautatieliikennepaikat`, `ratakmvalit`
-  (+ geometry; the property-form `geometria` is dropped as a dup of `geometry`).
-- ✅ Bakes the station crosswalk from `rautatieliikennepaikat` **and**
-  `liikennepaikanosat`: emits `stations` (`stationShortCode → {uic, opOid, name,
-  match, distM, tracks:[tunniste]}`) and `operatingPoints` (`OID → shortCode`).
-  Member-track lists are intersected with the baked track set and fall back to the
-  parent op when a part lists none (see the crosswalk notes above).
+  `viereisetRaiteet`, `ratakmvalit` (+ geometry; the property-form `geometria` is
+  dropped as a dup of `geometry`). Two infra fields the app never reads were
+  dropped as unread (see the size note): the per-track `rautatieliikennepaikat`
+  owning-OID list, and `seuraavatRaiteet` (near-empty, never drove the graph).
+- ✅ Bakes the station crosswalk from the infra `rautatieliikennepaikat` **and**
+  `liikennepaikanosat` layers: emits `stations` (`stationShortCode → {uic, opOid,
+  name, match, distM, tracks:[tunniste]}`). Member-track lists are intersected with
+  the baked track set and fall back to the parent op when a part lists none (see
+  the crosswalk notes above). (The reverse `operatingPoints` map — `OID →
+  shortCode` — was emitted in the first bake but later dropped as unread; see the
+  size note.)
 - ✅ Stays the qCompress container; adds top-level `schemaVersion: 2` + `bakedAt`.
   The current geometry-only loader ignores the new fields, so the app still
   builds and runs on the v2 blob (verified with the `windows-llvm` preset).
@@ -87,6 +91,17 @@ as passenger stops; per-train Tier-1 fallback covers them.
   from 2.38 MB — **+9 %** for all the topology + crosswalk. No need yet to intern
   OIDs or split topology into a separate resource; revisit only if step 2/3 add
   more per-track payload.
+  - **Update (#15, PR #26):** the per-track `rautatieliikennepaikat` and the
+    blob-level `operatingPoints` map — neither read by `RailGraph::loadFromJson`
+    (the crosswalk is resolved at bake time from the ops' own `raiteet`, and the
+    app resolves stations via the `stations.tracks` lists alone) — were dropped
+    from the bake and the blob re-baked: still 4936 tracks / 557 stations, now
+    **2,579,119 B** compressed (8.4 MB raw). The compressed saving is small (~17 KB,
+    the dropped OID strings compress well); the point is removing dead payload from
+    the startup JSON parse.
+  - **Update (2026-06-20):** `seuraavatRaiteet` dropped too (same rationale —
+    near-empty, never read; the graph is geometry-derived). Re-baked: unchanged
+    4936 tracks / 557 stations, **2,576,104 B** compressed (8.3 MB raw).
 - Gotchas confirmed: infra-api `latest` **307-redirects** to a versioned,
   build-numbered path (`/0.8/<build>/…`) — urllib follows it, a curl probe needs
   `-L`; **gzip is mandatory** on both infra-api and `/metadata/stations`. The
@@ -108,11 +123,13 @@ as passenger stops; per-train Tier-1 fallback covers them.
 ### 3. Per-train route → track path — ✅ DONE
 - From each train's `timeTableRows`, the ordered station codes are collected in
   `DigitrafficClient` and handed to `TrackService::precomputeRoutes`.
-- ⚠️ **`seuraavatRaiteet` is not a usable graph** (38 edges nationally), so
-  connectivity comes from the geometry endpoint graph + `viereisetRaiteet` (above).
-  `RailGraph::routePath` runs multi-source/target **Dijkstra** per consecutive
-  station pair (edge weight = track length, ×1.4 for sidings to bias `paaraide`),
-  stitching the legs into one ordered track path.
+- ⚠️ **`seuraavatRaiteet` is not a usable graph** (38 edges nationally; no longer
+  baked), so connectivity comes from the geometry endpoint graph + `viereisetRaiteet`
+  (above). `RailGraph::routePath` runs multi-source/target **Dijkstra** per
+  consecutive station pair (edge weight = track length, ×1.4 for sidings to bias
+  `paaraide`), stitching the legs into one ordered track path.
+- ✅ An unroutable leg never splices a chord across the gap: `routePath` keeps the
+  routable **prefix** (Tier-2 up to the gap, Tier-1 beyond) — see round-2 R6.
 - ✅ Off the GUI thread + memoised: `precomputeRoutes` dedupes identical routes by
   key and resolves polylines in a `QtConcurrent` task, swapping the cache in on
   the GUI thread; a 60 s refresh only computes genuinely new routes.

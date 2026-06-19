@@ -18,11 +18,12 @@ train's scheduled path:
       paaraide            is-main-track flag (weight running lines over sidings)
       kaupallinenNumero   platform / commercial track number (~ timetable
                           `commercialTrack`)
-      seuraavatRaiteet    next tracks       -> directed graph edges
       viereisetRaiteet    adjacent/parallel -> disambiguation hints
       ratakmvalit         line number + km chainage (linear referencing)
-    (The per-track `rautatieliikennepaikat` owning-OID list is intentionally NOT
-    kept — the app never reads it; see TRACK_PROPS.)
+    (Two infra fields are intentionally NOT kept — the app reads neither: the
+    per-track `rautatieliikennepaikat` owning-OID list, and `seuraavatRaiteet`
+    next-track edges. The latter is near-empty in live data (38 refs nationally),
+    so the routing graph is reconstructed from geometry instead. See TRACK_PROPS.)
   * `stations`: timetable `stationShortCode` -> { uic, opOid, name, match,
     distM, tracks:[track OID] }.  The station <-> infra crosswalk is resolved
     here (offline) by UIC code against the union of the operating-points layer
@@ -85,15 +86,17 @@ STEP = 150_000
 # Track properties kept per feature (everything Tier-2 matching needs; the bulky
 # rest — speed limits, electrification, elements, etc. — is dropped). `geometria`
 # is dropped because the GeoJSON `geometry` already carries the centreline.
-# `rautatieliikennepaikat` (per-track owning operating-point OIDs) used to be kept
-# but the app never reads it — the station->track crosswalk is resolved here at
-# bake time from the ops' own `raiteet`, and RailGraph::loadFromJson ignores the
-# property entirely — so it's dropped to shrink the blob (#15).
+# Two more infra fields are NOT baked because RailGraph::loadFromJson reads neither:
+#   * `rautatieliikennepaikat` (per-track owning operating-point OIDs) — the
+#     station<->track crosswalk is resolved here at bake time from the ops' own
+#     `raiteet`, not from this per-track list (#15).
+#   * `seuraavatRaiteet` (next-track edges) — near-empty in live data (38 refs
+#     nationally), so the routing graph is reconstructed from geometry endpoints +
+#     `viereisetRaiteet` instead; this field never drove it.
 TRACK_PROPS = (
     "tunniste",
     "paaraide",
     "kaupallinenNumero",
-    "seuraavatRaiteet",
     "viereisetRaiteet",
     "ratakmvalit",
 )
