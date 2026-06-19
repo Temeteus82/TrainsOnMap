@@ -4,6 +4,7 @@ import QtQuick
 import QtQuick.Controls
 import QtLocation
 import QtPositioning
+import QtCore
 
 import TrainsOnMap
 
@@ -19,6 +20,23 @@ ApplicationWindow {
     // Routed as a signal so the call lives inside the Map's typed scope rather
     // than reaching through the loosely-typed Loader.item.
     signal requestTrackReload()
+
+    // Per-style basemap tile-cache directory. Qt's OSM disk cache keys tiles by
+    // map-type id only (both light_all and dark_all are the one CustomMap type),
+    // not by host — so without separate directories the two styles share a cache
+    // and serve each other's tiles after a theme flip (patchy dark/light map).
+    // Give each style its own directory to keep them isolated.
+    function cacheDirFor(style) {
+        // writableLocation() returns a file:// url; the OSM plugin wants a plain
+        // absolute path. Strip the scheme (and the leading slash on Windows
+        // drive paths: "/C:/…" -> "C:/…").
+        let base = "" + StandardPaths.writableLocation(StandardPaths.GenericCacheLocation)
+        if (base.startsWith("file://"))
+            base = base.substring(7)
+        if (base.length > 2 && base.charAt(0) === "/" && base.charAt(2) === ":")
+            base = base.substring(1)
+        return decodeURIComponent(base) + "/QtLocation/osm-" + style
+    }
 
     // Tier-2 diagnostics for the selected train: { rawLat, rawLon, snapLat,
     // snapLon, offset, tunniste, onRoute }. Polled (the model exposes it via an
@@ -96,6 +114,11 @@ ApplicationWindow {
                 PluginParameter {
                     name: "osm.mapping.custom.host"   // Qt appends "%z/%x/%y.png"
                     value: "https://a.basemaps.cartocdn.com/" + Theme.basemapStyle + "/"
+                }
+                PluginParameter {
+                    // Isolate the disk cache per basemap style — see cacheDirFor().
+                    name: "osm.mapping.cache.directory"
+                    value: win.cacheDirFor(Theme.basemapStyle)
                 }
                 PluginParameter {
                     name: "osm.mapping.custom.mapcopyright"
