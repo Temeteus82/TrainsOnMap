@@ -20,6 +20,20 @@ ApplicationWindow {
     // than reaching through the loosely-typed Loader.item.
     signal requestTrackReload()
 
+    // Tier-2 diagnostics for the selected train: { rawLat, rawLon, snapLat,
+    // snapLon, offset, tunniste, onRoute }. Polled (the model exposes it via an
+    // invokable, not a notifying role) while a train is selected, and drives the
+    // route/raw-vs-snapped debug overlay and the detail-panel diagnostics line.
+    property var selMatch: ({})
+    Timer {
+        running: trainDetails.hasSelection
+        interval: 750
+        repeat: true
+        triggeredOnStart: true
+        onTriggered: win.selMatch = trainClient.model.matchInfoFor(
+                         trainDetails.trainNumber, trainDetails.departureDate)
+    }
+
     // ---- Backend services (C++) -------------------------------------------
     // REST bootstraps the full set of trains and resyncs/prunes every 60 s;
     // MQTT streams live position deltas in between. active:true fetches the
@@ -187,6 +201,57 @@ ApplicationWindow {
                 }
             }
 
+            // ---- Tier-2 debug overlay (selected train) -----------------------
+            // Re-evaluate the route binding when a precompute finishes resolving.
+            property int routeTick: 0
+            Connections {
+                target: trackService
+                function onRoutesReady() { map.routeTick++ }
+            }
+
+            // The train's resolved route polyline (derived-graph path), accent-tinted.
+            MapPolyline {
+                id: routeOverlay
+                visible: trainDetails.hasSelection && path.length > 1
+                line.width: 4
+                line.color: Theme.accent
+                opacity: 0.45
+                path: {
+                    map.routeTick   // dependency: refresh when routes finish resolving
+                    return trainDetails.hasSelection
+                        ? trackService.routePolyline(trainDetails.routeStations) : []
+                }
+            }
+
+            // Connector from the raw GPS fix to the snapped position.
+            MapPolyline {
+                visible: trainDetails.hasSelection && win.selMatch.rawLat !== undefined
+                         && win.selMatch.snapLat !== undefined
+                line.width: 1.5
+                line.color: Theme.accent
+                opacity: 0.8
+                path: visible
+                      ? [QtPositioning.coordinate(win.selMatch.rawLat, win.selMatch.rawLon),
+                         QtPositioning.coordinate(win.selMatch.snapLat, win.selMatch.snapLon)]
+                      : []
+            }
+
+            // The raw (unsnapped) fix as a small hollow ring.
+            MapQuickItem {
+                visible: trainDetails.hasSelection && win.selMatch.rawLat !== undefined
+                coordinate: visible
+                            ? QtPositioning.coordinate(win.selMatch.rawLat, win.selMatch.rawLon)
+                            : QtPositioning.coordinate(0, 0)
+                anchorPoint.x: 6
+                anchorPoint.y: 6
+                sourceItem: Rectangle {
+                    width: 12; height: 12; radius: 6
+                    color: "transparent"
+                    border.color: Theme.accent
+                    border.width: 2
+                }
+            }
+
             // Live train layer.
             MapItemView {
                 model: trainClient.model
@@ -271,6 +336,7 @@ ApplicationWindow {
         anchors.margins: 12
         sourceComponent: TrainDetailPanel {
             details: trainDetails
+            matchInfo: win.selMatch
         }
     }
 }

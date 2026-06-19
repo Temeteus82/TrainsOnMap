@@ -213,6 +213,7 @@ void TrainDetailsService::applyTrainObject(const QJsonObject &train, bool live)
 
     const QJsonArray rows = train.value(QStringLiteral("timeTableRows")).toArray();
     m_stops = buildStops(rows);
+    emit routeStationsChanged();
 
     int stopCount = 0;
     for (const TimetableStop &s : m_stops)
@@ -260,6 +261,7 @@ void TrainDetailsService::clear()
     m_model->clear();
     setStatus({});
     emit selectionChanged();
+    emit routeStationsChanged();
 
     if (m_stream)
         m_stream->unsubscribeTrain();

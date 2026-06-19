@@ -8,6 +8,54 @@ Legend: ✨ feature · 🐛 bug fix · ♻️ change/refactor · ✅ verificatio
 
 ---
 
+## Track accuracy — Tier 2 (topology-routed map matching)
+
+Route-constrained map matching: markers now follow each train's *scheduled* path
+through double-track and junctions, and a stopped train pins to its booked
+platform track. Plan + findings in `docs/track-accuracy-tier2-plan.md`.
+
+### ✨ Re-bake with identity + topology + station crosswalk
+- [x] **Schema-v2 blob** (`scripts/bake_rails.py`): keeps per-track `tunniste`,
+      `paaraide`, `kaupallinenNumero`, `seuraavatRaiteet`, `viereisetRaiteet`,
+      `rautatieliikennepaikat`, `ratakmvalit` (was geometry-only), and bakes a
+      station crosswalk (`stations`, `operatingPoints`). `schemaVersion: 2` lets
+      the loader reject old blobs. 4936 tracks, 557 stations → **2.6 MB (+9 %)**.
+- [x] **Crosswalk join verified** — `uicKoodi` over the union of
+      `rautatieliikennepaikat` + `liikennepaikanosat` (parts), matched to
+      `/metadata/stations.stationUICCode`: **214/215 passenger stations resolve**
+      (only the parts layer makes hubs like Pasila resolvable; parent-op fallback
+      for tracks). `lyhenne`/coarse-op `uicKoodi` do **not** join.
+
+### ✨ Derived-graph routing + route-constrained matching
+- [x] **`RailGraph`** (new pure, unit-testable core): parses the v2 blob, builds a
+      routing graph from **geometry endpoints + `viereisetRaiteet`** (because
+      `seuraavatRaiteet` is empty in the live data — 38 edges nationally), and
+      provides Dijkstra route resolution, chainage-windowed projection, and
+      platform snapping. `TrackService` owns it and derives render segments from it.
+- [x] **Off-thread route precompute** (`TrackService::precomputeRoutes`): resolves
+      each train's station sequence to a chainage-parameterised polyline in a
+      `QtConcurrent` task, deduped + memoised; a 60 s refresh only adds new routes.
+- [x] **Route-constrained match** (`TrainListModel::applyOne`): snaps to the
+      nearest point on the train's route within a `speed·Δt` window (1-D chainage
+      carried across fixes for continuity), platform-snaps a stopped train to its
+      `commercialTrack`, and falls back to the Tier-1 nearest+heading matcher when
+      no route is resolved or the fix is off the booked route.
+
+### ✅ Validation
+- [x] **Unit tests** (`tests/tst_railgraph.cpp`, QtTest + CTest): fixture parse,
+      endpoint-graph route stitching, chainage projection, platform snapping, plus
+      a real-blob smoke test (HKI→PSL→TPE resolves; on-route point projects <1 m).
+      **9/9 pass.**
+- [x] **Debug overlay** (`Main.qml`): the selected train's resolved route polyline,
+      a raw→snapped connector, a ring at the raw fix; the detail panel shows
+      `on route / nearest track · N m off · <tunniste>`.
+- [x] Builds clean (`windows-llvm`); app runs with live data (REST+MQTT+routing) —
+      no crashes/warnings.
+- [ ] 📋 Live on-map eyeballing of parallel-track/junction/platform behaviour
+      (inherently visual; not fully judgeable from unit tests).
+
+---
+
 ## Dark mode, map panning & UI-audit polish
 
 A map-interaction fix, full light/dark/auto theming, three dark-mode/launch bug

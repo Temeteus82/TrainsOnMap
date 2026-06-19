@@ -3,6 +3,7 @@
 #include <QHash>
 #include <QObject>
 #include <QString>
+#include <QStringList>
 #include <QtQmlIntegration>
 
 #include "TimetableModel.h"
@@ -31,6 +32,9 @@ class TrainDetailsService : public QObject
     Q_PROPERTY(int trainNumber READ trainNumber NOTIFY selectionChanged)
     Q_PROPERTY(QString departureDate READ departureDate NOTIFY selectionChanged)
     Q_PROPERTY(bool cancelled READ cancelled NOTIFY selectionChanged)
+    /// Ordered station short codes of the selected train (matches the route key
+    /// used by TrackService.routePolyline for the debug overlay).
+    Q_PROPERTY(QStringList routeStations READ routeStations NOTIFY routeStationsChanged)
     Q_PROPERTY(DigitrafficMqttClient *stream READ stream WRITE setStream NOTIFY streamChanged)
 
 public:
@@ -47,6 +51,14 @@ public:
     int trainNumber() const { return m_trainNumber; }
     QString departureDate() const { return m_departureDate; }
     bool cancelled() const { return m_cancelled; }
+    QStringList routeStations() const
+    {
+        QStringList codes;
+        codes.reserve(m_stops.size());
+        for (const TimetableStop &s : m_stops)
+            codes.push_back(s.stationShortCode);
+        return codes;
+    }
 
 public slots:
     /// Show the timetable for a given run. departureDate is "YYYY-MM-DD".
@@ -59,6 +71,7 @@ signals:
     void loadingChanged();
     void statusChanged();
     void streamChanged();
+    void routeStationsChanged();
 
 private:
     void fetchStations();

@@ -115,12 +115,14 @@ void DigitrafficClient::handleCategories(QNetworkReply *reply)
     QHash<TrainKey, QString> categories;
     QHash<TrainKey, QString> commuterLines;
     QHash<TrainKey, TrainStatus> statuses;
-    QHash<TrainKey, QVector<QString>> routes;
+    QHash<TrainKey, TrainRoute> routes;
+    QVector<QVector<QString>> routeSequences;   // for off-thread route precompute
     types.reserve(arr.size());
     categories.reserve(arr.size());
     commuterLines.reserve(arr.size());
     statuses.reserve(arr.size());
     routes.reserve(arr.size());
+    routeSequences.reserve(arr.size());
     for (const QJsonValue &v : arr) {
         const QJsonObject o = v.toObject();
         // Key on (departureDate, trainNumber): the number alone is reused daily
@@ -139,25 +141,35 @@ void DigitrafficClient::handleCategories(QNetworkReply *reply)
         // Current delay = differenceInMinutes of the most recently passed stop
         // (the last timetable row that already has an actualTime). In the same
         // pass, collect the route's station codes (ARRIVAL+DEPARTURE rows repeat a
-        // code, so de-dupe consecutively) for parked-train station snapping.
+        // code, so de-dupe consecutively) plus the booked commercialTrack per
+        // stop, for route-constrained matching + platform snapping.
         const QJsonArray rows = o.value("timeTableRows").toArray();
-        QVector<QString> route;
-        route.reserve(rows.size());
+        TrainRoute route;
+        route.codes.reserve(rows.size());
         for (const QJsonValue &rv : rows) {
             const QJsonObject row = rv.toObject();
             if (!row.value("actualTime").toString().isEmpty())
                 st.delayMinutes = row.value("differenceInMinutes").toInt();
             const QString code = row.value("stationShortCode").toString();
-            if (!code.isEmpty() && (route.isEmpty() || route.last() != code))
-                route.push_back(code);
+            if (code.isEmpty())
+                continue;
+            if (route.codes.isEmpty() || route.codes.last() != code)
+                route.codes.push_back(code);
+            const QString track = row.value("commercialTrack").toString();
+            if (!track.isEmpty() && row.value("trainStopping").toBool())
+                route.commercialTrack.insert(code, track);
         }
         statuses.insert(key, st);
-        if (!route.isEmpty())
-            routes.insert(key, route);
+        if (!route.codes.isEmpty()) {
+            routeSequences.push_back(route.codes);
+            routes.insert(key, std::move(route));
+        }
     }
     m_model->setTrainMetadata(types, categories, commuterLines);
     m_model->setTrainStatuses(statuses);
     m_model->setTrainRoutes(routes);
+    if (m_matcher)
+        m_matcher->precomputeRoutes(routeSequences);
 }
 
 void DigitrafficClient::fetchStations()

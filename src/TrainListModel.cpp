@@ -106,7 +106,7 @@ QGeoCoordinate TrainListModel::nearestRouteStation(const TrainKey &key,
 
     QGeoCoordinate best;
     double bestDist = kStationSnapMeters;
-    for (const QString &code : *route) {
+    for (const QString &code : route->codes) {
         const auto it = m_stationCoords.constFind(code);
         if (it == m_stationCoords.constEnd() || !it->isValid())
             continue;
@@ -117,6 +117,49 @@ QGeoCoordinate TrainListModel::nearestRouteStation(const TrainKey &key,
         }
     }
     return best;
+}
+
+QString TrainListModel::nearestRouteStationCode(const TrainKey &key,
+                                                const QGeoCoordinate &fix) const
+{
+    const auto route = m_routeByKey.constFind(key);
+    if (route == m_routeByKey.constEnd() || m_stationCoords.isEmpty())
+        return {};
+
+    QString best;
+    double bestDist = kStationSnapMeters;
+    for (const QString &code : route->codes) {
+        const auto it = m_stationCoords.constFind(code);
+        if (it == m_stationCoords.constEnd() || !it->isValid())
+            continue;
+        const double d = fix.distanceTo(*it);
+        if (d < bestDist) {
+            bestDist = d;
+            best = code;
+        }
+    }
+    return best;
+}
+
+QVariantMap TrainListModel::matchInfoFor(int trainNumber, const QString &departureDate) const
+{
+    QVariantMap info;
+    const auto it = m_indexByKey.constFind(TrainKey{departureDate, trainNumber});
+    if (it == m_indexByKey.constEnd())
+        return info;
+    const Row &row = m_rows.at(it.value());
+    info.insert(QStringLiteral("offset"), row.trackOffsetMeters);
+    info.insert(QStringLiteral("tunniste"), row.matchedTunniste);
+    info.insert(QStringLiteral("onRoute"), row.onRoute);
+    if (row.rawCoordinate.isValid()) {
+        info.insert(QStringLiteral("rawLat"), row.rawCoordinate.latitude());
+        info.insert(QStringLiteral("rawLon"), row.rawCoordinate.longitude());
+    }
+    if (row.pos.coordinate.isValid()) {
+        info.insert(QStringLiteral("snapLat"), row.pos.coordinate.latitude());
+        info.insert(QStringLiteral("snapLon"), row.pos.coordinate.longitude());
+    }
+    return info;
 }
 
 void TrainListModel::updateTrains(const QVector<TrainPosition> &trains)
@@ -173,39 +216,81 @@ void TrainListModel::applyOne(const TrainPosition &train)
     // record how far off the network it was so QML can flag a suspect position.
     // Off-track fixes are kept raw — the network may simply have a gap there.
     TrainPosition matched = train;
+    const QGeoCoordinate raw = train.coordinate;
     double offset = -1.0;
-    if (m_matcher && matched.coordinate.isValid()) {
+    QString matchedTunniste;
+    double newChainage = -1.0;
+    bool onRoute = false;
+    if (m_matcher && raw.isValid()) {
         const auto prev = m_previous.constFind(key);
         const bool havePrev = prev != m_previous.constEnd() && prev->isValid();
         const bool stopped = train.speed < kStoppedSpeedKmh;
 
         // Estimate the direction of travel from the last stored position so the
-        // matcher can prefer the track the train runs along (vs. one it crosses).
-        // Skipped when stopped or barely moved — the azimuth would be noise.
+        // Tier-1 matcher can prefer the track the train runs along; skipped when
+        // stopped or barely moved (the azimuth would be noise).
         double heading = -1.0;
         if (havePrev && train.speed >= kHeadingMinSpeedKmh
-            && prev->distanceTo(matched.coordinate) > kHeadingMinMoveMeters)
-            heading = prev->azimuthTo(matched.coordinate);
+            && prev->distanceTo(raw) > kHeadingMinMoveMeters)
+            heading = prev->azimuthTo(raw);
 
-        const TrackMatch m = m_matcher->matchToNetwork(matched.coordinate, heading);
-        offset = m.distanceMeters;
-        QGeoCoordinate snapped = (m.onTrack && m.snapped.isValid()) ? m.snapped
-                                                                    : matched.coordinate;
+        // Carry the per-train route position + estimate the progress since the
+        // last fix (speed·Δt), so the route matcher can window its search.
+        double prevChainage = -1.0;
+        qint64 dtSecs = 0;
+        const auto rit = m_indexByKey.constFind(key);
+        if (rit != m_indexByKey.constEnd()) {
+            const Row &r = m_rows.at(rit.value());
+            prevChainage = r.chainage;
+            if (r.pos.timestamp.isValid() && train.timestamp.isValid())
+                dtSecs = r.pos.timestamp.secsTo(train.timestamp);
+        }
+        const double advance = dtSecs > 0 ? (train.speed / 3.6) * double(dtSecs) : 0.0;
 
-        if (stopped) {
-            // #2 Continuity: a parked train's jittering fixes shouldn't drag the
-            // marker around (or hop it to a neighbouring track). Once we have a
-            // snapped point and the new fix is still nearby, keep that point.
-            if (havePrev && prev->distanceTo(matched.coordinate) < kStoppedHoldMeters) {
-                snapped = *prev;
-            } else if (!m.onTrack) {
-                // #5 Stopped and off the network: pin to the nearest scheduled
-                // station if one is close — the train is in a station the GPS has
-                // drifted out of. (Skipped while running: a moving off-track fix is
-                // a genuine geometry gap, not a station stop.)
-                const QGeoCoordinate st = nearestRouteStation(key, matched.coordinate);
-                if (st.isValid())
-                    snapped = st;
+        QGeoCoordinate snapped = raw;
+        bool accepted = false;
+
+        // Tier-2: constrain the match to the train's scheduled route, and snap to
+        // its booked platform track when stopped at a station.
+        const auto route = m_routeByKey.constFind(key);
+        if (route != m_routeByKey.constEnd() && route->codes.size() >= 2) {
+            RouteMatchRequest req;
+            req.stationCodes = route->codes;
+            req.prevChainage = prevChainage;
+            req.advanceMeters = advance;
+            if (stopped) {
+                const QString stCode = nearestRouteStationCode(key, raw);
+                if (!stCode.isEmpty()) {
+                    req.platformStation = stCode;
+                    req.platformTrack = route->commercialTrack.value(stCode);
+                }
+            }
+            const TrackMatch rm = m_matcher->matchOnRoute(raw, req);
+            if (rm.onRoute && rm.onTrack && rm.snapped.isValid()) {
+                snapped = rm.snapped;
+                offset = rm.distanceMeters;
+                matchedTunniste = rm.tunniste;
+                newChainage = rm.chainageMeters;
+                onRoute = true;
+                accepted = true;
+            }
+        }
+
+        // Tier-1 fallback: nearest track + heading, with stopped-train continuity
+        // (#2) and the off-network station pin (#5) — used until the route is
+        // resolved, or when the fix is too far from the booked route (diversion).
+        if (!accepted) {
+            const TrackMatch m = m_matcher->matchToNetwork(raw, heading);
+            offset = m.distanceMeters;
+            snapped = (m.onTrack && m.snapped.isValid()) ? m.snapped : raw;
+            if (stopped) {
+                if (havePrev && prev->distanceTo(raw) < kStoppedHoldMeters) {
+                    snapped = *prev;
+                } else if (!m.onTrack) {
+                    const QGeoCoordinate st = nearestRouteStation(key, raw);
+                    if (st.isValid())
+                        snapped = st;
+                }
             }
         }
         matched.coordinate = snapped;
@@ -224,6 +309,10 @@ void TrainListModel::applyOne(const TrainPosition &train)
         row.bearing = bearingFor(key, matched.coordinate);
         row.pos = matched;
         row.trackOffsetMeters = offset;
+        row.rawCoordinate = raw;
+        row.matchedTunniste = matchedTunniste;
+        row.chainage = newChainage;
+        row.onRoute = onRoute;
         const QModelIndex idx = index(rowIndex);
         emit dataChanged(idx, idx,
                          { CoordinateRole, SpeedRole, BearingRole, TimestampRole,
@@ -237,6 +326,10 @@ void TrainListModel::applyOne(const TrainPosition &train)
     row.bearing = bearingFor(key, matched.coordinate);
     row.pos = matched;
     row.trackOffsetMeters = offset;
+    row.rawCoordinate = raw;
+    row.matchedTunniste = matchedTunniste;
+    row.chainage = newChainage;
+    row.onRoute = onRoute;
     m_rows.push_back(row);
     m_indexByKey.insert(key, newRow);
     endInsertRows();

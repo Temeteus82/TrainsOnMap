@@ -13,6 +13,10 @@ Rectangle {
     // Bound to a TrainDetailsService instance from Main.qml.
     required property var details
 
+    // Tier-2 map-match diagnostics for this train: { offset, tunniste, onRoute }.
+    // Defaulted so the panel works if the host doesn't supply it.
+    property var matchInfo: ({})
+
     color: Theme.cardBg
     border.color: Theme.hairline
     border.width: 1
@@ -93,6 +97,26 @@ Rectangle {
             color: Theme.textMuted
             font.pixelSize: TypeScale.caption
             visible: text.length > 0
+        }
+
+        // Tier-2 map-match diagnostics: which track the live fix snapped to, how
+        // far the raw fix was, and whether it matched the scheduled route.
+        Label {
+            Layout.fillWidth: true
+            wrapMode: Text.WordWrap
+            color: Theme.textMuted
+            font.pixelSize: TypeScale.caption
+            visible: root.matchInfo && root.matchInfo.offset !== undefined
+                     && root.matchInfo.offset >= 0
+            text: {
+                if (!root.matchInfo || root.matchInfo.offset === undefined)
+                    return ""
+                var s = root.matchInfo.onRoute ? qsTr("on route") : qsTr("nearest track")
+                s += " · " + qsTr("%1 m off").arg(Math.round(root.matchInfo.offset))
+                if (root.matchInfo.tunniste && root.matchInfo.tunniste.length > 0)
+                    s += " · " + root.matchInfo.tunniste
+                return s
+            }
         }
 
         BusyIndicator {

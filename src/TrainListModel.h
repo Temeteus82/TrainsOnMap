@@ -6,6 +6,7 @@
 #include <QHash>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QVariantMap>
 #include <QVector>
 #include <QtQmlIntegration>
 
@@ -28,6 +29,14 @@ struct TrainPosition {
     double speed = 0.0;          ///< km/h
     QDateTime timestamp;         ///< UTC report time
     int accuracy = -1;           ///< GPS uncertainty radius in metres; -1 if unreported
+};
+
+/// A train's scheduled path, from /live-trains' timeTableRows: the ordered
+/// station short codes (used to resolve the route polyline + nearest stop) plus
+/// the booked commercialTrack per stopping station (used for platform snapping).
+struct TrainRoute {
+    QVector<QString> codes;
+    QHash<QString, QString> commercialTrack;
 };
 
 /// Digitraffic identifies a train run by the pair (departureDate, trainNumber),
@@ -142,10 +151,15 @@ public:
     /// Used to pin a stopped, off-network train to the station it's booked at.
     void setStationCoords(const QHash<QString, QGeoCoordinate> &coords) { m_stationCoords = coords; }
 
-    /// Supply (date,number) -> ordered route station codes (from /live-trains'
-    /// timeTableRows). Combined with the station coords, lets a parked train be
-    /// snapped to its nearest scheduled station when it has drifted off-network.
-    void setTrainRoutes(const QHash<TrainKey, QVector<QString>> &routes) { m_routeByKey = routes; }
+    /// Supply (date,number) -> scheduled route (station codes + per-stop platform)
+    /// from /live-trains' timeTableRows. Drives Tier-2 route-constrained matching
+    /// and platform snapping, plus the Tier-1 nearest-station fallback.
+    void setTrainRoutes(const QHash<TrainKey, TrainRoute> &routes) { m_routeByKey = routes; }
+
+    /// Diagnostics for the route-matched position of one train (for the debug
+    /// overlay / detail panel): { rawLat, rawLon, snapLat, snapLon, offset,
+    /// tunniste, onRoute }. Empty map if the train isn't present.
+    Q_INVOKABLE QVariantMap matchInfoFor(int trainNumber, const QString &departureDate) const;
 
 signals:
     void countChanged();
@@ -155,6 +169,10 @@ private:
         TrainPosition pos;
         double bearing = 0.0;
         double trackOffsetMeters = -1.0;  ///< raw fix's distance to nearest rail; -1 if unmatched
+        QGeoCoordinate rawCoordinate;     ///< unsnapped fix (for the debug overlay)
+        QString matchedTunniste;          ///< track OID the fix matched, "" if none
+        double chainage = -1.0;           ///< 1-D route position carried across fixes
+        bool onRoute = false;             ///< last fix matched the scheduled route
     };
 
     /// The single upsert funnel for every position update, REST or MQTT. Drops
@@ -173,6 +191,10 @@ private:
     /// loaded yet, or none is close enough.
     QGeoCoordinate nearestRouteStation(const TrainKey &key, const QGeoCoordinate &fix) const;
 
+    /// Short code of the nearest scheduled station to `fix` within the snap radius
+    /// (for platform snapping), or "" when none qualifies.
+    QString nearestRouteStationCode(const TrainKey &key, const QGeoCoordinate &fix) const;
+
     QVector<Row> m_rows;
     QHash<TrainKey, int> m_indexByKey;        ///< (date,number) -> row index
     QHash<TrainKey, QGeoCoordinate> m_previous;  ///< (date,number) -> last coord (for bearing)
@@ -181,7 +203,7 @@ private:
     QHash<TrainKey, QString> m_lineByNumber;     ///< (date,number) -> commuter line letter
     QHash<TrainKey, TrainStatus> m_statusByNumber; ///< (date,number) -> live running status
     QHash<QString, QGeoCoordinate> m_stationCoords; ///< station short code -> coord
-    QHash<TrainKey, QVector<QString>> m_routeByKey; ///< (date,number) -> route station codes
+    QHash<TrainKey, TrainRoute> m_routeByKey;       ///< (date,number) -> scheduled route
 
     const TrackMatcher *m_matcher = nullptr;   ///< snaps/flags GPS fixes; not owned
 
