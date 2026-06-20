@@ -63,6 +63,23 @@ qt_add_resources(TrainsOnMap "raildata"
     BASE "${CMAKE_CURRENT_SOURCE_DIR}/resources"
     FILES resources/rails.geojson.qz)
 
+# Application icon, embedded for the runtime window/taskbar icon (set via
+# QGuiApplication::setWindowIcon in main.cpp -> ":/appicon.png"). Regenerate the
+# raster assets from the SVG master with scripts/make_icons.sh.
+qt_add_resources(TrainsOnMap "appicon"
+    PREFIX "/"
+    BASE "${CMAKE_CURRENT_SOURCE_DIR}/resources/icon"
+    FILES resources/icon/appicon.png)
+
+# Windows: embed the multi-size .ico as the executable's shell icon. The .rc is
+# configured with an absolute path so windres resolves it from any working dir.
+if(WIN32)
+    set(TRAINSONMAP_ICON_ICO "${CMAKE_CURRENT_SOURCE_DIR}/resources/icon/appicon.ico")
+    configure_file(resources/icon/appicon.rc.in
+                   "${CMAKE_CURRENT_BINARY_DIR}/appicon.rc" @ONLY)
+    target_sources(TrainsOnMap PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/appicon.rc")
+endif()
+
 # So the generated QML type-registration unit can find the class headers
 # (it probes them via __has_include(<Header.h>)).
 target_include_directories(TrainsOnMap PRIVATE src)
