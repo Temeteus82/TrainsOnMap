@@ -1,56 +1,20 @@
 #include "TimetableModel.h"
 
+// Pass a pointer to the member container so QRangeModel operates on it in place;
+// structural changes below go through the QAbstractItemModel API. NOTE: the base
+// is constructed before m_stops, so QRangeModel must not dereference the pointer
+// during construction — it only introspects TimetableStop's metaobject (a
+// type-level operation) to build the role table, which is safe.
 TimetableModel::TimetableModel(QObject *parent)
-    : QAbstractListModel(parent)
+    : QRangeModel(&m_stops, parent)
 {
-}
-
-int TimetableModel::rowCount(const QModelIndex &parent) const
-{
-    if (parent.isValid())
-        return 0;
-    return m_stops.size();
-}
-
-QVariant TimetableModel::data(const QModelIndex &index, int role) const
-{
-    if (!index.isValid() || index.row() < 0 || index.row() >= m_stops.size())
-        return {};
-
-    const TimetableStop &s = m_stops.at(index.row());
-    switch (role) {
-    case StationNameRole:        return s.stationName;
-    case StationShortCodeRole:   return s.stationShortCode;
-    case ScheduledArrivalRole:   return s.scheduledArrival;
-    case EstimatedArrivalRole:   return s.estimatedArrival;
-    case ScheduledDepartureRole: return s.scheduledDeparture;
-    case EstimatedDepartureRole: return s.estimatedDeparture;
-    case DelayMinutesRole:       return s.delayMinutes;
-    case TrackRole:              return s.track;
-    case CancelledRole:          return s.cancelled;
-    case StoppingRole:           return s.stopping;
-    default:                     return {};
-    }
-}
-
-QHash<int, QByteArray> TimetableModel::roleNames() const
-{
-    return {
-        { StationNameRole,        "stationName" },
-        { StationShortCodeRole,   "stationShortCode" },
-        { ScheduledArrivalRole,   "scheduledArrival" },
-        { EstimatedArrivalRole,   "estimatedArrival" },
-        { ScheduledDepartureRole, "scheduledDeparture" },
-        { EstimatedDepartureRole, "estimatedDeparture" },
-        { DelayMinutesRole,       "delayMinutes" },
-        { TrackRole,              "track" },
-        { CancelledRole,          "cancelled" },
-        { StoppingRole,           "stopping" },
-    };
 }
 
 void TimetableModel::setStops(const QVector<TimetableStop> &stops)
 {
+    // Full replace (timetables are small and arrive wholesale). beginResetModel
+    // tells attached views to re-read; QRangeModel reports the live size of the
+    // backing container afterwards.
     beginResetModel();
     m_stops = stops;
     endResetModel();

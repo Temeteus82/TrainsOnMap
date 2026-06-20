@@ -135,3 +135,14 @@ target_link_libraries(tst_railgraph PRIVATE Qt6::Core Qt6::Positioning Qt6::Test
 target_compile_definitions(tst_railgraph PRIVATE
     RAILS_BLOB="${CMAKE_CURRENT_SOURCE_DIR}/resources/rails.geojson.qz")
 add_test(NAME railgraph COMMAND tst_railgraph)
+
+# TimetableModel is a QRangeModel subclass (Qt 6.10+); this pins the role table
+# auto-derived from TimetableStop's Q_PROPERTYs to the names the QML detail panel
+# binds to, plus the setStops()/clear()/count contract. Links Qt6::Qml for the
+# QtQmlIntegration header (the QML_ELEMENT macros in TimetableModel.h).
+qt_add_executable(tst_timetablemodel
+    tests/tst_timetablemodel.cpp
+    src/TimetableModel.h src/TimetableModel.cpp)
+target_include_directories(tst_timetablemodel PRIVATE src)
+target_link_libraries(tst_timetablemodel PRIVATE Qt6::Core Qt6::Qml Qt6::Test)
+add_test(NAME timetablemodel COMMAND tst_timetablemodel)
