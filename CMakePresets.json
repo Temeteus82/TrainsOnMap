@@ -54,12 +54,23 @@
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_PREFIX_PATH": "$penv{CMAKE_PREFIX_PATH}"
       }
+    },
+    {
+      "name": "windows-llvm-qt612",
+      "displayName": "Windows (LLVM/Clang) -- Qt 6.12 beta [EXPERIMENTAL]",
+      "description": "Same llvm-mingw toolchain as windows-llvm, but pinned to the locally installed Qt 6.12 beta kit (C:/Qt/6.12.0/llvm-mingw_64) with an isolated build dir so beta artifacts never mix with the stable build. Still needs the llvm-mingw bin (C:/Qt/Tools/llvm-mingw1706_64/bin) on PATH. The kit path is pinned here; edit it if the beta version changes.",
+      "inherits": "windows-llvm",
+      "binaryDir": "${sourceDir}/build/windows-llvm-qt612",
+      "cacheVariables": {
+        "CMAKE_PREFIX_PATH": "C:/Qt/6.12.0/llvm-mingw_64"
+      }
     }
   ],
   "buildPresets": [
-    { "name": "linux-clang",   "configurePreset": "linux-clang" },
-    { "name": "macos-clang",   "configurePreset": "macos-clang" },
-    { "name": "windows-msvc",  "configurePreset": "windows-msvc", "configuration": "Release" },
-    { "name": "windows-llvm",  "configurePreset": "windows-llvm" }
+    { "name": "linux-clang",       "configurePreset": "linux-clang" },
+    { "name": "macos-clang",       "configurePreset": "macos-clang" },
+    { "name": "windows-msvc",      "configurePreset": "windows-msvc", "configuration": "Release" },
+    { "name": "windows-llvm",      "configurePreset": "windows-llvm" },
+    { "name": "windows-llvm-qt612", "configurePreset": "windows-llvm-qt612" }
   ]
 }
