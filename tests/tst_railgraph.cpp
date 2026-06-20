@@ -319,6 +319,34 @@ private slots:
                                 .arg(pOut.offsetMeters)));
     }
 
+    // Tunnel-blackout re-acquire: after the window misses (fixes dropped for
+    // several km), the train can only be *ahead* on its route, so re-acquisition
+    // must search forward of the last chainage, never the global 2-D nearest —
+    // which here would back-jump onto the outbound limb the train already passed.
+    void gapReacquireStaysForwardOfLastChainage()
+    {
+        RailGraph g;
+        QVERIFY(g.loadFromJson(reacquireBlob()));
+        const RailGraph::RoutePolyline rp = g.buildPolyline(
+            g.routePath({QStringLiteral("WST"), QStringLiteral("TRN"), QStringLiteral("WND")}));
+        QVERIFY(rp.isValid());
+
+        // Train was at chainage 1400 on the inbound limb C (y=300). A blackout
+        // drops fixes; it re-emerges near easting 500150 on C (chainage ~2150),
+        // but the fix is pulled south to y=130 — 130 m from the outbound limb A
+        // (chainage ~150, already passed) and ~170 m from its true spot on C.
+        // The window [1250,1800] misses, so a global nearest would snap back to A
+        // (130 < 170); the forward re-acquire must keep it on C, far ahead.
+        const QGeoCoordinate fix = tm35fin::toWgs84(500150, 6700130);
+        const RailGraph::RouteProjection p = g.projectOntoRoute(rp, fix, 1400.0, 0.0);
+        QVERIFY(p.isValid());
+        QVERIFY2(p.chainage > 1300.0,
+                 qPrintable(QStringLiteral("chainage=%1 (back-jumped to the passed outbound limb)")
+                                .arg(p.chainage)));
+        QVERIFY2(p.offsetMeters < 250.0,
+                 qPrintable(QStringLiteral("offset=%1").arg(p.offsetMeters)));
+    }
+
     void projectsFixOntoRoute()
     {
         RailGraph g;

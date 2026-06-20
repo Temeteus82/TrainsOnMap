@@ -173,6 +173,7 @@ private:
         QString matchedTunniste;          ///< track OID the fix matched, "" if none
         double chainage = -1.0;           ///< 1-D route position carried across fixes
         bool onRoute = false;             ///< last fix matched the scheduled route
+        int outlierStreak = 0;            ///< consecutive rejected teleport fixes
     };
 
     /// The single upsert funnel for every position update, REST or MQTT. Drops

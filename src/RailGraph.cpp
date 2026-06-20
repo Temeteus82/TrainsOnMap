@@ -390,13 +390,23 @@ RailGraph::RouteProjection RailGraph::projectOntoRoute(const RoutePolyline &rp,
         const double centre = prevChainage + advanceMeters;
         const RouteProjection windowed = search(prevChainage - kWindowBack, centre + kWindowFwd);
         // Trust the windowed (continuity-preserving) hit unless the fix is far
-        // enough from it that the train has clearly left the window. A global
-        // search here can return a parallel/earlier limb that's nearer in 2D but
-        // kilometres away in chainage; the caller's onTrack gate still decides
-        // whether to keep a windowed hit just over the snap distance or fall to
-        // Tier-1, so we never need to jump limbs just because it missed by a few m.
+        // enough from it that the train has clearly left the window. The forward
+        // re-acquire below (not a global 2-D nearest) handles the miss; the
+        // caller's onTrack gate still decides whether to keep a windowed hit just
+        // over the snap distance or fall to Tier-1.
         if (windowed.isValid() && windowed.offsetMeters <= kRouteReacquireMeters)
             return windowed;
+        // Re-acquire after the window misses (e.g. a tunnel GPS blackout dropped
+        // fixes for several km, so speed·Δt under-estimated the gap): a train can
+        // only have moved *forward* along its booked route, so re-acquire over the
+        // route ahead of the last chainage instead of an unconstrained global
+        // search. The global scan could otherwise snap to a point behind the train
+        // or to a parallel limb it already passed (nearer in 2-D, kilometres away
+        // in chainage) — the backward "jump onto the wrong track" seen at tunnels.
+        const RouteProjection forward =
+            search(prevChainage - kWindowBack, std::numeric_limits<double>::infinity());
+        if (forward.isValid())
+            return forward;
     }
     return search(-1.0, std::numeric_limits<double>::infinity());
 }
