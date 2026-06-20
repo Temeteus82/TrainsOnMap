@@ -1,0 +1,5 @@
+// Windows resource script — embeds the application icon into TrainsOnMap.exe.
+// Configured by CMake (configure_file) so the .ico path is absolute and resolves
+// regardless of the resource compiler's working directory. The first ICON entry
+// (lowest numeric id) becomes the executable's shell icon.
+IDI_ICON1 ICON "@TRAINSONMAP_ICON_ICO@"

@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- TrainsOnMap application icon.
+       Brand blue tile (Theme.accent #1565c0) + white front-view train on receding
+       rails, with a warm headlight accent. Master art: render to PNG / .ico via
+       scripts/make_icons.sh. Designed to stay legible down to 16px. -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0"  stop-color="#2E7BE6"/>
+      <stop offset="1"  stop-color="#0C4AA0"/>
+    </linearGradient>
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0"   stop-color="#ffffff" stop-opacity="0.16"/>
+      <stop offset="0.5" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <!-- tile -->
+  <rect x="0" y="0" width="1024" height="1024" rx="200" fill="url(#tile)"/>
+  <rect x="0" y="0" width="1024" height="1024" rx="200" fill="url(#sheen)"/>
+
+  <!-- receding rails (under the train) -->
+  <g stroke="#ffffff" stroke-opacity="0.42" stroke-linecap="round" fill="none">
+    <line x1="476" y1="640" x2="252" y2="980" stroke-width="26"/>
+    <line x1="548" y1="640" x2="772" y2="980" stroke-width="26"/>
+    <!-- sleepers (cross-ties), widening toward the viewer -->
+    <line x1="404" y1="788" x2="620" y2="788" stroke-width="20"/>
+    <line x1="356" y1="876" x2="668" y2="876" stroke-width="22"/>
+    <line x1="300" y1="966" x2="724" y2="966" stroke-width="24"/>
+  </g>
+
+  <!-- train (front view) -->
+  <g>
+    <!-- chassis / base -->
+    <rect x="276" y="700" width="472" height="78" rx="26" fill="#ffffff"/>
+    <!-- cab body with rounded top -->
+    <path d="M 312 700 L 312 400 Q 312 250 462 250 L 562 250 Q 712 250 712 400 L 712 700 Z"
+          fill="#ffffff"/>
+    <!-- window band: two windows + centre pillar -->
+    <rect x="360" y="364" width="138" height="116" rx="28" fill="#0E55AC"/>
+    <rect x="526" y="364" width="138" height="116" rx="28" fill="#0E55AC"/>
+    <!-- vent / grille below windows -->
+    <rect x="402" y="540" width="220" height="20" rx="10" fill="#0E55AC" opacity="0.55"/>
+    <!-- headlights -->
+    <circle cx="406" cy="628" r="34" fill="#FFD45E"/>
+    <circle cx="618" cy="628" r="34" fill="#FFD45E"/>
+    <!-- wheels -->
+    <circle cx="404" cy="800" r="46" fill="#ffffff"/>
+    <circle cx="620" cy="800" r="46" fill="#ffffff"/>
+    <circle cx="404" cy="800" r="18" fill="#0E55AC"/>
+    <circle cx="620" cy="800" r="18" fill="#0E55AC"/>
+  </g>
+</svg>
