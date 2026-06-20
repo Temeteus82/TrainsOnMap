@@ -2,6 +2,9 @@
 
 #include <QSet>
 
+#include <algorithm>
+#include <limits>
+
 namespace {
 // A train missing from a REST snapshot is pruned only once its last position is
 // older than this, so a just-arrived MQTT-only train isn't deleted before REST
@@ -28,6 +31,26 @@ constexpr double kHeadingMinMoveMeters = 8.0;
 // is sitting in a station whose throat the GPS has drifted out of).
 constexpr double kStoppedHoldMeters = 40.0;
 constexpr double kStationSnapMeters = 250.0;
+
+// When a fix falls back to Tier-1 while the train was last on its route (a
+// transient miss or a tunnel GPS blackout), dead-reckon the carried chainage
+// forward by speed·Δt instead of freezing it, so the next fix's route window
+// stays centred on where the train should be rather than at the tunnel mouth.
+// Capped so a garbage Δt can't fling the window across the country; over-shooting
+// is self-correcting (the forward re-acquire in projectOntoRoute catches up).
+constexpr double kMaxGapAdvanceMeters = 20000.0;
+
+// Teleport guard. A single feed glitch — a stale/duplicate coordinate, or a
+// record momentarily mislabelled onto this train's (date, number) — can place a
+// train hundreds of km away for one fix, then snap back ("jumps to Tampere and
+// back"). Reject a fix only when the jump from the last one is both large *and*
+// implies a speed no train can reach: a real GPS-blackout re-emergence is spread
+// over a long Δt, so its implied speed stays plausible and passes; ordinary GPS
+// jitter never clears the distance floor. After this many consecutive impossible
+// fixes we trust the feed again — our own anchor may have been the stale one.
+constexpr double kMaxPlausibleSpeedKmh = 350.0;   // well above any real train
+constexpr double kMinTeleportMeters = 2000.0;     // ignore sub-2 km jitter
+constexpr int kMaxOutlierStreak = 2;
 }
 
 TrainListModel::TrainListModel(QObject *parent)
@@ -223,6 +246,28 @@ void TrainListModel::applyOne(const TrainPosition &train)
         && train.timestamp < m_rows.at(existing.value()).pos.timestamp)
         return;
 
+    // Teleport guard: drop a physically impossible jump from the last fix (a feed
+    // glitch plotting the train hundreds of km away for one frame) before it ever
+    // reaches the model. Both gates must trip — a large jump *and* an impossible
+    // implied speed — so a slow re-emergence after a long blackout still passes
+    // and ordinary jitter is ignored. The streak cap re-acquires if our anchor
+    // turns out to be the stale one. See kMaxPlausibleSpeedKmh.
+    if (existing != m_indexByKey.constEnd() && train.coordinate.isValid()) {
+        Row &r = m_rows[existing.value()];
+        if (r.rawCoordinate.isValid() && r.outlierStreak < kMaxOutlierStreak) {
+            const double jump = r.rawCoordinate.distanceTo(train.coordinate);
+            const qint64 dt = (r.pos.timestamp.isValid() && train.timestamp.isValid())
+                                  ? r.pos.timestamp.secsTo(train.timestamp) : 0;
+            const double impliedKmh = dt > 0 ? jump / dt * 3.6
+                                             : std::numeric_limits<double>::infinity();
+            if (jump > kMinTeleportMeters && impliedKmh > kMaxPlausibleSpeedKmh) {
+                ++r.outlierStreak;
+                return;
+            }
+        }
+        r.outlierStreak = 0;
+    }
+
     // Map-match the raw fix to the rail network: snap an on-track fix onto the
     // rail (so markers ride the rails instead of jittering beside them), and
     // record how far off the network it was so QML can flag a suspect position.
@@ -249,9 +294,12 @@ void TrainListModel::applyOne(const TrainPosition &train)
     // That's an accepted limitation: dead-reckoning the chainage instead would
     // mis-advance a genuinely diverted train that isn't on the booked route.
     double prevChainage = -1.0;
+    bool wasOnRoute = false;
     const auto rit = m_indexByKey.constFind(key);
-    if (rit != m_indexByKey.constEnd())
+    if (rit != m_indexByKey.constEnd()) {
         prevChainage = m_rows.at(rit.value()).chainage;
+        wasOnRoute = m_rows.at(rit.value()).onRoute;
+    }
     double newChainage = prevChainage;
 
     if (m_matcher && raw.isValid()) {
@@ -310,6 +358,17 @@ void TrainListModel::applyOne(const TrainPosition &train)
         // (#2) and the off-network station pin (#5) — used until the route is
         // resolved, or when the fix is too far from the booked route (diversion).
         if (!accepted) {
+            // Bridge a transient gap: if the train was on its route last fix (so
+            // this is a blip / tunnel blackout, not a sustained diversion),
+            // dead-reckon the carried chainage forward instead of freezing it at
+            // the tunnel mouth, so the next fix's window re-engages Tier-2 where
+            // the train actually is. onRoute is stored false on this row, so the
+            // very next fix won't dead-reckon again — it's a one-shot bridge that
+            // can't run away on a genuine off-route stretch.
+            if (route != m_routeByKey.constEnd() && route->codes.size() >= 2
+                && wasOnRoute && prevChainage >= 0.0 && advance > 0.0)
+                newChainage = prevChainage + std::min(advance, kMaxGapAdvanceMeters);
+
             const TrackMatch m = m_matcher->matchToNetwork(raw, heading);
             offset = m.distanceMeters;
             snapped = (m.onTrack && m.snapped.isValid()) ? m.snapped : raw;

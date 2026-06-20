@@ -113,8 +113,18 @@ MapQuickItem {
     // rail, so a short tween between two of them tracks the line closely; a fresh
     // fix simply retargets the animation in flight. Honour the reduced-motion
     // opt-out — then the coordinate snaps straight to each fix with no animation.
+    //
+    // Beyond maxGlideMeters the tween is disabled so the marker snaps instantly:
+    // a CoordinateAnimation interpolates a straight chord, so gliding a multi-km
+    // re-acquire (a tunnel GPS blackout) would visibly drag the dot across open
+    // terrain off the rails. The threshold sits above any legitimate single-step
+    // move — a 60 s REST resync at line speed (~200 km/h) is ~3.3 km — so routine
+    // motion and the brief startup Tier-1->Tier-2 convergence still glide smoothly;
+    // only a genuine multi-km teleport snaps.
+    readonly property real maxGlideMeters: 4000
     Behavior on coordinate {
         enabled: !Theme.reducedMotion
+                 && marker.coordinate.distanceTo(marker.model.coordinate) < marker.maxGlideMeters
         CoordinateAnimation {
             duration: 1000
             easing.type: Easing.Linear
