@@ -17,6 +17,17 @@ Rectangle {
     // Defaulted so the panel works if the host doesn't supply it.
     property var matchInfo: ({})
 
+    // Distinct dot colour per carriage amenity (see CompositionVehicle.amenities).
+    function amenityColor(a) {
+        switch (a) {
+        case "Catering":   return "#e08a3c"   // café/restaurant car
+        case "Accessible": return Theme.accent
+        case "Family":     return "#3fae6b"   // play area
+        case "Pet":        return "#caa23a"
+        }
+        return Theme.textMuted
+    }
+
     color: Theme.cardBg
     border.color: Theme.hairline
     border.width: 1
@@ -133,6 +144,145 @@ Rectangle {
         }
 
         Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.hairline }
+
+        // ---- Carriage order ----------------------------------------------
+        // Locomotive + wagons in physical order (front of train at the left),
+        // each wagon labelled with its passenger-facing car number; hover a car
+        // for its type and amenities. Hidden until the composition arrives (and
+        // for runs with no stock data, e.g. most commuter/freight services).
+        ColumnLayout {
+            Layout.fillWidth: true
+            visible: root.details.hasComposition
+            spacing: 4
+
+            Label {
+                text: qsTr("Carriage order")
+                font.bold: true
+                font.pixelSize: TypeScale.body
+                color: Theme.textStrong
+            }
+            Label {
+                text: root.details.compositionLeg
+                visible: text.length > 0
+                color: Theme.textMuted
+                font.pixelSize: TypeScale.caption
+            }
+
+            ListView {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 58
+                orientation: ListView.Horizontal
+                clip: true
+                spacing: 3
+                model: root.details.composition
+                ScrollBar.horizontal: ScrollBar { policy: ScrollBar.AsNeeded }
+
+                delegate: Item {
+                    id: car
+                    required property int position
+                    required property bool locomotive
+                    required property string label
+                    required property string vehicleType
+                    required property string powerType
+                    required property var amenities
+
+                    width: 42
+                    height: ListView.view.height
+
+                    Rectangle {
+                        id: carBody
+                        anchors.fill: parent
+                        anchors.topMargin: 2
+                        anchors.bottomMargin: 2
+                        radius: 5
+                        color: car.locomotive ? Theme.subtlePress : Theme.iconBadgeBg
+                        border.color: carHover.hovered ? Theme.accent : Theme.hairline
+                        border.width: 1
+
+                        ColumnLayout {
+                            anchors.fill: parent
+                            anchors.margins: 3
+                            spacing: 1
+
+                            // Car number (wagon) or locomotive icon.
+                            Item {
+                                Layout.fillWidth: true
+                                Layout.fillHeight: true
+                                AppIcon {
+                                    anchors.centerIn: parent
+                                    visible: car.locomotive
+                                    name: "train"
+                                    color: Theme.textStrong
+                                    size: TypeScale.iconSm
+                                }
+                                Label {
+                                    anchors.centerIn: parent
+                                    visible: !car.locomotive
+                                    text: car.label
+                                    font.bold: true
+                                    font.pixelSize: TypeScale.body
+                                    color: Theme.textStrong
+                                }
+                            }
+
+                            // Vehicle type code (e.g. "Ed", "Sr2").
+                            Label {
+                                Layout.fillWidth: true
+                                horizontalAlignment: Text.AlignHCenter
+                                text: car.vehicleType
+                                font.pixelSize: TypeScale.caption
+                                color: Theme.textMuted
+                                elide: Text.ElideRight
+                                visible: text.length > 0
+                            }
+
+                            // Amenity dots (catering / accessible / family / pet).
+                            RowLayout {
+                                Layout.alignment: Qt.AlignHCenter
+                                Layout.bottomMargin: 1
+                                spacing: 2
+                                visible: car.amenities.length > 0
+                                Repeater {
+                                    model: car.amenities
+                                    delegate: Rectangle {
+                                        required property string modelData
+                                        implicitWidth: 5
+                                        implicitHeight: 5
+                                        radius: 2.5
+                                        color: root.amenityColor(modelData)
+                                    }
+                                }
+                            }
+                        }
+
+                        HoverHandler { id: carHover }
+                        ToolTip.visible: carHover.hovered
+                        ToolTip.text: car.locomotive
+                            ? (car.vehicleType + (car.powerType.length > 0
+                                                  ? " · " + car.powerType : ""))
+                            : (qsTr("Car %1").arg(car.label)
+                               + (car.vehicleType.length > 0 ? " · " + car.vehicleType : "")
+                               + (car.amenities.length > 0 ? "\n" + car.amenities.join(", ") : ""))
+                    }
+                }
+            }
+
+            Label {
+                text: root.details.compositionSummary
+                visible: text.length > 0
+                color: Theme.textMuted
+                font.pixelSize: TypeScale.caption
+            }
+            Label {
+                text: qsTr("Consist changes en route")
+                visible: root.details.compositionSectionCount > 1
+                color: Theme.textMuted
+                font.pixelSize: TypeScale.caption
+                font.italic: true
+            }
+
+            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.hairline }
+        }
 
         // ---- Show-all toggle (reveals passed-through timing points) -------
         // Keyboard-focusable checkbox (W4) with a drawn tick (O3).

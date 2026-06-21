@@ -6,6 +6,7 @@
 #include <QStringList>
 #include <QtQmlIntegration>
 
+#include "CompositionModel.h"
 #include "RailGraph.h"
 #include "TimetableModel.h"
 
@@ -25,6 +26,11 @@ class TrainDetailsService : public QObject
     Q_OBJECT
     QML_ELEMENT
     Q_PROPERTY(TimetableModel *model READ model CONSTANT)
+    Q_PROPERTY(CompositionModel *composition READ composition CONSTANT)
+    Q_PROPERTY(bool hasComposition READ hasComposition NOTIFY compositionChanged)
+    Q_PROPERTY(QString compositionSummary READ compositionSummary NOTIFY compositionChanged) ///< "6 cars · 178 m · max 200 km/h"
+    Q_PROPERTY(QString compositionLeg READ compositionLeg NOTIFY compositionChanged)         ///< "Helsinki → Joensuu"
+    Q_PROPERTY(int compositionSectionCount READ compositionSectionCount NOTIFY compositionChanged) ///< >1 when the consist changes en route
     Q_PROPERTY(bool hasSelection READ hasSelection NOTIFY selectionChanged)
     Q_PROPERTY(bool loading READ isLoading NOTIFY loadingChanged)
     Q_PROPERTY(QString status READ status NOTIFY statusChanged)
@@ -42,6 +48,11 @@ public:
     explicit TrainDetailsService(QObject *parent = nullptr);
 
     TimetableModel *model() const { return m_model; }
+    CompositionModel *composition() const { return m_composition; }
+    bool hasComposition() const { return m_hasComposition; }
+    QString compositionSummary() const { return m_compositionSummary; }
+    QString compositionLeg() const { return m_compositionLeg; }
+    int compositionSectionCount() const { return m_compositionSectionCount; }
     DigitrafficMqttClient *stream() const { return m_stream; }
     void setStream(DigitrafficMqttClient *stream);
     bool hasSelection() const { return m_hasSelection; }
@@ -78,19 +89,25 @@ signals:
     void statusChanged();
     void streamChanged();
     void routeStationsChanged();
+    void compositionChanged();
 
 private:
     void fetchStations();
     void handleStations(QNetworkReply *reply);
     void handleTrain(QNetworkReply *reply);
     void applyTrainObject(const QJsonObject &train, bool live);  ///< header + stops
+    void fetchComposition(int trainNumber, const QString &departureDate);
+    void handleComposition(QNetworkReply *reply);
+    void clearComposition();             ///< reset carriage state + notify
     void onStreamTrainMessage(const QByteArray &payload);        ///< live MQTT update
     void rebuildStops();                 ///< re-resolve names + push to model
     void setLoading(bool loading);
     void setStatus(const QString &status);
+    QString stationLabel(const QString &shortCode) const;   ///< resolved name, code fallback
 
     QNetworkAccessManager *m_net = nullptr;
     TimetableModel *m_model = nullptr;
+    CompositionModel *m_composition = nullptr;
     DigitrafficMqttClient *m_stream = nullptr;
 
     QHash<QString, QString> m_stationNames;   ///< shortCode -> name
@@ -104,4 +121,10 @@ private:
     int m_trainNumber = 0;
     QString m_departureDate;
     bool m_cancelled = false;
+
+    // ---- Carriage composition (fetched once per selection) ------------------
+    bool m_hasComposition = false;
+    QString m_compositionSummary;   ///< "6 cars · 178 m · max 200 km/h"
+    QString m_compositionLeg;       ///< departure-section leg, resolved to names
+    int m_compositionSectionCount = 0;
 };

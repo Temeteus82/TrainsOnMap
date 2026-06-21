@@ -32,6 +32,7 @@ qt_add_executable(TrainsOnMap
     src/TrackListModel.h        src/TrackListModel.cpp
     src/TrainDetailsService.h   src/TrainDetailsService.cpp
     src/TimetableModel.h        src/TimetableModel.cpp
+    src/CompositionModel.h      src/CompositionModel.cpp
     src/DigitrafficMqttClient.h src/DigitrafficMqttClient.cpp
     src/Projection.h
     src/MqttCodec.h
@@ -163,3 +164,14 @@ qt_add_executable(tst_timetablemodel
 target_include_directories(tst_timetablemodel PRIVATE src)
 target_link_libraries(tst_timetablemodel PRIVATE Qt6::Core Qt6::Qml Qt6::Test)
 add_test(NAME timetablemodel COMMAND tst_timetablemodel)
+
+# CompositionModel is the same QRangeModel idiom (Qt 6.10+) for the carriage strip;
+# this pins the role table auto-derived from CompositionVehicle's Q_PROPERTYs — the
+# QStringList `amenities` role included — to the names the QML carriage delegate binds
+# to, plus the setVehicles()/clear()/count contract.
+qt_add_executable(tst_compositionmodel
+    tests/tst_compositionmodel.cpp
+    src/CompositionModel.h src/CompositionModel.cpp)
+target_include_directories(tst_compositionmodel PRIVATE src)
+target_link_libraries(tst_compositionmodel PRIVATE Qt6::Core Qt6::Qml Qt6::Test)
+add_test(NAME compositionmodel COMMAND tst_compositionmodel)

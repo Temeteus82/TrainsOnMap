@@ -13,6 +13,7 @@
 #include <QNetworkRequest>
 #include <QUrl>
 
+#include <algorithm>
 #include <chrono>
 
 namespace {
@@ -106,15 +107,68 @@ QVector<TimetableStop> buildStops(const QJsonArray &rows)
 
     return stops;
 }
+
+// Curated, passenger-facing amenities for a wagon (the API also carries smoking/
+// video/luggage flags; these four are the ones worth a glance at boarding time).
+QStringList wagonAmenities(const QJsonObject &w)
+{
+    QStringList a;
+    if (w.value(QStringLiteral("catering")).toBool())   a << QStringLiteral("Catering");
+    if (w.value(QStringLiteral("disabled")).toBool())   a << QStringLiteral("Accessible");
+    if (w.value(QStringLiteral("playground")).toBool()) a << QStringLiteral("Family");
+    if (w.value(QStringLiteral("pet")).toBool())        a << QStringLiteral("Pet");
+    return a;
+}
+
+// Flatten one journeySection's locomotives + wagons into a single list ordered by
+// physical position (API `location`) — the carriage order a passenger walks past.
+QVector<CompositionVehicle> buildVehicles(const QJsonObject &section)
+{
+    QVector<CompositionVehicle> vehicles;
+
+    for (const QJsonValue &lv : section.value(QStringLiteral("locomotives")).toArray()) {
+        const QJsonObject l = lv.toObject();
+        CompositionVehicle cv;
+        cv.position = l.value(QStringLiteral("location")).toInt();
+        cv.locomotive = true;
+        cv.vehicleType = l.value(QStringLiteral("locomotiveType")).toString();
+        cv.powerType = l.value(QStringLiteral("powerType")).toString();
+        vehicles.push_back(cv);
+    }
+
+    for (const QJsonValue &wv : section.value(QStringLiteral("wagons")).toArray()) {
+        const QJsonObject w = wv.toObject();
+        CompositionVehicle cv;
+        cv.position = w.value(QStringLiteral("location")).toInt();
+        cv.locomotive = false;
+        const int sales = w.value(QStringLiteral("salesNumber")).toInt();
+        cv.label = sales > 0 ? QString::number(sales) : QString();
+        cv.vehicleType = w.value(QStringLiteral("wagonType")).toString();
+        cv.amenities = wagonAmenities(w);
+        vehicles.push_back(cv);
+    }
+
+    std::sort(vehicles.begin(), vehicles.end(),
+              [](const CompositionVehicle &a, const CompositionVehicle &b) {
+                  return a.position < b.position;
+              });
+    return vehicles;
+}
 }
 
 TrainDetailsService::TrainDetailsService(QObject *parent)
     : QObject(parent)
     , m_net(new QNetworkAccessManager(this))
     , m_model(new TimetableModel(this))
+    , m_composition(new CompositionModel(this))
 {
     m_net->setTransferTimeout(kRequestTimeout);
     fetchStations();   // warm the code->name cache in the background
+}
+
+QString TrainDetailsService::stationLabel(const QString &shortCode) const
+{
+    return m_stationNames.value(shortCode, shortCode);
 }
 
 void TrainDetailsService::fetchStations()
@@ -173,6 +227,10 @@ void TrainDetailsService::show(int trainNumber, const QString &departureDate)
     QNetworkReply *reply = m_net->get(req);
     connect(reply, &QNetworkReply::finished, this, [this, reply] { handleTrain(reply); });
 
+    // Carriage order is static per run — fetch it once alongside the timetable.
+    clearComposition();
+    fetchComposition(trainNumber, departureDate);
+
     // Also stream live updates for this train (delays/estimates) over MQTT.
     if (m_stream)
         m_stream->subscribeTrain(departureDate, trainNumber);
@@ -227,6 +285,95 @@ void TrainDetailsService::applyTrainObject(const QJsonObject &train, bool live)
                    : QStringLiteral("%1 stops").arg(stopCount));
 }
 
+void TrainDetailsService::fetchComposition(int trainNumber, const QString &departureDate)
+{
+    const QUrl url(QStringLiteral("https://rata.digitraffic.fi/api/v1/compositions/%1/%2")
+                       .arg(departureDate)
+                       .arg(trainNumber));
+    QNetworkRequest req{url};
+    req.setRawHeader("Digitraffic-User", kUserAgent);
+    QNetworkReply *reply = m_net->get(req);
+    // Tag the reply with the run it was issued for: a slow composition reply for a
+    // previously-selected train must not overwrite the consist now on screen.
+    connect(reply, &QNetworkReply::finished, this,
+            [this, reply, trainNumber, departureDate] {
+                if (trainNumber == m_trainNumber && departureDate == m_departureDate)
+                    handleComposition(reply);
+                else
+                    reply->deleteLater();   // stale selection — drop it
+            });
+}
+
+void TrainDetailsService::handleComposition(QNetworkReply *reply)
+{
+    reply->deleteLater();
+
+    if (reply->error() != QNetworkReply::NoError) {
+        // A 404 just means this run has no stock data (common for commuter/freight);
+        // leave the strip hidden rather than surfacing an error.
+        clearComposition();
+        return;
+    }
+
+    const QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
+    // The endpoint returns a single object; tolerate an array form defensively.
+    const QJsonObject comp = doc.isArray()
+        ? (doc.array().isEmpty() ? QJsonObject() : doc.array().first().toObject())
+        : doc.object();
+
+    const QJsonArray sections = comp.value(QStringLiteral("journeySections")).toArray();
+    if (sections.isEmpty()) {
+        clearComposition();
+        return;
+    }
+
+    // Show the departure consist (first section). Runs that join/split mid-route
+    // have more sections; we surface the count so the panel can flag it.
+    const QJsonObject first = sections.first().toObject();
+    const QVector<CompositionVehicle> vehicles = buildVehicles(first);
+    m_composition->setVehicles(vehicles);
+
+    int wagons = 0;
+    for (const CompositionVehicle &cv : vehicles)
+        if (!cv.locomotive)
+            ++wagons;
+
+    const int totalLen = first.value(QStringLiteral("totalLength")).toInt();
+    const int maxSpeed = first.value(QStringLiteral("maximumSpeed")).toInt();
+    QStringList parts;
+    parts << (wagons == 1 ? QStringLiteral("1 car") : QStringLiteral("%1 cars").arg(wagons));
+    if (totalLen > 0)
+        parts << QStringLiteral("%1 m").arg(totalLen);
+    if (maxSpeed > 0)
+        parts << QStringLiteral("max %1 km/h").arg(maxSpeed);
+    m_compositionSummary = parts.join(QStringLiteral(" · "));
+
+    const QString begin = first.value(QStringLiteral("beginTimeTableRow")).toObject()
+                              .value(QStringLiteral("stationShortCode")).toString();
+    const QString end = first.value(QStringLiteral("endTimeTableRow")).toObject()
+                            .value(QStringLiteral("stationShortCode")).toString();
+    m_compositionLeg = (begin.isEmpty() && end.isEmpty())
+        ? QString()
+        : QStringLiteral("%1 → %2").arg(stationLabel(begin), stationLabel(end));
+
+    m_compositionSectionCount = sections.size();
+    m_hasComposition = !vehicles.isEmpty();
+    emit compositionChanged();
+}
+
+void TrainDetailsService::clearComposition()
+{
+    const bool had = m_hasComposition || !m_compositionSummary.isEmpty()
+                     || !m_compositionLeg.isEmpty() || m_compositionSectionCount != 0;
+    m_composition->clear();
+    m_hasComposition = false;
+    m_compositionSummary.clear();
+    m_compositionLeg.clear();
+    m_compositionSectionCount = 0;
+    if (had)
+        emit compositionChanged();
+}
+
 void TrainDetailsService::onStreamTrainMessage(const QByteArray &payload)
 {
     if (!m_hasSelection || payload.isEmpty())
@@ -259,6 +406,7 @@ void TrainDetailsService::clear()
     m_cancelled = false;
     m_stops.clear();
     m_model->clear();
+    clearComposition();
     setStatus({});
     emit selectionChanged();
     emit routeStationsChanged();
