@@ -151,6 +151,7 @@ Rectangle {
         // for its type and amenities. Hidden until the composition arrives (and
         // for runs with no stock data, e.g. most commuter/freight services).
         ColumnLayout {
+            id: compositionCol
             Layout.fillWidth: true
             visible: root.details.hasComposition
             spacing: 4
@@ -168,101 +169,123 @@ Rectangle {
                 font.pixelSize: TypeScale.caption
             }
 
-            ListView {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 58
-                orientation: ListView.Horizontal
-                clip: true
-                spacing: 3
-                model: root.details.composition
-                ScrollBar.horizontal: ScrollBar { policy: ScrollBar.AsNeeded }
+            // Carriage strip. Cars size up to fill the width on one row, then wrap
+            // onto balanced extra rows once they'd drop below a readable minimum —
+            // so a 6-car IC and a 13-car night train both stay legible without a
+            // horizontal scrollbar. Row-major fill keeps the front of the train at
+            // the top-left, reading left-to-right then down.
+            Grid {
+                id: carGrid
+                Layout.alignment: Qt.AlignHCenter
 
-                delegate: Item {
-                    id: car
-                    required property int position
-                    required property bool locomotive
-                    required property string label
-                    required property string vehicleType
-                    required property string powerType
-                    required property var amenities
+                readonly property real gap: 4
+                readonly property real minCarW: 40       // readability floor before wrapping
+                readonly property real maxCarW: 80       // don't bloat a 2-3 car consist
+                readonly property real cellH: 56
+                readonly property real availW: compositionCol.width
+                readonly property int total: root.details.composition.count
+                // Fit as many as the width allows at the minimum size, then split
+                // evenly so the last row isn't a lonely straggler (7 -> 4+3, not 6+1).
+                readonly property int perRowMax: Math.max(1, Math.floor((availW + gap) / (minCarW + gap)))
+                readonly property int rowCount: Math.max(1, Math.ceil(total / perRowMax))
+                readonly property int perRow: Math.max(1, Math.ceil(total / rowCount))
+                readonly property real cellW: Math.max(minCarW,
+                        Math.min(maxCarW, (availW - (perRow - 1) * gap) / perRow))
 
-                    width: 42
-                    height: ListView.view.height
+                columns: perRow
+                columnSpacing: gap
+                rowSpacing: gap
 
-                    Rectangle {
-                        id: carBody
-                        anchors.fill: parent
-                        anchors.topMargin: 2
-                        anchors.bottomMargin: 2
-                        radius: 5
-                        color: car.locomotive ? Theme.subtlePress : Theme.iconBadgeBg
-                        border.color: carHover.hovered ? Theme.accent : Theme.hairline
-                        border.width: 1
+                Repeater {
+                    model: root.details.composition
 
-                        ColumnLayout {
+                    delegate: Item {
+                        id: car
+                        required property int position
+                        required property bool locomotive
+                        required property string label
+                        required property string vehicleType
+                        required property string powerType
+                        required property var amenities
+
+                        width: carGrid.cellW
+                        height: carGrid.cellH
+
+                        Rectangle {
+                            id: carBody
                             anchors.fill: parent
-                            anchors.margins: 3
-                            spacing: 1
+                            anchors.topMargin: 2
+                            anchors.bottomMargin: 2
+                            radius: 5
+                            color: car.locomotive ? Theme.subtlePress : Theme.iconBadgeBg
+                            border.color: carHover.hovered ? Theme.accent : Theme.hairline
+                            border.width: 1
 
-                            // Car number (wagon) or locomotive icon.
-                            Item {
-                                Layout.fillWidth: true
-                                Layout.fillHeight: true
-                                AppIcon {
-                                    anchors.centerIn: parent
-                                    visible: car.locomotive
-                                    name: "train"
-                                    color: Theme.textStrong
-                                    size: TypeScale.iconSm
+                            ColumnLayout {
+                                anchors.fill: parent
+                                anchors.margins: 3
+                                spacing: 1
+
+                                // Car number (wagon) or locomotive icon.
+                                Item {
+                                    Layout.fillWidth: true
+                                    Layout.fillHeight: true
+                                    AppIcon {
+                                        anchors.centerIn: parent
+                                        visible: car.locomotive
+                                        name: "train"
+                                        color: Theme.textStrong
+                                        size: TypeScale.iconSm
+                                    }
+                                    Label {
+                                        anchors.centerIn: parent
+                                        visible: !car.locomotive
+                                        text: car.label
+                                        font.bold: true
+                                        font.pixelSize: TypeScale.body
+                                        color: Theme.textStrong
+                                    }
                                 }
+
+                                // Vehicle type code (e.g. "Ed", "Sr2").
                                 Label {
-                                    anchors.centerIn: parent
-                                    visible: !car.locomotive
-                                    text: car.label
-                                    font.bold: true
-                                    font.pixelSize: TypeScale.body
-                                    color: Theme.textStrong
+                                    Layout.fillWidth: true
+                                    horizontalAlignment: Text.AlignHCenter
+                                    text: car.vehicleType
+                                    font.pixelSize: TypeScale.caption
+                                    color: Theme.textMuted
+                                    elide: Text.ElideRight
+                                    visible: text.length > 0
                                 }
-                            }
 
-                            // Vehicle type code (e.g. "Ed", "Sr2").
-                            Label {
-                                Layout.fillWidth: true
-                                horizontalAlignment: Text.AlignHCenter
-                                text: car.vehicleType
-                                font.pixelSize: TypeScale.caption
-                                color: Theme.textMuted
-                                elide: Text.ElideRight
-                                visible: text.length > 0
-                            }
-
-                            // Amenity dots (catering / accessible / family / pet).
-                            RowLayout {
-                                Layout.alignment: Qt.AlignHCenter
-                                Layout.bottomMargin: 1
-                                spacing: 2
-                                visible: car.amenities.length > 0
-                                Repeater {
-                                    model: car.amenities
-                                    delegate: Rectangle {
-                                        required property string modelData
-                                        implicitWidth: 5
-                                        implicitHeight: 5
-                                        radius: 2.5
-                                        color: root.amenityColor(modelData)
+                                // Amenity dots (catering / accessible / family / pet).
+                                RowLayout {
+                                    Layout.alignment: Qt.AlignHCenter
+                                    Layout.bottomMargin: 1
+                                    spacing: 2
+                                    visible: car.amenities.length > 0
+                                    Repeater {
+                                        model: car.amenities
+                                        delegate: Rectangle {
+                                            required property string modelData
+                                            implicitWidth: 5
+                                            implicitHeight: 5
+                                            radius: 2.5
+                                            color: root.amenityColor(modelData)
+                                        }
                                     }
                                 }
                             }
-                        }
 
-                        HoverHandler { id: carHover }
-                        ToolTip.visible: carHover.hovered
-                        ToolTip.text: car.locomotive
-                            ? (car.vehicleType + (car.powerType.length > 0
-                                                  ? " · " + car.powerType : ""))
-                            : (qsTr("Car %1").arg(car.label)
-                               + (car.vehicleType.length > 0 ? " · " + car.vehicleType : "")
-                               + (car.amenities.length > 0 ? "\n" + car.amenities.join(", ") : ""))
+                            HoverHandler { id: carHover }
+                            ToolTip.visible: carHover.hovered
+                            ToolTip.text: car.locomotive
+                                ? (car.vehicleType + (car.powerType.length > 0
+                                                      ? " · " + car.powerType : ""))
+                                : (qsTr("Car %1").arg(car.label)
+                                   + (car.vehicleType.length > 0 ? " · " + car.vehicleType : "")
+                                   + (car.amenities.length > 0 ? "\n" + car.amenities.join(", ") : ""))
+                        }
                     }
                 }
             }
@@ -336,17 +359,28 @@ Rectangle {
         }
 
         // ---- Timetable ---------------------------------------------------
+        // Filter passed-through points out of the row set (rather than hiding
+        // them with zero-height delegates) so the ListView below virtualises:
+        // it then builds only the booked stops it shows, not every timing point
+        // on the route. `showAll` follows the "Show all timing points" toggle.
+        TimetableFilterModel {
+            id: timetableModel
+            sourceModel: root.details.model
+            showAll: allToggle.checked
+        }
+
         ListView {
             Layout.fillWidth: true
             Layout.fillHeight: true
             clip: true
-            model: root.details.model
+            model: timetableModel
             spacing: 0
             ScrollBar.vertical: ScrollBar { id: vbar }
 
             delegate: ItemDelegate {
                 id: stopRow
                 width: ListView.view.width
+                height: rowLayout.implicitHeight + 12
                 clip: true
 
                 // The native Controls style paints ItemDelegate's background from
@@ -366,10 +400,6 @@ Rectangle {
                 required property string estimatedDeparture
                 required property int delayMinutes
                 required property bool stopping
-
-                // Passed-through points are hidden until the user opts in.
-                visible: stopping || allToggle.checked
-                height: visible ? rowLayout.implicitHeight + 12 : 0
 
                 // One compact time for a passing point (departure preferred).
                 readonly property string passTime: scheduledDeparture.length > 0 ? scheduledDeparture

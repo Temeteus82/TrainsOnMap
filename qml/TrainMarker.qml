@@ -106,8 +106,6 @@ MapQuickItem {
     readonly property real offsetMeters: model.trackOffsetMeters
     readonly property bool suspect: accuracyMeters > 100 || offsetMeters > 150
 
-    coordinate: model.coordinate
-
     // Glide along the rail between the (roughly periodic) position fixes instead
     // of teleporting on each one. Successive fixes are already snapped onto the
     // rail, so a short tween between two of them tracks the line closely; a fresh
@@ -122,9 +120,28 @@ MapQuickItem {
     // motion and the brief startup Tier-1->Tier-2 convergence still glide smoothly;
     // only a genuine multi-km teleport snaps.
     readonly property real maxGlideMeters: 4000
+
+    // Decide glide-vs-snap once per incoming fix, not on every animation step.
+    // The guard must NOT depend on the live (animating) `coordinate`: binding it
+    // into Behavior.enabled re-evaluates distanceTo() every frame for every
+    // gliding marker (the dominant binding churn in the profiler trace). Instead
+    // mirror the model fix through `fix`, and on each change measure the jump from
+    // the marker's current position to the new fix, latch the flag, THEN apply the
+    // move — so the Behavior reads an already-settled `enabled` for this
+    // transition. distanceTo() now runs once per fix rather than once per frame.
+    // The isValid guard makes a marker entering the fleet appear at its position
+    // rather than glide in from the invalid (0,0) default.
+    readonly property var fix: model.coordinate
+    property bool glideEnabled: false
+    onFixChanged: {
+        glideEnabled = !Theme.reducedMotion
+                       && coordinate.isValid
+                       && coordinate.distanceTo(fix) < maxGlideMeters
+        coordinate = fix
+    }
+
     Behavior on coordinate {
-        enabled: !Theme.reducedMotion
-                 && marker.coordinate.distanceTo(marker.model.coordinate) < marker.maxGlideMeters
+        enabled: marker.glideEnabled
         CoordinateAnimation {
             duration: 1000
             easing.type: Easing.Linear
