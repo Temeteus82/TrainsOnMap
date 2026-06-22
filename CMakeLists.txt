@@ -32,6 +32,7 @@ qt_add_executable(TrainsOnMap
     src/TrackListModel.h        src/TrackListModel.cpp
     src/TrainDetailsService.h   src/TrainDetailsService.cpp
     src/TimetableModel.h        src/TimetableModel.cpp
+    src/TimetableFilterModel.h  src/TimetableFilterModel.cpp
     src/CompositionModel.h      src/CompositionModel.cpp
     src/DigitrafficMqttClient.h src/DigitrafficMqttClient.cpp
     src/Projection.h
