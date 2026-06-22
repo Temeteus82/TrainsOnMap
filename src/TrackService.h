@@ -6,6 +6,7 @@
 #include <QVector>
 #include <QtQmlIntegration>
 
+#include <cmath>
 #include <memory>
 
 #include "RailGraph.h"
@@ -85,10 +86,31 @@ private:
         double maxLon = 0.0;
     };
 
-    /// Worker-thread result: the parsed graph plus the flattened render segments.
+    /// Uniform spatial grid over the render segments' bounding boxes, so a
+    /// viewport query touches only the overlapping cells instead of scanning the
+    /// whole network. Cell size is in degrees; cells are keyed by a row-major
+    /// index into a sparse hash (most of the country's bbox is empty). Each
+    /// segment is registered in every cell its bbox overlaps. Built once, off the
+    /// GUI thread, when the network loads.
+    struct Grid {
+        double cell = 0.0;                  ///< cell size, degrees (lat & lon)
+        double minLat = 0.0;                ///< grid origin (south edge)
+        double minLon = 0.0;                ///< grid origin (west edge)
+        int cols = 0;
+        int rows = 0;
+        QHash<int, QVector<int>> cells;     ///< row-major cell index -> segment ids
+
+        bool isEmpty() const { return cells.isEmpty(); }
+        int colOf(double lon) const { return static_cast<int>(std::floor((lon - minLon) / cell)); }
+        int rowOf(double lat) const { return static_cast<int>(std::floor((lat - minLat) / cell)); }
+    };
+
+    /// Worker-thread result: the parsed graph, the flattened render segments, and
+    /// the spatial grid indexing them.
     struct Loaded {
         std::shared_ptr<RailGraph> graph;
         QVector<Segment> segments;
+        Grid grid;
     };
 
     static Loaded loadNetwork();
@@ -103,6 +125,7 @@ private:
 
     TrackListModel *m_model = nullptr;
     QVector<Segment> m_all;                 ///< render segments (viewport cull only)
+    Grid m_grid;                            ///< spatial index over m_all (by id)
     std::shared_ptr<RailGraph> m_graph;     ///< Tier-2 network; null until loaded
     QHash<QString, RailGraph::RoutePolyline> m_routePolys;  ///< routeKey -> polyline
     QVector<QString> m_pinnedRoute;         ///< selected train's route, kept from eviction (R7)

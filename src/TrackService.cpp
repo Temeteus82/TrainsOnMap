@@ -44,6 +44,7 @@ TrackService::TrackService(QObject *parent)
         const Loaded loaded = watcher->result();
         watcher->deleteLater();
         m_all = loaded.segments;
+        m_grid = loaded.grid;
         m_graph = loaded.graph;
         setLoading(false);
         setStatus(m_all.isEmpty()
@@ -84,6 +85,37 @@ TrackService::Loaded TrackService::loadNetwork()
             seg.path.append(QVariant::fromValue(c));
         if (seg.path.size() >= 2)
             out.segments.push_back(std::move(seg));
+    }
+
+    // Build the spatial grid over the segment bboxes so loadForBounds() can query
+    // by viewport without scanning the whole network. Cell ~0.1 deg (~11 km in
+    // latitude) is a broadphase only — the exact bbox test still runs per hit, so
+    // the cell size trades cell-lookup count against false positives, not result
+    // correctness.
+    if (!out.segments.isEmpty()) {
+        double minLat = 90.0, minLon = 180.0, maxLat = -90.0, maxLon = -180.0;
+        for (const Segment &s : out.segments) {
+            minLat = std::min(minLat, s.minLat);
+            minLon = std::min(minLon, s.minLon);
+            maxLat = std::max(maxLat, s.maxLat);
+            maxLon = std::max(maxLon, s.maxLon);
+        }
+        Grid &g = out.grid;
+        g.cell = 0.1;
+        g.minLat = minLat;
+        g.minLon = minLon;
+        g.cols = std::max(1, static_cast<int>((maxLon - minLon) / g.cell) + 1);
+        g.rows = std::max(1, static_cast<int>((maxLat - minLat) / g.cell) + 1);
+        for (int i = 0; i < out.segments.size(); ++i) {
+            const Segment &s = out.segments.at(i);
+            const int c0 = std::clamp(g.colOf(s.minLon), 0, g.cols - 1);
+            const int c1 = std::clamp(g.colOf(s.maxLon), 0, g.cols - 1);
+            const int r0 = std::clamp(g.rowOf(s.minLat), 0, g.rows - 1);
+            const int r1 = std::clamp(g.rowOf(s.maxLat), 0, g.rows - 1);
+            for (int ry = r0; ry <= r1; ++ry)
+                for (int cx = c0; cx <= c1; ++cx)
+                    g.cells[ry * g.cols + cx].push_back(i);
+        }
     }
     return out;
 }
@@ -302,14 +334,47 @@ QVariantList TrackService::routePolyline(const QStringList &stationCodes) const
 void TrackService::loadForBounds(double west, double south, double east, double north)
 {
     QVector<int> ids;
-    QVector<QVariantList> paths;
-    for (int i = 0; i < m_all.size(); ++i) {
-        const Segment &s = m_all.at(i);
-        if (s.maxLat < south || s.minLat > north || s.maxLon < west || s.minLon > east)
-            continue;
-        ids.push_back(i);
-        paths.push_back(s.path);
+    if (!m_grid.isEmpty()) {
+        // Broadphase: gather segment ids from the grid cells the viewport rect
+        // overlaps, then apply the exact bbox test. A segment straddling cells
+        // can be gathered more than once, so sort + unique afterwards; that also
+        // restores the ascending-id order setVisibleSegments() requires for its
+        // incremental diff.
+        const int c0 = std::clamp(m_grid.colOf(west),  0, m_grid.cols - 1);
+        const int c1 = std::clamp(m_grid.colOf(east),  0, m_grid.cols - 1);
+        const int r0 = std::clamp(m_grid.rowOf(south), 0, m_grid.rows - 1);
+        const int r1 = std::clamp(m_grid.rowOf(north), 0, m_grid.rows - 1);
+        for (int ry = r0; ry <= r1; ++ry) {
+            for (int cx = c0; cx <= c1; ++cx) {
+                const auto it = m_grid.cells.constFind(ry * m_grid.cols + cx);
+                if (it == m_grid.cells.constEnd())
+                    continue;
+                for (int id : *it) {
+                    const Segment &s = m_all.at(id);
+                    if (s.maxLat < south || s.minLat > north
+                        || s.maxLon < west || s.minLon > east)
+                        continue;
+                    ids.push_back(id);
+                }
+            }
+        }
+        std::sort(ids.begin(), ids.end());
+        ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
+    } else {
+        // No grid (network not loaded yet): fall back to the linear scan.
+        for (int i = 0; i < m_all.size(); ++i) {
+            const Segment &s = m_all.at(i);
+            if (s.maxLat < south || s.minLat > north || s.maxLon < west || s.minLon > east)
+                continue;
+            ids.push_back(i);
+        }
     }
+
+    QVector<QVariantList> paths;
+    paths.reserve(ids.size());
+    for (int id : ids)
+        paths.push_back(m_all.at(id).path);
+
     m_model->setVisibleSegments(ids, paths);
     setStatus(QStringLiteral("%1 track segments").arg(ids.size()));
 }
