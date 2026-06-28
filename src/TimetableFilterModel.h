@@ -31,6 +31,11 @@ public:
 
     void setSourceModel(QAbstractItemModel *sourceModel) override;
 
+    /// Map a source-model row to its row in this filtered view, or -1 if the row
+    /// is currently hidden / out of range. Lets the panel scroll the (proxied)
+    /// ListView to a stop identified by its source index (the NEXT stop).
+    Q_INVOKABLE int proxyRowForSource(int sourceRow) const;
+
 signals:
     void showAllChanged();
 

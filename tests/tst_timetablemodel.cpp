@@ -37,6 +37,16 @@ private:
         return s;
     }
 
+    // A progress fixture stop: `stopping` = booked passenger stop, `sawActual` =
+    // the train has recorded an actualTime here (so it's behind the train).
+    static TimetableStop progressStop(bool stopping, bool sawActual)
+    {
+        TimetableStop s;
+        s.stopping = stopping;
+        s.sawActual = sawActual;
+        return s;
+    }
+
 private slots:
     // Every role the QML delegate (TrainDetailPanel.qml) binds to must be present
     // in the auto-derived role table.
@@ -46,7 +56,7 @@ private slots:
         const QList<QByteArray> expected = {
             "stationName", "stationShortCode", "scheduledArrival", "estimatedArrival",
             "scheduledDeparture", "estimatedDeparture", "delayMinutes", "track",
-            "cancelled", "stopping",
+            "cancelled", "stopping", "passed", "isNext",
         };
         const QHash<int, QByteArray> roles = model.roleNames();
         const QList<QByteArray> have = roles.values();
@@ -61,6 +71,7 @@ private slots:
         const QList<QByteArray> have = model.roleNames().values();
         QVERIFY(!have.contains("sawCommercial"));
         QVERIFY(!have.contains("sawTrainStopping"));
+        QVERIFY(!have.contains("sawActual"));
     }
 
     void setStopsPopulatesRowsAndData()
@@ -99,6 +110,82 @@ private slots:
         // clear() on an already-empty model is a no-op (no spurious signal).
         model.clear();
         QCOMPARE(countSpy.count(), 1);
+    }
+
+    // Mid-journey: stops up to the last actualTime are `passed`; the first booked
+    // stop after it is `isNext`; progress counts only booked (stopping) stops.
+    void derivesJourneyProgressMidRoute()
+    {
+        TimetableModel model;
+        QSignalSpy progressSpy(&model, &TimetableModel::progressChanged);
+
+        // idx0 booked+passed, idx1 passing-point+passed, idx2 booked+next, idx3 booked.
+        model.setStops({
+            progressStop(/*stopping*/ true,  /*sawActual*/ true),
+            progressStop(/*stopping*/ false, /*sawActual*/ true),
+            progressStop(/*stopping*/ true,  /*sawActual*/ false),
+            progressStop(/*stopping*/ true,  /*sawActual*/ false),
+        });
+        QCOMPARE(progressSpy.count(), 1);
+
+        const int passedRole = roleFor(model, "passed");
+        const int isNextRole = roleFor(model, "isNext");
+        auto passedAt = [&](int r) { return model.data(model.index(r, 0), passedRole).toBool(); };
+        auto isNextAt = [&](int r) { return model.data(model.index(r, 0), isNextRole).toBool(); };
+
+        QCOMPARE(passedAt(0), true);
+        QCOMPARE(passedAt(1), true);   // passing point still behind the train
+        QCOMPARE(passedAt(2), false);
+        QCOMPARE(passedAt(3), false);
+
+        QCOMPARE(isNextAt(2), true);   // first booked stop past the last actual
+        QCOMPARE(isNextAt(1), false);  // the passing point is never "NEXT"
+        QCOMPARE(isNextAt(3), false);
+
+        QCOMPARE(model.totalStops(), 3);   // three booked stops (idx 0,2,3)
+        QCOMPARE(model.passedStops(), 1);  // only idx0 is booked AND passed
+        QCOMPARE(model.nextStopRow(), 2);  // source row of the NEXT booked stop
+    }
+
+    // Not yet departed: nothing passed, NEXT is the first booked stop.
+    void derivesJourneyProgressNotStarted()
+    {
+        TimetableModel model;
+        model.setStops({
+            progressStop(true, false),
+            progressStop(true, false),
+        });
+        QCOMPARE(model.passedStops(), 0);
+        QCOMPARE(model.totalStops(), 2);
+        QCOMPARE(model.nextStopRow(), 0);
+        QCOMPARE(model.data(model.index(0, 0), roleFor(model, "isNext")).toBool(), true);
+    }
+
+    // Journey complete: every stop passed, no NEXT.
+    void derivesJourneyProgressComplete()
+    {
+        TimetableModel model;
+        model.setStops({
+            progressStop(true, true),
+            progressStop(true, true),
+        });
+        QCOMPARE(model.passedStops(), 2);
+        QCOMPARE(model.totalStops(), 2);
+        QCOMPARE(model.nextStopRow(), -1);
+        QCOMPARE(model.data(model.index(1, 0), roleFor(model, "passed")).toBool(), true);
+    }
+
+    // clear() resets progress back to zero and re-signals.
+    void clearResetsProgress()
+    {
+        TimetableModel model;
+        model.setStops({ progressStop(true, true) });
+        QCOMPARE(model.passedStops(), 1);
+
+        model.clear();
+        QCOMPARE(model.passedStops(), 0);
+        QCOMPARE(model.totalStops(), 0);
+        QCOMPARE(model.nextStopRow(), -1);
     }
 };
 
