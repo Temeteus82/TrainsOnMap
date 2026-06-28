@@ -31,8 +31,10 @@ and a QML map front-end, plus clearly marked extension points.
   names from the metadata API. While open, the panel **updates live** from the
   MQTT `trains/#` topic (scoped to the selected train).
 - **Track geometry** drawn automatically for the current viewport (once zoomed
-  in past the threshold), fetched from the Digitraffic infra-api GeoJSON and
-  reprojected from EPSG:3067 to WGS84.
+  in past the threshold), served from a **pre-baked national snapshot embedded in
+  the binary** (`scripts/bake_rails.py` → `:/data/rails.geojson.qz`) — no infra-api
+  fetch at launch. `loadForBounds()` just culls the resident geometry to the
+  viewport via a spatial grid.
 - Clean split between a **C++ networking/model backend** and a **QML map UI**.
 
 ## Architecture
@@ -50,7 +52,9 @@ main.cpp                    Bootstraps the QML engine, loads TrainsOnMap/Main.qm
 │                            to train-locations/# (upserts into TrainListModel) and,
 │                            per selection, trains/<date>/<n>/# (emits trainMessage)
 │
-├─ TrackService        (C++) Fetches raiteet.geojson (whole net or bbox) → TrackListModel
+├─ TrackService        (C++) Loads the baked rails.geojson.qz blob into a RailGraph
+│                            once at startup; loadForBounds() culls to the viewport → TrackListModel.
+│                            Also Tier-2 route matching (Dijkstra over reconstructed topology)
 │   └─ TrackListModel  (C++) QAbstractListModel of polyline segments (role: path)
 │
 ├─ TrainDetailsService (C++) On click, fetches /trains/{date}/{number}, resolves
@@ -81,7 +85,7 @@ so `DigitrafficClient` and `TrackService` are instantiated declaratively in QML.
 | Timetable (initial) | `GET https://rata.digitraffic.fi/api/v1/trains/{departureDate}/{trainNumber}` | Single-element array; `timeTableRows` are ARRIVAL/DEPARTURE entries with `scheduledTime`, `liveEstimateTime`, `actualTime`, `differenceInMinutes`, `commercialStop`, `commercialTrack`. |
 | Timetable (live) | `wss://rata.digitraffic.fi:443/mqtt`, topic `trains/<date>/<number>/#` | Subscribed only while a train is selected; each PUBLISH is the full running-train object, re-applied to the open panel. |
 | Station names | `GET https://rata.digitraffic.fi/api/v1/metadata/stations` | Maps `stationShortCode` → `stationName`; fetched once and cached. |
-| Track geometry | `GET https://rata.digitraffic.fi/infra-api/latest/raiteet.geojson?bbox=…` | GeoJSON FeatureCollection of LineString/MultiLineString in **EPSG:3067**. The full network is 10+ MB, so `loadForBounds()` sends a `bbox` (in EPSG:3067) for the viewport and features are reprojected to WGS84. |
+| Track geometry (baked) | `GET https://rata.digitraffic.fi/infra-api/latest/raiteet.geojson?bbox=…` — **build time only** | GeoJSON FeatureCollection of LineString/MultiLineString in **EPSG:3067**. The full network is 10+ MB, so `scripts/bake_rails.py` tiles the national extent in EPSG:3067, merges/de-dupes features by `tunniste`, and commits the compressed `rails.geojson.qz` blob the app embeds. **Not fetched at runtime** — loaded once at startup and culled to the viewport by `loadForBounds()`. |
 
 All requests send a `Digitraffic-User` header (set it to your own app id in
 `DigitrafficClient.cpp` / `TrackService.cpp`) and `Accept-Encoding: gzip` as
@@ -90,15 +94,17 @@ All requests send a `Digitraffic-User` header (set it to your own app id in
 ### Coordinate reference system
 
 The infra-api returns track geometry in **EPSG:3067 (ETRS-TM35FIN)** — projected
-metres, *not* WGS84 — and interprets the `bbox` parameter in that same CRS. So
-the app:
+metres, *not* WGS84 — and interprets the `bbox` parameter in that same CRS. The
+bbox tiling and forward projection now happen offline in `scripts/bake_rails.py`,
+and the baked blob keeps its coordinates in EPSG:3067. So at runtime the app only:
 
-- forward-projects the WGS84 viewport corners to EPSG:3067 to build the `bbox`, and
-- inverse-projects every returned coordinate back to WGS84 for the map.
+- inverse-projects every baked coordinate back to WGS84 for the map, once at
+  startup while parsing the blob ([`RailGraph::loadFromJson`](src/RailGraph.cpp)).
 
-Both transforms live in [`src/Projection.h`](src/Projection.h) (Snyder
-Transverse Mercator, sub-metre accurate; ETRS89 ≈ WGS84 here). Train positions,
-by contrast, already come as WGS84 GeoJSON Points and need no transform.
+The transform lives in [`src/Projection.h`](src/Projection.h) (Snyder Transverse
+Mercator, sub-metre accurate; ETRS89 ≈ WGS84 here). Train positions, by contrast,
+already come as WGS84 GeoJSON Points and need no transform, and live map-matching
+works in a local metric frame (no full EPSG:3067 round-trip per fix).
 
 ## Prerequisites
 
