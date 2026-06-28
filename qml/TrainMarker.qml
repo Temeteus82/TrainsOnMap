@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Shapes
 import QtLocation
 import QtPositioning
 
@@ -8,6 +9,11 @@ import TrainsOnMap
 /// TrainListModel: coordinate, trainNumber, speed, bearing, trainType, category,
 /// commuterLine.
 ///
+/// Visual style mirrors the TrainSpotter (Swift/MapKit) app: a filled, type-
+/// coloured capsule with white "TYPE NUMBER" + km/h text, and a separate
+/// direction arrow that orbits the capsule to the heading side (apex outward),
+/// fading with speed and gliding along the shortest arc on a turn.
+///
 /// Colours are the juliadata.fi palette, keyed on trainType, with a
 /// category/speed fallback for types the legend doesn't enumerate (so a moving
 /// train is never a bland grey dot). See trainspotter-qt-docs/MarkerColors.Qt.md.
@@ -16,32 +22,11 @@ MapQuickItem {
 
     required property var model
     property bool selected: false
-    // Show the text badges only when zoomed in enough to read them; at country
+    // Show the text capsule only when zoomed in enough to read it; at country
     // scale the labels collide into an unreadable mass, so we render dots only.
     property bool labelsVisible: true
 
     signal clicked(int trainNumber, string departureDate)
-
-    // The juliadata palette is tuned for the light basemap. On the dark basemap
-    // the darkest hues (navy cargo, dark-red/green, purple) become illegible as
-    // 11 px text, so lift their lightness in dark mode while keeping the hue
-    // identity. Achromatic greys (the stopped/unknown fallbacks) get a fixed
-    // light ink instead, since Qt.hsla() can't reconstruct a hueless colour.
-    function legibleInk(c) {
-        if (!Theme.isDark)
-            return c
-        if (c.hslSaturation < 0.15)
-            return "#d6dae0"
-        return Qt.hsla(c.hslHue, Math.min(c.hslSaturation, 0.85),
-                       Math.max(c.hslLightness, 0.62), 1)
-    }
-    // O1: a semi-opaque rounded "pill" sits behind the label so it stays legible
-    // on any basemap tile — more robust than the old thin 1 px text outline, which
-    // could wash out where glyph and tile were close in tone.
-    readonly property color pillBg:     Theme.isDark ? Qt.rgba(0.08, 0.09, 0.11, 0.82)
-                                                     : Qt.rgba(1, 1, 1, 0.82)
-    readonly property color pillBorder: Theme.isDark ? Qt.rgba(1, 1, 1, 0.12)
-                                                     : Qt.rgba(0, 0, 0, 0.12)
 
     // trainType -> juliadata fill colour; unmatched types fall to category/speed.
     function colorFor(type, category, speed) {
@@ -79,23 +64,37 @@ MapQuickItem {
     readonly property color trainColor: colorFor(model.trainType, model.category, model.speed)
     readonly property string badgeLabel: labelFor(model.commuterLine, model.trainType, model.trainNumber)
 
-    // Live status ring (passenger trains only): green = ready/stopped on time,
-    // amber = 5–14 min late, red = 15+ min late, stale = greyed/dimmed,
-    // none = running on time / under 5 min late / cargo & special trains.
+    // Live status ring (passenger trains only). Mirroring TrainSpotter, only the
+    // late tiers ring the capsule: amber = 5–14 min late, red = 15+ min late.
+    // A "stale" train is greyed/dimmed instead of ringed.
     readonly property bool stale: model.ringState === "stale"
     // Late tiers also carry a textual "+N min" badge so the state is legible
     // without relying on the ring colour alone (colour-blind safety).
     readonly property bool late: model.ringState === "amber" || model.ringState === "red"
     readonly property color ringColor: {
         switch (model.ringState) {
-        case "green": return "#18A957";
         case "amber": return "#F2A900";
         case "red":   return "#E03131";
         default:      return "transparent";
         }
     }
-    // Greyed when stale, else the type colour.
+    // Greyed when stale, else the type colour. Drives the capsule fill + arrow.
     readonly property color dotColor: stale ? "#9AA0A6" : trainColor
+
+    // ---- Direction-arrow geometry (TrainSpotter parity) ------------------
+    readonly property real arrowW: 11
+    readonly property real arrowH: 8
+    // Gap between the capsule edge and the arrow's centre as it orbits.
+    readonly property real arrowGap: 2.5 + arrowH / 2
+    // Hidden at a standstill; tapers from 0.35 up to fully opaque at 50 km/h,
+    // dimmed to match a stale capsule.
+    readonly property real arrowOpacity: {
+        if (model.speed <= 0)
+            return 0
+        const t = Math.min(Math.max(model.speed / 50, 0), 1)
+        const base = 0.35 + 0.65 * t
+        return stale ? base * 0.55 : base
+    }
 
     // Position-quality flag (#1). A fix with poor GPS accuracy, or one that sits
     // far enough off any rail that it was kept raw (not snapped, offset beyond the
@@ -148,148 +147,153 @@ MapQuickItem {
         }
     }
 
-    // Anchor the coordinate at the centre of the dot (the label floats right).
-    anchorPoint.x: dotGroup.width / 2
-    anchorPoint.y: dotGroup.height / 2
+    // Anchor the coordinate at the centre of the capsule (the train's location).
+    anchorPoint.x: content.width / 2
+    anchorPoint.y: content.height / 2
 
     sourceItem: Item {
-        width: row.width
-        height: row.height
+        id: content
+        width: capsule.width
+        height: capsule.height
+
+        // Selection emphasis: scale the whole badge up around its centre — the
+        // anchored coordinate (= capsule centre) stays pinned, so the marker
+        // grows in place. Mirrors TrainSpotter's 1.15× selected scale.
+        transformOrigin: Item.Center
+        scale: marker.selected ? 1.15 : 1.0
+        Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+
         // Dim a stale / not-running train most; a suspect (low-confidence
         // position) train a little, so it reads as present-but-approximate (#1).
-        opacity: marker.stale ? 0.5 : (marker.suspect ? 0.72 : 1.0)
+        opacity: marker.stale ? 0.55 : (marker.suspect ? 0.72 : 1.0)
 
-        Row {
-            id: row
-            spacing: 3
+        // Selection halo: a translucent capsule of the train colour sitting just
+        // outside the fill (TrainSpotter parity).
+        Rectangle {
+            anchors.centerIn: capsule
+            width: capsule.width + 14
+            height: capsule.height + 14
+            radius: height / 2
+            color: marker.dotColor
+            opacity: 0.30
+            visible: marker.selected
+        }
 
-            // Dot + (optional) status ring. The ring stays upright; only the dot
-            // and its heading notch rotate.
-            Item {
-                id: dotGroup
-                width: 21
-                height: 21
+        // Status ring (amber / red lateness), drawn just outside the capsule.
+        Rectangle {
+            anchors.centerIn: capsule
+            width: capsule.width + 6
+            height: capsule.height + 6
+            radius: height / 2
+            color: "transparent"
+            border.width: 2.5
+            border.color: marker.ringColor
+            visible: marker.ringColor.a > 0
+        }
 
-                // Status ring drawn behind the dot when one applies.
-                Rectangle {
-                    anchors.centerIn: parent
-                    width: 21
-                    height: 21
-                    radius: 10.5
-                    color: "transparent"
-                    border.width: 3
-                    border.color: marker.ringColor
-                    visible: marker.ringColor.a > 0
-                }
+        // Position-quality outline (#1): a thin neutral ring marks a suspect
+        // (poor-accuracy / off-rail) fix. Neutral grey on purpose, so it never
+        // reads as one of the coloured delay rings.
+        Rectangle {
+            anchors.centerIn: capsule
+            width: capsule.width + 9
+            height: capsule.height + 9
+            radius: height / 2
+            color: "transparent"
+            border.width: 1.5
+            border.color: Theme.isDark ? "#b9bec6" : "#5f6368"
+            opacity: 0.85
+            visible: marker.suspect
+        }
 
-                // Position-quality outline (#1): a thin neutral ring just outside
-                // the dot marks a suspect (poor-accuracy / off-rail) fix. Neutral
-                // grey on purpose, so it never reads as one of the coloured delay
-                // status rings above.
-                Rectangle {
-                    anchors.centerIn: parent
-                    width: 23
-                    height: 23
-                    radius: 11.5
-                    color: "transparent"
-                    border.width: 1.5
-                    border.color: Theme.isDark ? "#b9bec6" : "#5f6368"
-                    opacity: 0.85
-                    visible: marker.suspect
-                }
+        // The capsule: type-coloured fill, white text. Collapses to a small dot
+        // when labels are hidden (country scale).
+        Rectangle {
+            id: capsule
+            radius: height / 2
+            color: marker.dotColor
+            // Hairline edge so the capsule separates from a same-hued tile.
+            border.color: Theme.isDark ? Qt.rgba(1, 1, 1, 0.30) : Qt.rgba(0, 0, 0, 0.28)
+            border.width: 1
+            implicitWidth: marker.labelsVisible ? labelCol.implicitWidth + 14 : 14
+            implicitHeight: marker.labelsVisible ? labelCol.implicitHeight + 6 : 14
+            width: implicitWidth
+            height: implicitHeight
 
-                // O2: selection is a haloed accent ring (accent outer edge + a
-                // light/dark inner halo) — reads on any dot colour, including the
-                // blue/navy types the old single accent border blended into.
-                Rectangle {
-                    anchors.centerIn: parent
-                    width: 21
-                    height: 21
-                    radius: 10.5
-                    color: "transparent"
-                    border.width: 5
-                    border.color: Theme.isDark ? "#0c0e12" : "white"
-                    visible: marker.selected
-                }
-                Rectangle {
-                    anchors.centerIn: parent
-                    width: 21
-                    height: 21
-                    radius: 10.5
-                    color: "transparent"
-                    border.width: 2.5
-                    border.color: Theme.accent
-                    visible: marker.selected
-                }
-
-                Rectangle {
-                    id: dot
-                    anchors.centerIn: parent
-                    width: 15
-                    height: 15
-                    radius: 7.5
-                    color: marker.dotColor
-                    // Light stroke in dark mode so dark dots separate from dark tiles.
-                    border.color: Theme.isDark ? "#cdd2da" : "#10141a"
-                    border.width: 1
-                    rotation: marker.model.bearing      // dot/notch rotate to heading
-
-                    // Small notch indicating heading.
-                    Rectangle {
-                        width: 2
-                        height: 7
-                        color: "white"
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        anchors.top: parent.top
-                        anchors.topMargin: 1
-                    }
-                }
-            }
-
-            // Type-coloured label ("IC 967" / line letter) plus a km/h sub-line
-            // while moving, on a semi-opaque pill (O1) so it reads on any tile.
-            Rectangle {
-                anchors.verticalCenter: dotGroup.verticalCenter
+            Column {
+                id: labelCol
+                anchors.centerIn: parent
+                spacing: 0
                 visible: marker.labelsVisible
-                radius: 5
-                color: marker.pillBg
-                border.color: marker.pillBorder
-                border.width: 1
-                implicitWidth: labelCol.implicitWidth + 12
-                implicitHeight: labelCol.implicitHeight + 6
 
-                Column {
-                    id: labelCol
-                    anchors.centerIn: parent
-                    spacing: 0
+                Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    text: marker.badgeLabel
+                    font.pixelSize: 11
+                    font.bold: true
+                    color: "white"
+                }
 
-                    Text {
-                        text: marker.badgeLabel
-                        font.pixelSize: 12
-                        font.bold: true
-                        color: marker.legibleInk(marker.trainColor)
-                    }
+                Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    visible: marker.model.speed > 0
+                    text: Math.round(marker.model.speed) + " km/h"
+                    font.pixelSize: 9
+                    color: Qt.rgba(1, 1, 1, 0.9)
+                }
 
-                    Text {
-                        visible: marker.model.speed > 0
-                        text: Math.round(marker.model.speed) + " km/h"
-                        font.pixelSize: 11   // W1: was 8 px (below the legibility floor)
-                        color: Theme.isDark ? "#c9ced6" : "#3a3f47"
-                    }
-
-                    // Lateness as text (paired with the ring colour, not colour alone).
-                    Text {
-                        visible: marker.late
-                        text: qsTr("+%1 min").arg(marker.model.delayMinutes)
-                        font.pixelSize: 11
-                        font.bold: true
-                        color: marker.ringColor
-                    }
+                // Lateness as text (paired with the ring colour, not colour alone).
+                Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    visible: marker.late
+                    text: qsTr("+%1 min").arg(marker.model.delayMinutes)
+                    font.pixelSize: 9
+                    font.bold: true
+                    color: "white"
                 }
             }
         }
 
-        // Whole marker (dot + number) is clickable.
+        // Direction arrow — a triangle (apex = travel direction) orbiting the
+        // capsule to the heading side. Both its orbit position and its rotation
+        // glide along the shortest arc on a turn (TrainSpotter parity).
+        Shape {
+            id: arrow
+            width: marker.arrowW
+            height: marker.arrowH
+            antialiasing: true
+            visible: marker.model.speed > 0
+            opacity: marker.arrowOpacity
+
+            readonly property real rad: marker.model.bearing * Math.PI / 180
+            readonly property real cx: capsule.width / 2
+            readonly property real cy: capsule.height / 2
+            // North (0°) → top, clockwise. Item space is y-down, so north is −y.
+            x: cx + (cx + marker.arrowGap) * Math.sin(rad) - width / 2
+            y: cy - (cy + marker.arrowGap) * Math.cos(rad) - height / 2
+            rotation: marker.model.bearing
+            transformOrigin: Item.Center
+
+            Behavior on x { enabled: !Theme.reducedMotion
+                NumberAnimation { duration: 600; easing.type: Easing.InOutQuad } }
+            Behavior on y { enabled: !Theme.reducedMotion
+                NumberAnimation { duration: 600; easing.type: Easing.InOutQuad } }
+            Behavior on rotation { enabled: !Theme.reducedMotion
+                RotationAnimation { duration: 600; direction: RotationAnimation.Shortest
+                    easing.type: Easing.InOutQuad } }
+
+            ShapePath {
+                fillColor: marker.dotColor
+                strokeColor: Theme.isDark ? Qt.rgba(1, 1, 1, 0.35) : Qt.rgba(0, 0, 0, 0.30)
+                strokeWidth: 0.75
+                startX: arrow.width / 2; startY: 0
+                PathLine { x: 0;            y: arrow.height }
+                PathLine { x: arrow.width;  y: arrow.height }
+                PathLine { x: arrow.width / 2; y: 0 }
+            }
+        }
+
+        // Whole marker (capsule + arrow) is clickable.
         MouseArea {
             anchors.fill: parent
             cursorShape: Qt.PointingHandCursor
