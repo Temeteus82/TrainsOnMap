@@ -25,6 +25,8 @@ struct TimetableStop {
     Q_PROPERTY(QString track              MEMBER track)
     Q_PROPERTY(bool    cancelled          MEMBER cancelled)
     Q_PROPERTY(bool    stopping           MEMBER stopping)
+    Q_PROPERTY(bool    passed             MEMBER passed)
+    Q_PROPERTY(bool    isNext             MEMBER isNext)
 public:
     QString stationShortCode;
     QString stationName;          ///< resolved from station metadata; falls back to code
@@ -36,10 +38,14 @@ public:
     QString track;                ///< commercial track, may be empty
     bool cancelled = false;
     bool stopping = true;         ///< true = a commercial/booked stop; false = passed through
+    bool passed = false;          ///< the train has already departed/arrived here (journey progress)
+    bool isNext = false;          ///< first booked stop the train hasn't reached yet
 
-    // Build-time accumulators (not exposed as roles); used to resolve `stopping`.
+    // Build-time accumulators (not exposed as roles); used to resolve `stopping`
+    // and `passed`.
     bool sawCommercial = false;
     bool sawTrainStopping = false;
+    bool sawActual = false;       ///< a row recorded an actualTime → the train has been here
 };
 
 // By default QRangeModel maps a gadget's properties to *columns*. A QML list
@@ -66,18 +72,29 @@ class TimetableModel : public QRangeModel
     QML_ELEMENT
     QML_UNCREATABLE("Obtain via TrainDetailsService.model")
     Q_PROPERTY(int count READ count NOTIFY countChanged)
+    // Journey progress over the booked (stopping) stops, derived in setStops().
+    Q_PROPERTY(int passedStops READ passedStops NOTIFY progressChanged) ///< booked stops the train has left
+    Q_PROPERTY(int totalStops READ totalStops NOTIFY progressChanged)   ///< booked stops on the route
+    Q_PROPERTY(int nextStopRow READ nextStopRow NOTIFY progressChanged) ///< source row of the NEXT booked stop; -1 if none/complete
 
 public:
     explicit TimetableModel(QObject *parent = nullptr);
 
     int count() const { return m_stops.size(); }
+    int passedStops() const { return m_passedStops; }
+    int totalStops() const { return m_totalStops; }
+    int nextStopRow() const { return m_nextStopRow; }
 
     void setStops(const QVector<TimetableStop> &stops);
     void clear();
 
 signals:
     void countChanged();
+    void progressChanged();
 
 private:
     QVector<TimetableStop> m_stops;
+    int m_passedStops = 0;
+    int m_totalStops = 0;
+    int m_nextStopRow = -1;
 };

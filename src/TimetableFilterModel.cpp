@@ -27,6 +27,13 @@ void TimetableFilterModel::setSourceModel(QAbstractItemModel *sourceModel)
     m_stoppingRole = sourceModel ? sourceModel->roleNames().key("stopping", -1) : -1;
 }
 
+int TimetableFilterModel::proxyRowForSource(int sourceRow) const
+{
+    if (!sourceModel() || sourceRow < 0 || sourceRow >= sourceModel()->rowCount())
+        return -1;
+    return mapFromSource(sourceModel()->index(sourceRow, 0)).row();
+}
+
 bool TimetableFilterModel::filterAcceptsRow(int sourceRow, const QModelIndex &sourceParent) const
 {
     // Show everything when expanded, or if the source lacks a "stopping" role

@@ -17,6 +17,10 @@ Rectangle {
     // Defaulted so the panel works if the host doesn't supply it.
     property var matchInfo: ({})
 
+    // Guards the one-shot auto-scroll to the current position: we re-focus the
+    // timetable when a *new* train's stops load, but not on every live update.
+    property int autoScrolledTrain: -1
+
     // Distinct dot colour per carriage amenity (see CompositionVehicle.amenities).
     function amenityColor(a) {
         switch (a) {
@@ -307,6 +311,34 @@ Rectangle {
             Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.hairline }
         }
 
+        // ---- Journey progress (booked stops the train has left) ----------
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 8
+            visible: root.details.model.totalStops > 0
+            Label {
+                text: qsTr("%1 of %2 stops").arg(root.details.model.passedStops)
+                                            .arg(root.details.model.totalStops)
+                color: Theme.textMuted
+                font.pixelSize: TypeScale.caption
+            }
+            Rectangle {   // progress track
+                Layout.fillWidth: true
+                Layout.preferredHeight: 4
+                radius: 2
+                color: Theme.hairline
+                Rectangle {   // filled portion
+                    anchors.left: parent.left
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    width: parent.width * (root.details.model.totalStops > 0
+                           ? root.details.model.passedStops / root.details.model.totalStops : 0)
+                    radius: 2
+                    color: Theme.accent
+                }
+            }
+        }
+
         // ---- Show-all toggle (reveals passed-through timing points) -------
         // Keyboard-focusable checkbox (W4) with a drawn tick (O3).
         Item {
@@ -370,12 +402,33 @@ Rectangle {
         }
 
         ListView {
+            id: stopsList
             Layout.fillWidth: true
             Layout.fillHeight: true
             clip: true
             model: timetableModel
             spacing: 0
             ScrollBar.vertical: ScrollBar { id: vbar }
+
+            // When a newly selected train's stops load, scroll the timetable so
+            // the NEXT stop sits at the top (current position in view, upcoming
+            // route below). Once per train — live updates won't yank the view.
+            Connections {
+                target: root.details.model
+                function onProgressChanged() {
+                    if (root.details.trainNumber === root.autoScrolledTrain)
+                        return
+                    const src = root.details.model.nextStopRow
+                    if (src < 0)
+                        return
+                    const proxyRow = timetableModel.proxyRowForSource(src)
+                    if (proxyRow < 0)
+                        return
+                    root.autoScrolledTrain = root.details.trainNumber
+                    // Defer so the view has laid out rows after the model reset.
+                    Qt.callLater(() => stopsList.positionViewAtIndex(proxyRow, ListView.Beginning))
+                }
+            }
 
             delegate: ItemDelegate {
                 id: stopRow
@@ -388,7 +441,17 @@ Rectangle {
                 // (near-white) row text in dark mode. Drive it from the app theme
                 // instead so the dark card shows through and text stays legible.
                 background: Rectangle {
-                    color: stopRow.hovered ? Theme.subtleHover : "transparent"
+                    color: stopRow.isNext ? Theme.subtleHover
+                                          : (stopRow.hovered ? Theme.subtleHover : "transparent")
+                    // Accent stripe marking the next booked stop the train will reach.
+                    Rectangle {
+                        visible: stopRow.isNext
+                        anchors.left: parent.left
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
+                        width: 3
+                        color: Theme.accent
+                    }
                 }
 
                 required property string stationName
@@ -400,6 +463,8 @@ Rectangle {
                 required property string estimatedDeparture
                 required property int delayMinutes
                 required property bool stopping
+                required property bool passed
+                required property bool isNext
 
                 // One compact time for a passing point (departure preferred).
                 readonly property string passTime: scheduledDeparture.length > 0 ? scheduledDeparture
@@ -415,18 +480,41 @@ Rectangle {
                     // delay-badge column isn't hidden under the overlaid ScrollBar.
                     anchors.rightMargin: 12 + (vbar.visible ? vbar.width : 0)
                     spacing: 10
+                    // Dim stops the train has already left (journey progress).
+                    opacity: stopRow.passed ? 0.45 : 1.0
 
                     // Station + track / "passing"
                     ColumnLayout {
                         Layout.fillWidth: true
                         spacing: 0
-                        Label {
-                            text: stopRow.stationName
-                            font.pixelSize: TypeScale.body
-                            font.strikeout: stopRow.cancelled
-                            color: stopRow.stopping ? Theme.textStrong : Theme.textMuted
-                            elide: Text.ElideRight
+                        RowLayout {
                             Layout.fillWidth: true
+                            spacing: 6
+                            Label {
+                                text: stopRow.stationName
+                                font.pixelSize: TypeScale.body
+                                font.strikeout: stopRow.cancelled
+                                font.bold: stopRow.isNext
+                                color: stopRow.stopping ? Theme.textStrong : Theme.textMuted
+                                elide: Text.ElideRight
+                                Layout.fillWidth: true
+                            }
+                            // "NEXT" pill on the next booked stop.
+                            Rectangle {
+                                visible: stopRow.isNext
+                                radius: height / 2
+                                color: Theme.accent
+                                Layout.preferredHeight: nextLabel.implicitHeight + 2
+                                Layout.preferredWidth: nextLabel.implicitWidth + 12
+                                Label {
+                                    id: nextLabel
+                                    anchors.centerIn: parent
+                                    text: qsTr("NEXT")
+                                    color: Theme.accentText
+                                    font.pixelSize: TypeScale.caption
+                                    font.bold: true
+                                }
+                            }
                         }
                         Label {
                             text: stopRow.stopping

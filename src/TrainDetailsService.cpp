@@ -90,6 +90,10 @@ QVector<TimetableStop> buildStops(const QJsonArray &rows)
             s.sawCommercial = true;
         if (row.value(QStringLiteral("trainStopping")).toBool())
             s.sawTrainStopping = true;
+        // A recorded actualTime means the train has been here — drives journey
+        // progress (the `passed`/`isNext` flags computed in TimetableModel).
+        if (!row.value(QStringLiteral("actualTime")).toString().isEmpty())
+            s.sawActual = true;
     }
 
     // Decide which points are "stops". Prefer commercial passenger stops; if the
