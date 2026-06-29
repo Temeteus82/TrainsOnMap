@@ -150,11 +150,33 @@ cmake --build --preset linux-clang
 ### macOS (Clang)
 
 ```bash
-export CMAKE_PREFIX_PATH="$HOME/Qt/6.11.1/macos"
+export CMAKE_PREFIX_PATH="$HOME/Qt/6.11.1/macos"   # or /opt/homebrew for a Homebrew Qt
 cmake --preset macos-clang
 cmake --build --preset macos-clang
-./build/macos-clang/bin/TrainsOnMap
+open ./build/macos-clang/bin/TrainsOnMap.app
 ```
+
+> The build produces a relocatable **`TrainsOnMap.app`** and runs **macdeployqt**
+> automatically, copying the Qt frameworks and the needed plugins (the QML imports,
+> the QtLocation geoservices / QtPositioning plugins, and the TLS backend for the
+> `wss://` MQTT feed) into the bundle, so it runs without a Qt install. The icon
+> (`resources/icon/appicon.icns`, regenerated from the SVG master with
+> [`scripts/make_icns.sh`](scripts/make_icns.sh)) and `Info.plist` metadata are set
+> from `CMakeLists.txt`.
+>
+> To package a distributable disk image, build the **`dmg`** target — it wraps the
+> deployed bundle into `TrainsOnMap-<version>.dmg` with the drag-to-`/Applications`
+> layout:
+>
+> ```bash
+> cmake --build --preset macos-clang --target dmg
+> # -> build/macos-clang/bin/TrainsOnMap-0.1.0.dmg
+> ```
+>
+> macdeployqt ad-hoc signs the bundle. For distribution to other Macs, sign with a
+> Developer ID and notarize (`-codesign=<id>` on the macdeployqt call, then
+> `xcrun notarytool`); a Homebrew Qt may also need `-codesign` to satisfy strict
+> Gatekeeper checks.
 
 ### Windows (MSVC 2022, PowerShell)
 
