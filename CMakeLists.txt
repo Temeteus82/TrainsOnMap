@@ -82,6 +82,17 @@ if(WIN32)
     target_sources(TrainsOnMap PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/appicon.rc")
 endif()
 
+# macOS: ship the .icns as a bundle resource (regenerate from the SVG master with
+# scripts/make_icns.sh) and point the generated Info.plist at it. The bundle
+# metadata (identifier/version/copyright) below feeds Qt's default Info.plist
+# template; MACOSX_BUNDLE is enabled on the target so an .app is produced.
+if(APPLE)
+    set(MACOSX_BUNDLE_ICNS "${CMAKE_CURRENT_SOURCE_DIR}/resources/icon/appicon.icns")
+    set_source_files_properties("${MACOSX_BUNDLE_ICNS}" PROPERTIES
+        MACOSX_PACKAGE_LOCATION "Resources")
+    target_sources(TrainsOnMap PRIVATE "${MACOSX_BUNDLE_ICNS}")
+endif()
+
 # So the generated QML type-registration unit can find the class headers
 # (it probes them via __has_include(<Header.h>)).
 target_include_directories(TrainsOnMap PRIVATE src)
@@ -108,7 +119,15 @@ set_target_properties(TrainsOnMap PROPERTIES
     # GUI-subsystem app in Release (no stray console window on launch); Debug
     # keeps the console attached so qDebug/log output is visible while developing.
     WIN32_EXECUTABLE $<NOT:$<CONFIG:Debug>>
-    MACOSX_BUNDLE OFF
+    # macOS: build a relocatable TrainsOnMap.app. MACOSX_BUNDLE is a no-op off Apple,
+    # so plain ON is safe cross-platform (a genex here would defeat TARGET_BUNDLE_DIR).
+    MACOSX_BUNDLE ON
+    MACOSX_BUNDLE_BUNDLE_NAME "TrainsOnMap"
+    MACOSX_BUNDLE_GUI_IDENTIFIER "com.trainsonmap.TrainsOnMap"
+    MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
+    MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
+    MACOSX_BUNDLE_ICON_FILE "appicon.icns"
+    MACOSX_BUNDLE_COPYRIGHT "© 2025 TrainsOnMap"
 )
 
 # On Windows, copy every Qt runtime DLL and plugin the app needs (Qt core libs,
@@ -133,6 +152,50 @@ if(WIN32)
         message(WARNING "windeployqt not found near ${_qt_bin_dir}; "
                         "the built .exe will need Qt DLLs on PATH to run.")
     endif()
+endif()
+
+# On macOS, copy the Qt frameworks and plugins the app needs (QML imports, the
+# QtLocation geoservices + QtPositioning plugins, the TLS backend for the wss://
+# MQTT feed) into TrainsOnMap.app/Contents/{Frameworks,PlugIns} as a post-build
+# step, so the bundle runs standalone without a Qt install. macdeployqt scans the
+# QML sources (-qmldir) to resolve the QML import plugins.
+if(APPLE)
+    get_target_property(_qmake_exe Qt6::qmake IMPORTED_LOCATION)
+    get_filename_component(_qt_bin_dir "${_qmake_exe}" DIRECTORY)
+    find_program(MACDEPLOYQT_EXECUTABLE macdeployqt HINTS "${_qt_bin_dir}")
+    if(MACDEPLOYQT_EXECUTABLE)
+        add_custom_command(TARGET TrainsOnMap POST_BUILD
+            COMMAND "${MACDEPLOYQT_EXECUTABLE}"
+                    "$<TARGET_BUNDLE_DIR:TrainsOnMap>"
+                    "-qmldir=${CMAKE_SOURCE_DIR}/qml"
+                    -no-strip
+            COMMENT "macdeployqt: bundling Qt frameworks and QML/geoservices/TLS plugins into the .app"
+            VERBATIM)
+    else()
+        message(WARNING "macdeployqt not found near ${_qt_bin_dir}; "
+                        "the built .app will need a Qt install to run.")
+    endif()
+
+    # `cmake --build --preset macos-clang --target dmg` wraps the deployed bundle
+    # into a distributable TrainsOnMap-<version>.dmg (with the usual drag-to-
+    # /Applications layout). Depends on the app target so the bundle is built and
+    # macdeployqt has run first. Not part of ALL — invoke it explicitly.
+    set(TRAINSONMAP_DMG "${CMAKE_BINARY_DIR}/bin/TrainsOnMap-${PROJECT_VERSION}.dmg")
+    add_custom_target(dmg
+        COMMAND ${CMAKE_COMMAND} -E rm -rf "${CMAKE_BINARY_DIR}/dmg-staging"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/dmg-staging"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "$<TARGET_BUNDLE_DIR:TrainsOnMap>"
+                "${CMAKE_BINARY_DIR}/dmg-staging/TrainsOnMap.app"
+        COMMAND ${CMAKE_COMMAND} -E create_symlink /Applications
+                "${CMAKE_BINARY_DIR}/dmg-staging/Applications"
+        COMMAND ${CMAKE_COMMAND} -E rm -f "${TRAINSONMAP_DMG}"
+        COMMAND hdiutil create -volname "TrainsOnMap"
+                -srcfolder "${CMAKE_BINARY_DIR}/dmg-staging"
+                -ov -format UDZO "${TRAINSONMAP_DMG}"
+        DEPENDS TrainsOnMap
+        COMMENT "Packaging ${TRAINSONMAP_DMG}"
+        VERBATIM)
 endif()
 
 install(TARGETS TrainsOnMap
