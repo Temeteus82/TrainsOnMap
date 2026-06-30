@@ -455,8 +455,22 @@ QString TrainListModel::ringStateFor(const Row &row) const
     const TrainStatus st = m_statusByNumber.value(keyOf(row.pos));
     const bool flaggedRunning = st.known && st.running && !st.cancelled;
 
+    // The position feed (train-locations) is far fresher than the bulk
+    // /live-trains poll that sets runningCurrently, and that flag lags actual
+    // departures: a train that has clearly pulled out can still be reported as
+    // not-running for a poll or two. A recent fix that is actually moving is
+    // positive proof the train is running, so treat it as authoritative over the
+    // !running flag — otherwise a visibly-moving train (speed on the badge, fix
+    // gliding along the rail) is greyed, which reads as a bug. Cancelled stays
+    // authoritative; a cancelled train should not be on the live feed at all.
+    const bool positionFresh = row.pos.timestamp.isValid()
+        && row.pos.timestamp.secsTo(QDateTime::currentDateTimeUtc()) <= kStalePositionSecs;
+    const bool demonstrablyRunning = positionFresh && row.pos.speed >= kStoppedSpeedKmh;
+
     // Stale / not running: greyed, no ring.
-    if (st.known && (st.cancelled || !st.running))
+    if (st.known && st.cancelled)
+        return QStringLiteral("stale");
+    if (st.known && !st.running && !demonstrablyRunning)
         return QStringLiteral("stale");
     if (row.pos.timestamp.isValid()
         && row.pos.timestamp.secsTo(QDateTime::currentDateTimeUtc()) > kStalePositionSecs
