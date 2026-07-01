@@ -408,7 +408,19 @@ Rectangle {
             clip: true
             model: timetableModel
             spacing: 0
-            ScrollBar.vertical: ScrollBar { id: vbar }
+            // Theme the scrollbar to the dark panel: the native style renders a
+            // light handle that clashes with the card. A thin muted-ink handle
+            // that fades in on hover/press reads correctly in both light and dark.
+            ScrollBar.vertical: ScrollBar {
+                id: vbar
+                contentItem: Rectangle {
+                    implicitWidth: 6
+                    radius: width / 2
+                    color: Theme.textMuted
+                    opacity: vbar.pressed ? 0.75 : (vbar.hovered ? 0.55 : 0.35)
+                    Behavior on opacity { NumberAnimation { duration: 120 } }
+                }
+            }
 
             // When a newly selected train's stops load, scroll the timetable so
             // the NEXT stop sits at the top (current position in view, upcoming

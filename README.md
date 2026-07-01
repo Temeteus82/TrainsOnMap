@@ -246,9 +246,4 @@ matching compiler, and Run.
 
 ## Ideas for next steps
 
-- Smoothly animate marker movement between position updates.
-- Style rail tracks by line category.
-- Highlight the selected train's route on the map from its timetable stops.
-- Theme the timetable scrollbar to match the dark panel.
-- Fix the dark-basemap tile cache: stale `light_all` tiles linger in places after
-  switching theme (the Qt `osm` plugin caches tiles by coordinates, not by host).
+- Add a small map legend / toggle for the track categories (running lines vs sidings).

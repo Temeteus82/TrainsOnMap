@@ -241,8 +241,10 @@ ApplicationWindow {
                 model: trackService.model
                 delegate: MapPolyline {
                     required property var model
-                    line.width: 2.2
-                    line.color: Theme.railColor    // legible on either basemap
+                    // Style by line category: running lines (paaraide) read as the
+                    // network; sidings/yards recede as thinner, dimmer strands.
+                    line.width: model.mainTrack ? 2.2 : 1.3
+                    line.color: model.mainTrack ? Theme.railColor : Theme.railSidingColor
                     path: model.path
                 }
             }

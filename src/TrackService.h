@@ -80,6 +80,7 @@ private:
     /// One render segment: a WGS84 polyline plus a lat/lon bbox for viewport cull.
     struct Segment {
         QVariantList path;
+        bool mainTrack = false;   ///< paaraide: running line (true) vs siding (false)
         double minLat = 0.0;
         double maxLat = 0.0;
         double minLon = 0.0;
