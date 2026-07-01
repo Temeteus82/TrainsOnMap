@@ -93,7 +93,8 @@ re-evaluates its `routePolyline()` binding in response.
 #### void loadForBounds(double west, double south, double east, double north)
 
 Filters the render segments to those intersecting the given WGS84 bounding box and
-pushes them to the `TrackListModel`. Arguments follow the GeoJSON/OGC convention
+pushes them — paths plus their `paaraide` line-category flags — to the
+`TrackListModel`. Arguments follow the GeoJSON/OGC convention
 (west, south, east, north). Uses the spatial grid as a broadphase (gathering
 segment ids from overlapping cells, de-duplicating, then applying the exact bbox
 test), falling back to a linear scan if the grid isn't built yet. Results are kept

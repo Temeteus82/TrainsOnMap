@@ -25,6 +25,7 @@ class TrackListModel : public QAbstractListModel
 public:
     enum Role {
         PathRole = Qt::UserRole + 1,  ///< QVariantList<QGeoCoordinate>
+        MainTrackRole,                ///< bool: running line (true) vs siding (false)
     };
 
     explicit TrackListModel(QObject *parent = nullptr);
@@ -39,7 +40,8 @@ public:
     /// sorted ascending by id (TrackService emits them in network order, which
     /// is ascending). Diffs against the current rows and emits incremental
     /// insert/remove for only the segments that changed between viewports.
-    void setVisibleSegments(const QVector<int> &ids, const QVector<QVariantList> &paths);
+    void setVisibleSegments(const QVector<int> &ids, const QVector<QVariantList> &paths,
+                            const QVector<bool> &mains);
 
 signals:
     void countChanged();
@@ -47,4 +49,5 @@ signals:
 private:
     QVector<int> m_ids;             ///< segment id (index in the full network), ascending
     QVector<QVariantList> m_paths;  ///< polyline path per row, parallel to m_ids
+    QVector<bool> m_main;           ///< main-track flag per row, parallel to m_ids
 };

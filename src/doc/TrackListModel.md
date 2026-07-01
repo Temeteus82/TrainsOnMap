@@ -8,6 +8,10 @@ ready to bind to a QML `MapPolyline.path` inside a `MapItemView`.
 
 The whole national network is far larger than any single viewport, so
 `TrackService` filters it to the visible area and hands the result to this model.
+Alongside each path the model carries the segment's **line category** — the
+`paaraide` main-track flag (`mainTrack` role) — which the `Main.qml` delegate uses
+to draw running lines and sidings/yards in distinct weights and colours.
+
 The key design point: each row carries the segment's **stable id** (its index in
 the full network), so `setVisibleSegments()` can diff one viewport against the
 next and emit only the incremental insert/remove. The `MapItemView` then rebuilds
@@ -42,11 +46,13 @@ currently-visible segments and diff updates so the map view changes minimally.
 
 | Value | Integer | Description |
 |-------|---------|-------------|
-| `PathRole` | `Qt::UserRole + 1` | The segment's polyline as a `QVariantList<QGeoCoordinate>` (QML role name `path`). The only data role. |
+| `PathRole` | `Qt::UserRole + 1` | The segment's polyline as a `QVariantList<QGeoCoordinate>` (QML role name `path`). |
+| `MainTrackRole` | `Qt::UserRole + 2` | `bool`: the `paaraide` line category — running line (`true`) vs siding/yard (`false`) (QML role name `mainTrack`). |
 
 ## 6. Public Member Variables
 
-None public. (Private: `m_ids` — ascending segment ids — and `m_paths`, parallel.)
+None public. (Private: `m_ids` — ascending segment ids — with `m_paths` and
+`m_main` held parallel to it.)
 
 ## 7. Signals
 
@@ -77,11 +83,13 @@ See section 10.
 
 Visible-segment count (the `count` property getter).
 
-#### void setVisibleSegments(const QVector<int> &ids, const QVector<QVariantList> &paths)
+#### void setVisibleSegments(const QVector<int> &ids, const QVector<QVariantList> &paths, const QVector<bool> &mains)
 
-Replaces the visible set. `ids` and `paths` are parallel and **must both be sorted
+Replaces the visible set. `ids`, `paths` and `mains` are parallel and **must both be sorted
 ascending by id** (`TrackService` emits them in network order, which is
-ascending). The method diffs against the current rows in two phases:
+ascending). `mains` carries each segment's `paaraide` line-category flag, kept in
+lockstep with `m_ids`/`m_paths` through both diff phases. The method diffs against
+the current rows in two phases:
 
 1. **Remove** rows whose id is no longer wanted, batching contiguous runs into a
    single `begin/endRemoveRows`.
@@ -101,12 +109,13 @@ flat list).
 
 #### QVariant data(const QModelIndex &index, int role) const [override]
 
-From `QAbstractItemModel`. Returns the row's path for `PathRole`; an invalid
-`QVariant` for an out-of-range index or any other role.
+From `QAbstractItemModel`. Returns the row's path for `PathRole` and its
+main-track flag for `MainTrackRole`; an invalid `QVariant` for an out-of-range
+index or any other role.
 
 #### QHash<int, QByteArray> roleNames() const [override]
 
-From `QAbstractItemModel`. Maps `PathRole` → `"path"`.
+From `QAbstractItemModel`. Maps `PathRole` → `"path"` and `MainTrackRole` → `"mainTrack"`.
 
 ## 11. Ownership and Lifecycle
 
@@ -125,7 +134,8 @@ thread.)
 
 Registered with `QML_ELEMENT` and `QML_UNCREATABLE("Obtain via
 TrackService.model")` (module `TrainsOnMap` 1.0). The track `MapItemView`'s
-delegate binds the `path` role to a `MapPolyline.path`.
+delegate binds the `path` role to a `MapPolyline.path` and the `mainTrack` role to
+the polyline's line width and colour.
 
 ## 14. Inter-Class Interactions
 

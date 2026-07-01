@@ -61,5 +61,6 @@ QtObject {
 
     // ---- Map --------------------------------------------------------------
     readonly property string basemapStyle: isDark ? "dark_all" : "light_all"
-    readonly property color railColor: isDark ? "#5a6470" : "#8c95a0"
+    readonly property color railColor: isDark ? "#5a6470" : "#8c95a0"        // running lines
+    readonly property color railSidingColor: isDark ? "#3d444e" : "#bcc3cb"  // yards / sidings
 }

@@ -76,6 +76,7 @@ TrackService::Loaded TrackService::loadNetwork()
     out.segments.reserve(tracks.size());
     for (const RailGraph::Track &t : tracks) {
         Segment seg;
+        seg.mainTrack = t.paaraide;
         seg.path.reserve(t.path.size());
         seg.minLat = t.minLat;
         seg.maxLat = t.maxLat;
@@ -371,11 +372,15 @@ void TrackService::loadForBounds(double west, double south, double east, double 
     }
 
     QVector<QVariantList> paths;
+    QVector<bool> mains;
     paths.reserve(ids.size());
-    for (int id : ids)
+    mains.reserve(ids.size());
+    for (int id : ids) {
         paths.push_back(m_all.at(id).path);
+        mains.push_back(m_all.at(id).mainTrack);
+    }
 
-    m_model->setVisibleSegments(ids, paths);
+    m_model->setVisibleSegments(ids, paths, mains);
     setStatus(QStringLiteral("%1 track segments").arg(ids.size()));
 }
 

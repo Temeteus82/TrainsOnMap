@@ -20,15 +20,18 @@ QVariant TrackListModel::data(const QModelIndex &index, int role) const
         return {};
     if (role == PathRole)
         return m_paths.at(index.row());
+    if (role == MainTrackRole)
+        return m_main.at(index.row());
     return {};
 }
 
 QHash<int, QByteArray> TrackListModel::roleNames() const
 {
-    return { { PathRole, "path" } };
+    return { { PathRole, "path" }, { MainTrackRole, "mainTrack" } };
 }
 
-void TrackListModel::setVisibleSegments(const QVector<int> &ids, const QVector<QVariantList> &paths)
+void TrackListModel::setVisibleSegments(const QVector<int> &ids, const QVector<QVariantList> &paths,
+                                        const QVector<bool> &mains)
 {
     const int oldCount = m_paths.size();
 
@@ -47,6 +50,7 @@ void TrackListModel::setVisibleSegments(const QVector<int> &ids, const QVector<Q
         beginRemoveRows(QModelIndex(), row, end - 1);
         m_ids.remove(row, end - row);
         m_paths.remove(row, end - row);
+        m_main.remove(row, end - row);
         endRemoveRows();
         // row now indexes the element that shifted down into this slot.
     }
@@ -71,6 +75,7 @@ void TrackListModel::setVisibleSegments(const QVector<int> &ids, const QVector<Q
         for (int j = runEnd - 1; j >= k; --j) {  // reverse-insert keeps ascending order
             m_ids.insert(cur, ids.at(j));
             m_paths.insert(cur, paths.at(j));
+            m_main.insert(cur, mains.at(j));
         }
         endInsertRows();
         cur += n;
