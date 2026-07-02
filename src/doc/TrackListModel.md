@@ -85,7 +85,7 @@ Visible-segment count (the `count` property getter).
 
 #### void setVisibleSegments(const QVector<int> &ids, const QVector<QVariantList> &paths, const QVector<bool> &mains)
 
-Replaces the visible set. `ids`, `paths` and `mains` are parallel and **must both be sorted
+Replaces the visible set. `ids`, `paths` and `mains` are parallel and **must all be sorted
 ascending by id** (`TrackService` emits them in network order, which is
 ascending). `mains` carries each segment's `paaraide` line-category flag, kept in
 lockstep with `m_ids`/`m_paths` through both diff phases. The method diffs against
