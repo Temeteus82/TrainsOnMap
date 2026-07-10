@@ -288,6 +288,29 @@ From the `qt-ui-design` audit. The three **Critical** (WCAG / core-law) findings
 
 ---
 
+## Simplification pass (repo-wide over-engineering audit)
+
+### ♻️ Changes
+- [x] **`TrackMatcher` interface folded away** — it had exactly one implementation
+      (`TrackService`), and `DigitrafficClient` already coupled to `TrackService*`
+      directly. The `TrackMatch` / `RouteMatchRequest` value types moved into
+      `TrackService.h`; `TrainListModel` now holds a forward-declared
+      `const TrackService *` (`TrackMatcher.h` deleted).
+- [x] **`/metadata/stations` fetched once, not twice** — `DigitrafficClient` now
+      also parses station names from its one-shot stations fetch and exposes them
+      via `stationNames()`; `TrainDetailsService` consumes them through its new
+      `fleet` property (wired in `Main.qml`) instead of issuing its own request.
+- [x] **Dead code deleted** — unused `tm35fin::fromWgs84()` (forward projection,
+      no callers) and `TrainListModel::nearestRouteStation()` (line-for-line
+      duplicate of `nearestRouteStationCode()`; the one call site now looks the
+      code up in `m_stationCoords`).
+- [x] **Baked blob slimmed** — `ratakmvalit` (~0.5 MB of linear referencing) and
+      the crosswalk diagnostics (`uic`/`opOid`/`match`/`distM`) are no longer
+      baked; `RailGraph::loadFromJson` never read them. Raw JSON 8.3 → 7.7 MB
+      (crosswalk resolution stats are still printed at bake time).
+
+---
+
 ## 📋 Known issues / follow-ups
 - [ ] `/trains/{date}` summary cache not added — `/live-trains` already supplies
       type/category/line for currently-running trains (covers cross-midnight), so

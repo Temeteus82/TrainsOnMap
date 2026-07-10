@@ -98,6 +98,7 @@ ApplicationWindow {
     TrainDetailsService {
         id: trainDetails
         stream: trainStream      // live timetable updates for the selected train
+        fleet: trainClient       // shares its station code -> name map (one fetch)
     }
 
     // ---- Map ---------------------------------------------------------------

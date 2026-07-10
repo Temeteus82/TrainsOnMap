@@ -9,7 +9,8 @@ the backend that drives that panel.
 On selection it fetches the run's timetable
 (`/trains/{date}/{number}`) and its carriage composition
 (`/compositions/{date}/{number}`) on demand, resolves station short codes to
-names (warmed from `/metadata/stations`), and — through a shared
+names (shared from `DigitrafficClient.stationNames()` via the `fleet` property,
+so `/metadata/stations` is fetched once per launch), and — through a shared
 `DigitrafficMqttClient` — streams live timetable updates for the selected train so
 delays and estimates advance in real time. It owns two models exposed to QML: a
 `TimetableModel` (the stop list) and a `CompositionModel` (the carriage strip),
@@ -18,16 +19,19 @@ plus a set of header properties (title, subtitle, cancelled flag, route stations
 ## 2. Project Structure and Dependencies
 
 - **Declared in QML** (`Main.qml`) as `TrainDetailsService { id: trainDetails;
-  stream: trainStream }`. Its `show(...)` slot is called from a `TrainMarker`
-  click; its properties/models feed `TrainDetailPanel`. `hasSelection` gates the
-  detail-panel `Loader` and the map's Tier-2 debug overlay.
+  stream: trainStream; fleet: trainClient }`. Its `show(...)` slot is called from
+  a `TrainMarker` click; its properties/models feed `TrainDetailPanel`.
+  `hasSelection` gates the detail-panel `Loader` and the map's Tier-2 debug
+  overlay.
 - **Owns:** a `QNetworkAccessManager`, a `TimetableModel` and a
   `CompositionModel` (all children).
-- **Holds (not owned):** a `DigitrafficMqttClient *stream`.
+- **Holds (not owned):** a `DigitrafficMqttClient *stream` and a
+  `DigitrafficClient *fleet` (station-name source).
 - **Qt modules:** Qt6::Core, Qt6::Network, Qt6::Qml (`QML_ELEMENT`).
 - **Project-internal dependencies:** `TimetableModel` (+ `TimetableStop`),
   `CompositionModel` (+ `CompositionVehicle`), `DigitrafficMqttClient` (live
-  stream), `RailGraph::canonicalRouteCodes` (route-key canonicalisation).
+  stream), `DigitrafficClient` (station names),
+  `RailGraph::canonicalRouteCodes` (route-key canonicalisation).
 
 ## 3. Class Hierarchy and Role
 
@@ -57,6 +61,7 @@ and its header properties.
 | `cancelled` | `bool` | `cancelled` | — | `selectionChanged` | True when the run is cancelled. Read-only. |
 | `routeStations` | `QStringList` | `routeStations` | — | `routeStationsChanged` | Ordered station short codes of the selection, canonicalised to match `TrackService.routePolyline`'s route key. Read-only. |
 | `stream` | `DigitrafficMqttClient *` | `stream` | `setStream` | `streamChanged` | The MQTT client used to stream live updates for the selected train. |
+| `fleet` | `DigitrafficClient *` | `fleet` | `setFleet` | `fleetChanged` | Source of the station code → name map (its one-shot `/metadata/stations` fetch), so the endpoint isn't fetched twice at startup. |
 
 ## 5. Enumerations
 
@@ -84,6 +89,10 @@ Emitted when `status` changes.
 #### void streamChanged()
 
 Emitted when the `stream` is (re)assigned.
+
+#### void fleetChanged()
+
+Emitted when the `fleet` (station-name source) is (re)assigned.
 
 #### void routeStationsChanged()
 
@@ -131,9 +140,17 @@ precomputes — preventing a silent route-lookup miss.
 Assigns the live stream. Disconnects from any previous stream, connects the new
 one's `trainMessage` signal to `onStreamTrainMessage`, and emits `streamChanged`.
 
+#### void setFleet(DigitrafficClient *fleet)
+
+Assigns the station-name source. Disconnects from any previous fleet, connects the
+new one's `stationNamesChanged` to `onStationNames`, pulls the current map
+immediately (the names may have loaded before the wiring), and emits
+`fleetChanged`. Until a fleet is set (or its fetch lands), station labels fall
+back to the raw short codes.
+
 ## 10. Protected Virtual Methods / Event Handlers
 
-None overridden. Private helpers: `fetchStations`/`handleStations` (name cache),
+None overridden. Private helpers: `onStationNames` (pull the fleet's name map),
 `handleTrain`/`applyTrainObject` (timetable header + stops),
 `fetchComposition`/`handleComposition`/`clearComposition` (carriage strip),
 `onStreamTrainMessage` (live MQTT update), `rebuildStops` (re-resolve names and
@@ -147,8 +164,8 @@ with `this` as parent, so Qt destroys them with the service. Each `QNetworkReply
 is `deleteLater()`-d in its handler; a composition reply is additionally tagged
 with the run it was issued for and dropped if the selection has since changed (so a
 slow reply can't overwrite the consist now on screen). The `DigitrafficMqttClient
-*m_stream` is **not owned** — `setStream` carefully disconnects the old one before
-swapping.
+*m_stream` and `DigitrafficClient *m_fleet` are **not owned** — their setters
+carefully disconnect the old object before swapping.
 
 ## 12. Thread Safety
 
@@ -158,9 +175,10 @@ run on the GUI-thread event loop. No internal synchronisation.
 ## 13. QML Exposure
 
 Registered with `QML_ELEMENT` (module `TrainsOnMap` 1.0). QML instantiates
-`TrainDetailsService {}`, binds `stream`, reads the many header/composition/status
-properties and the two models, and calls `show()` (from a marker click) and
-`clear()`. `hasSelection` gates the `TrainDetailPanel` loader and the map overlay.
+`TrainDetailsService {}`, binds `stream` and `fleet`, reads the many
+header/composition/status properties and the two models, and calls `show()` (from
+a marker click) and `clear()`. `hasSelection` gates the `TrainDetailPanel` loader
+and the map overlay.
 
 ## 14. Inter-Class Interactions
 
@@ -171,6 +189,8 @@ properties and the two models, and calls `show()` (from a marker click) and
 - **`DigitrafficMqttClient`** (shared, not owned): `subscribeTrain`/
   `unsubscribeTrain` are driven on selection changes, and its `trainMessage`
   signal feeds `onStreamTrainMessage` for live updates.
+- **`DigitrafficClient`** (shared, not owned): its `stationNames()` map is pulled
+  on `stationNamesChanged` (and on wiring) for station-label resolution.
 - **`Main.qml`** polls `model.matchInfoFor(...)` for diagnostics, pins
   `routeStations` into `TrackService.pinRoute`, and binds
   `TrackService.routePolyline(routeStations)` for the route overlay.
@@ -179,8 +199,6 @@ properties and the two models, and calls `show()` (from a marker click) and
 
 **Outbound HTTPS (REST), GUI-thread async**, against `https://rata.digitraffic.fi`:
 
-- `GET /api/v1/metadata/stations` — short-code → name, fetched once at construction
-  to warm the cache (names fall back to the raw code until it lands).
 - `GET /api/v1/trains/{departureDate}/{trainNumber}` — the run's timetable rows,
   folded into merged stops.
 - `GET /api/v1/compositions/{departureDate}/{trainNumber}` — the carriage

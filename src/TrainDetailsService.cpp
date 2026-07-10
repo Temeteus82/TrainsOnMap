@@ -1,5 +1,6 @@
 #include "TrainDetailsService.h"
 
+#include "DigitrafficClient.h"
 #include "DigitrafficMqttClient.h"
 
 #include <QDateTime>
@@ -18,7 +19,6 @@
 
 namespace {
 constexpr auto kUserAgent = "TrainsOnMap/0.1 (Qt6 scaffolding)";
-constexpr auto kStationsUrl = "https://rata.digitraffic.fi/api/v1/metadata/stations";
 // Abort a stalled request rather than leaving the panel stuck on "Loading…".
 constexpr auto kRequestTimeout = std::chrono::seconds{15};
 
@@ -167,7 +167,6 @@ TrainDetailsService::TrainDetailsService(QObject *parent)
     , m_composition(new CompositionModel(this))
 {
     m_net->setTransferTimeout(kRequestTimeout);
-    fetchStations();   // warm the code->name cache in the background
 }
 
 QString TrainDetailsService::stationLabel(const QString &shortCode) const
@@ -175,32 +174,11 @@ QString TrainDetailsService::stationLabel(const QString &shortCode) const
     return m_stationNames.value(shortCode, shortCode);
 }
 
-void TrainDetailsService::fetchStations()
+void TrainDetailsService::onStationNames()
 {
-    QNetworkRequest req{QUrl(QString::fromLatin1(kStationsUrl))};
-    req.setRawHeader("Digitraffic-User", kUserAgent);
-    QNetworkReply *reply = m_net->get(req);
-    connect(reply, &QNetworkReply::finished, this, [this, reply] { handleStations(reply); });
-}
-
-void TrainDetailsService::handleStations(QNetworkReply *reply)
-{
-    reply->deleteLater();
-    if (reply->error() != QNetworkReply::NoError)
-        return;   // names just fall back to short codes
-
-    const QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
-    if (!doc.isArray())
-        return;
-
-    for (const QJsonValue &v : doc.array()) {
-        const QJsonObject o = v.toObject();
-        m_stationNames.insert(o.value(QStringLiteral("stationShortCode")).toString(),
-                              o.value(QStringLiteral("stationName")).toString());
-    }
-
-    if (!m_stops.isEmpty())   // a timetable arrived before the names did
-        rebuildStops();
+    m_stationNames = m_fleet->stationNames();
+    if (!m_stationNames.isEmpty() && !m_stops.isEmpty())
+        rebuildStops();   // a timetable arrived before the names did
 }
 
 void TrainDetailsService::show(int trainNumber, const QString &departureDate)
@@ -417,6 +395,21 @@ void TrainDetailsService::clear()
 
     if (m_stream)
         m_stream->unsubscribeTrain();
+}
+
+void TrainDetailsService::setFleet(DigitrafficClient *fleet)
+{
+    if (m_fleet == fleet)
+        return;
+    if (m_fleet)
+        disconnect(m_fleet, nullptr, this, nullptr);
+    m_fleet = fleet;
+    if (m_fleet) {
+        connect(m_fleet, &DigitrafficClient::stationNamesChanged,
+                this, &TrainDetailsService::onStationNames);
+        onStationNames();   // the names may have loaded before we were wired up
+    }
+    emit fleetChanged();
 }
 
 void TrainDetailsService::setStream(DigitrafficMqttClient *stream)

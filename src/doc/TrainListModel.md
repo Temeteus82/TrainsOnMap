@@ -11,7 +11,7 @@ two never clobber each other and markers don't flicker.
 
 Beyond storing positions, the model is where most of the app's per-fix
 intelligence lives: it derives bearing from successive fixes, **map-matches** each
-fix against the rail network through an optional `TrackMatcher` (Tier-2
+fix against the rail network through an optional `TrackService` (Tier-2
 route-constrained or Tier-1 nearest-track), pins parked off-network trains to
 their booked station, rejects physically-impossible "teleport" fixes, and
 computes a status-ring colour per train from its delay/running state and position
@@ -29,8 +29,9 @@ The header also defines the value types shared across the position pipeline
 - **Qt modules:** Qt6::Core (`QAbstractListModel`, `QHash`, `QVector`,
   `QDateTime`, `QJsonObject/Array`, `QVariantMap`), Qt6::Positioning
   (`QGeoCoordinate`), Qt6::Qml (`QtQmlIntegration`).
-- **Project-internal dependency:** `TrackMatcher.h` (the matcher interface plus
-  the `TrackMatch`/`RouteMatchRequest` value types).
+- **Project-internal dependency:** `TrackService` (forward-declared in the
+  header; the .cpp includes `TrackService.h` for the matcher calls and the
+  `TrackMatch`/`RouteMatchRequest` value types).
 
 ## 3. Class Hierarchy and Role
 
@@ -149,7 +150,7 @@ coloured by type/category and labelled by line/type; existing rows repaint
 Supplies the running-status map (delay/cancelled/running). Drives the marker
 status ring; existing rows repaint (`RingStateRole`, `DelayMinutesRole`).
 
-#### void setMatcher(const TrackMatcher *matcher)
+#### void setMatcher(const TrackService *matcher)
 
 Sets the (optional, **not owned**) rail-network matcher used to snap/flag incoming
 fixes. With none set, positions are stored raw.
@@ -188,7 +189,7 @@ From `QAbstractItemModel`. Maps each `Role` to the QML name the delegate binds
 
 Parent-owned `QObject`: constructed by `DigitrafficClient` with the client as
 parent, so it is destroyed with the client. The model holds a **non-owning** `const
-TrackMatcher *m_matcher` (a reference to the `TrackService`). All other state
+TrackService *m_matcher`. All other state
 (rows, index/bearing/metadata/route hashes, station coords) is owned by value.
 Although declared `QML_ELEMENT`, it is `QML_UNCREATABLE` — QML obtains the single
 instance via `DigitrafficClient.model`, never by constructing it.
@@ -211,7 +212,7 @@ instantiate the type.
 - **`DigitrafficClient`** owns it and calls `updateTrains`, `setTrainMetadata`,
   `setTrainStatuses`, `setTrainRoutes`, `setStationCoords`, `setMatcher`.
 - **`DigitrafficMqttClient`** shares it and calls `upsertTrain`.
-- **`TrackMatcher`/`TrackService`** is consulted per fix (`matchOnRoute` then
+- **`TrackService`** is consulted per fix (`matchOnRoute` then
   `matchToNetwork`).
 - **`Main.qml`** binds the role names in the train `MapItemView` delegate
   (`TrainMarker`) and polls `matchInfoFor` for the Tier-2 debug overlay.

@@ -9,9 +9,10 @@ TrainsOnMap. It provides two things to the rest of the app:
    pre-baked national rail snapshot embedded in the binary
    (`:/data/rails.geojson.qz`), flattens it into render segments, and (via a
    spatial grid) filters them to the current map viewport on demand.
-2. **Map-matching** — it implements the `TrackMatcher` interface so
-   `TrainListModel` can snap and flag GPS fixes against the rails, including
-   Tier-2 route-constrained matching and platform snapping.
+2. **Map-matching** — its `matchToNetwork` / `matchOnRoute` methods (and the
+   `TrackMatch` / `RouteMatchRequest` value types declared alongside it) let
+   `TrainListModel` snap and flag GPS fixes against the rails, including Tier-2
+   route-constrained matching and platform snapping.
 
 The rail network changes rarely, so it ships in the repo (baked by
 `scripts/bake_rails.py`) rather than being fetched from the Digitraffic infra-api
@@ -29,22 +30,20 @@ is resident.
 - **Qt modules:** Qt6::Core, Qt6::Qml (`QML_ELEMENT`), Qt6::Positioning
   (`QGeoCoordinate`), Qt6::Concurrent (`QtConcurrent::run`, `QFutureWatcher`).
 - **Project-internal dependencies:** `RailGraph` (Tier-2 core), `TrackListModel`
-  (render model), `TrackMatcher` (the implemented interface), `Projection.h`
-  (`tm35fin` tangent-plane maths).
+  (render model), `Projection.h` (`tm35fin` tangent-plane maths).
+- **Declares** the `TrackMatch` and `RouteMatchRequest` value types consumed by
+  `TrainListModel` (which holds only a forward-declared `const TrackService *`).
 
 ## 3. Class Hierarchy and Role
 
-`TrackService : public QObject, public TrackMatcher`.
+`TrackService : public QObject`.
 
 - From **`QObject`**: the meta-object system, signals/slots, properties, and
   parent-based ownership.
-- From **`TrackMatcher`**: the pure interface contract — `TrackService` overrides
-  both `matchToNetwork` (Tier 1) and `matchOnRoute` (Tier 2). This lets
-  `TrainListModel` consume matching through the lightweight interface while
-  `TrackService` supplies it from the heavy geometry it owns.
 
 Its role is the bridge between the pure `RailGraph` core and the Qt UI/threading
-world.
+world, and the app's map-matcher: `matchToNetwork` (Tier 1) and `matchOnRoute`
+(Tier 2) supply matching from the heavy geometry it owns.
 
 ## 4. Q_PROPERTY Declarations
 
@@ -128,9 +127,9 @@ The `loading` property getter.
 
 The `status` property getter.
 
-#### TrackMatch matchToNetwork(const QGeoCoordinate &fix, double headingDeg = -1.0) const [override]
+#### TrackMatch matchToNetwork(const QGeoCoordinate &fix, double headingDeg = -1.0) const
 
-`TrackMatcher` Tier-1. Snaps `fix` to the nearest in-memory rail segment, matched
+Tier-1. Snaps `fix` to the nearest in-memory rail segment, matched
 directly against the graph's plain-`QGeoCoordinate` tracks (no per-vertex QVariant
 unboxing). Bounds the candidate cull to ~600 m around the fix; a candidate within
 150 m is reported `onTrack`. When `headingDeg >= 0`, a cross-cutting track is
@@ -138,9 +137,9 @@ charged a misalignment penalty (up to 120 m) so an aligned track wins ties at a
 junction. Returns an empty match when the network isn't loaded or `fix` is
 invalid.
 
-#### TrackMatch matchOnRoute(const QGeoCoordinate &fix, const RouteMatchRequest &req) const [override]
+#### TrackMatch matchOnRoute(const QGeoCoordinate &fix, const RouteMatchRequest &req) const
 
-`TrackMatcher` Tier-2. If the request carries a `platformStation` +
+Tier-2. If the request carries a `platformStation` +
 `platformTrack` and the train is near (≤ 250 m of) that booked platform, snaps to
 it and holds the chainage while stopped. Otherwise looks up the request's route in
 the resolved-polyline cache and delegates to `RailGraph::projectOntoRoute` with
@@ -158,8 +157,7 @@ finished handler re-runs it).
 
 ## 10. Protected Virtual Methods / Event Handlers
 
-None. The two overridden virtuals come from the non-Qt `TrackMatcher` interface
-and are documented under Public Methods.
+None.
 
 ## 11. Ownership and Lifecycle
 
@@ -176,7 +174,7 @@ and are documented under Public Methods.
 ## 12. Thread Safety
 
 **GUI-thread object with worker-thread offload.** All slots, properties, signals
-and the matcher overrides are intended to be used on the GUI thread. The heavy
+and the matcher methods are intended to be used on the GUI thread. The heavy
 work — parsing the blob and resolving route polylines — runs on the global thread
 pool via `QtConcurrent::run`; results are applied back on the GUI thread inside
 `QFutureWatcher::finished` handlers. The shared `RailGraph` is treated as
@@ -197,8 +195,7 @@ seed and refresh the map.
 - **`DigitrafficClient`** sets `TrackService` as its `matcher`; the client's
   `handleCategories` calls `precomputeRoutes()` with the whole fleet's route
   sequences each cycle.
-- **`TrainListModel`** calls the inherited `matchToNetwork` / `matchOnRoute` to
-  snap fixes.
+- **`TrainListModel`** calls `matchToNetwork` / `matchOnRoute` to snap fixes.
 - **`Main.qml`** drives `loadForBounds` (on pan/zoom debounce), `routePolyline`
   (route overlay), and `pinRoute` (on selection change / `routeStationsChanged`).
 - **`TrackListModel`** receives the viewport-filtered segment set via

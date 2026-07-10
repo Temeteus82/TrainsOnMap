@@ -123,7 +123,9 @@ snap through it.
 
 None overridden. Private helpers do the JSON work: `handleReply` (positions),
 `handleCategories` (metadata/status/routes, with a `full` flag), `fetchStations`
-/ `handleStations` (one-shot station coordinates), and `setStatus`.
+/ `handleStations` (one-shot station coordinates for the model plus the
+`stationNames()` map shared with `TrainDetailsService`; `stationNamesChanged`
+fires when it lands), and `setStatus`.
 
 ## 11. Ownership and Lifecycle
 
@@ -168,8 +170,9 @@ Registered with `QML_ELEMENT` (module `TrainsOnMap` 1.0), so QML can write
   JSON array of train-location objects.
 - `GET /api/v1/live-trains[?version=N]` — per-train metadata, running status and
   scheduled `timeTableRows`; polled as version-deltas with periodic full resyncs.
-- `GET /api/v1/metadata/stations` — station short-code → coordinate, fetched once
-  at startup.
+- `GET /api/v1/metadata/stations` — station short-code → coordinate (for the
+  model) and → name (exposed via `stationNames()` and consumed by
+  `TrainDetailsService`), fetched once at startup.
 
 Every request sends a `Digitraffic-User` identification header
 (`TrainsOnMap/0.1 (Qt6 scaffolding)` — replace with your own app id). The transfer

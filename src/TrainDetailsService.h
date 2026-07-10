@@ -13,14 +13,16 @@
 class QNetworkAccessManager;
 class QNetworkReply;
 class QJsonObject;
+class DigitrafficClient;
 class DigitrafficMqttClient;
 
 /// Fetches a single train's timetable on demand and resolves station codes to
-/// names. Drives the timetable detail panel.
+/// names (shared from DigitrafficClient's one-shot /metadata/stations fetch via
+/// the `fleet` property; codes fall back to themselves until it's wired/loaded).
+/// Drives the timetable detail panel.
 ///
-/// Endpoints (https://www.digitraffic.fi/rautatieliikenne/):
+/// Endpoint (https://www.digitraffic.fi/rautatieliikenne/):
 ///   GET /api/v1/trains/{departureDate}/{trainNumber}  -> [ { ...timeTableRows } ]
-///   GET /api/v1/metadata/stations                     -> [ { stationShortCode, stationName } ]
 class TrainDetailsService : public QObject
 {
     Q_OBJECT
@@ -43,6 +45,9 @@ class TrainDetailsService : public QObject
     /// used by TrackService.routePolyline for the debug overlay).
     Q_PROPERTY(QStringList routeStations READ routeStations NOTIFY routeStationsChanged)
     Q_PROPERTY(DigitrafficMqttClient *stream READ stream WRITE setStream NOTIFY streamChanged)
+    /// Source of the station code -> name map (its one-shot /metadata/stations
+    /// fetch), so the endpoint isn't fetched twice at startup.
+    Q_PROPERTY(DigitrafficClient *fleet READ fleet WRITE setFleet NOTIFY fleetChanged)
 
 public:
     explicit TrainDetailsService(QObject *parent = nullptr);
@@ -55,6 +60,8 @@ public:
     int compositionSectionCount() const { return m_compositionSectionCount; }
     DigitrafficMqttClient *stream() const { return m_stream; }
     void setStream(DigitrafficMqttClient *stream);
+    DigitrafficClient *fleet() const { return m_fleet; }
+    void setFleet(DigitrafficClient *fleet);
     bool hasSelection() const { return m_hasSelection; }
     bool isLoading() const { return m_loading; }
     QString status() const { return m_status; }
@@ -88,12 +95,12 @@ signals:
     void loadingChanged();
     void statusChanged();
     void streamChanged();
+    void fleetChanged();
     void routeStationsChanged();
     void compositionChanged();
 
 private:
-    void fetchStations();
-    void handleStations(QNetworkReply *reply);
+    void onStationNames();   ///< pull the fleet's name map; re-resolve loaded stops
     void handleTrain(QNetworkReply *reply);
     void applyTrainObject(const QJsonObject &train, bool live);  ///< header + stops
     void fetchComposition(int trainNumber, const QString &departureDate);
@@ -109,8 +116,9 @@ private:
     TimetableModel *m_model = nullptr;
     CompositionModel *m_composition = nullptr;
     DigitrafficMqttClient *m_stream = nullptr;
+    DigitrafficClient *m_fleet = nullptr;
 
-    QHash<QString, QString> m_stationNames;   ///< shortCode -> name
+    QHash<QString, QString> m_stationNames;   ///< shortCode -> name (from `fleet`)
     QVector<TimetableStop> m_stops;           ///< last fetched stops (codes resolved lazily)
 
     bool m_hasSelection = false;
