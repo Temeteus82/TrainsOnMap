@@ -19,17 +19,18 @@ train's scheduled path:
       kaupallinenNumero   platform / commercial track number (~ timetable
                           `commercialTrack`)
       viereisetRaiteet    adjacent/parallel -> disambiguation hints
-      ratakmvalit         line number + km chainage (linear referencing)
-    (Two infra fields are intentionally NOT kept — the app reads neither: the
-    per-track `rautatieliikennepaikat` owning-OID list, and `seuraavatRaiteet`
-    next-track edges. The latter is near-empty in live data (38 refs nationally),
-    so the routing graph is reconstructed from geometry instead. See TRACK_PROPS.)
-  * `stations`: timetable `stationShortCode` -> { uic, opOid, name, match,
-    distM, tracks:[track OID] }.  The station <-> infra crosswalk is resolved
-    here (offline) by UIC code against the union of the operating-points layer
-    (infra `rautatieliikennepaikat.geojson`) and their finer parts
+    (Infra fields the app never reads are intentionally NOT kept — the per-track
+    `rautatieliikennepaikat` owning-OID list, `seuraavatRaiteet` next-track edges
+    (near-empty in live data, 38 refs nationally, so the routing graph is
+    reconstructed from geometry instead) and `ratakmvalit` linear referencing
+    (~0.5 MB of dead weight in the blob). See TRACK_PROPS.)
+  * `stations`: timetable `stationShortCode` -> { name, tracks:[track OID] }.
+    The station <-> infra crosswalk is resolved here (offline) by UIC code
+    against the union of the operating-points layer (infra
+    `rautatieliikennepaikat.geojson`) and their finer parts
     (`liikennepaikanosat`), falling back to normalised name then nearest-point
-    geometry. See the module notes for why no single key suffices.
+    geometry; how each station resolved is printed, not baked (the app reads
+    only name + tracks). See the module notes for why no single key suffices.
 
 The reverse `operatingPoints` map (OID -> stationShortCode) is no longer emitted:
 the app resolves stations via the `stations.tracks` lists alone, so baking the
@@ -86,19 +87,20 @@ STEP = 150_000
 # Track properties kept per feature (everything Tier-2 matching needs; the bulky
 # rest — speed limits, electrification, elements, etc. — is dropped). `geometria`
 # is dropped because the GeoJSON `geometry` already carries the centreline.
-# Two more infra fields are NOT baked because RailGraph::loadFromJson reads neither:
+# Three more infra fields are NOT baked because RailGraph::loadFromJson reads none:
 #   * `rautatieliikennepaikat` (per-track owning operating-point OIDs) — the
 #     station<->track crosswalk is resolved here at bake time from the ops' own
 #     `raiteet`, not from this per-track list (#15).
 #   * `seuraavatRaiteet` (next-track edges) — near-empty in live data (38 refs
 #     nationally), so the routing graph is reconstructed from geometry endpoints +
 #     `viereisetRaiteet` instead; this field never drove it.
+#   * `ratakmvalit` (line number + km chainage) — ~0.5 MB; route chainage is
+#     computed from geometry in RailGraph::buildPolyline, not linear referencing.
 TRACK_PROPS = (
     "tunniste",
     "paaraide",
     "kaupallinenNumero",
     "viereisetRaiteet",
-    "ratakmvalit",
 )
 
 # Geo crosswalk fallback: accept a nearest operating point only within this many
@@ -195,7 +197,8 @@ def collect_tracks():
 def build_crosswalk(track_ids):
     """Resolve timetable stationShortCode -> infra tracks.
 
-    Returns stations[shortCode] = {uic, opOid, name, match, distM, tracks:[OID]}.
+    Returns stations[shortCode] = {name, tracks:[OID]} — the two fields the app
+    reads; how each station resolved (uic/name/geo + distance) is printed only.
 
     `track_ids` is the set of track OIDs we actually baked, so member-track lists
     only reference geometry that ships in this blob.
@@ -249,7 +252,7 @@ def build_crosswalk(track_ids):
         if not code:
             continue
         uic = s.get("stationUICCode")
-        match, dist, entry = None, 0.0, None
+        match, entry = None, None
         if uic in by_uic:
             match, entry = "uic", by_uic[uic]
         elif norm(s.get("stationName")) in by_name:
@@ -260,7 +263,7 @@ def build_crosswalk(track_ids):
                 best = min(geo_pts, key=lambda g: haversine_m(lat, lon, g[0], g[1]))
                 d = haversine_m(lat, lon, best[0], best[1])
                 if d <= GEO_MATCH_MAX_M:
-                    match, dist, entry = "geo", d, best[2]
+                    match, entry = "geo", best[2]
         # A matched entry with no stable OID can't be cross-walked (it keys the
         # station<->op map); treat it as unresolved rather than KeyError-ing.
         oid = entry.get("tunniste") if entry is not None else None
@@ -269,11 +272,7 @@ def build_crosswalk(track_ids):
             continue
         counts[match] += 1
         out[code] = {
-            "uic": uic,
-            "opOid": oid,
             "name": entry.get("nimi"),
-            "match": match,
-            "distM": round(dist, 1),
             "tracks": member_tracks(entry),
         }
 

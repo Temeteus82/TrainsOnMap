@@ -35,10 +35,9 @@ binds to.
 
 | Class / File | Description |
 |--------------|-------------|
-| [TrackService](TrackService.md) | GUI-facing owner of the baked rail network; provides viewport-filtered render geometry and implements `TrackMatcher` (Tier-1/Tier-2 matching). |
+| [TrackService](TrackService.md) | GUI-facing owner of the baked rail network; provides viewport-filtered render geometry and the Tier-1/Tier-2 map-matching (`matchToNetwork` / `matchOnRoute`, plus the `TrackMatch` / `RouteMatchRequest` value types). |
 | [RailGraph](RailGraph.md) | Pure, Qt-Core-only Tier-2 core — geometry + topology + station crosswalk; Dijkstra routing, chainage-windowed projection, platform snapping. Unit-tested. |
-| [TrackMatcher](TrackMatcher.md) | Abstract map-matching interface (plus the `TrackMatch` / `RouteMatchRequest` value types) decoupling `TrainListModel` from `TrackService`. |
-| [Projection](Projection.md) | Header-only `tm35fin` namespace — EPSG:3067 ⇄ WGS84 datum conversion and the shared tangent-plane segment-matching helpers. |
+| [Projection](Projection.md) | Header-only `tm35fin` namespace — EPSG:3067 → WGS84 datum conversion and the shared tangent-plane segment-matching helpers. |
 
 ## Architecture at a glance
 
@@ -48,7 +47,7 @@ binds to.
                                    ▼   ▼
                             TrainListModel ──► map markers (MapItemView)
                                    │  ▲
-                       map-match   │  │ matcher (TrackMatcher)
+                       map-match   │  │ matcher (TrackService)
                                    ▼  │
                              TrackService ──► TrackListModel ──► track layer
                                    │

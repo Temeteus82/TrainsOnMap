@@ -9,9 +9,8 @@ problems:
 1. **Datum conversion.** The Digitraffic infrastructure API publishes track
    geometry in EPSG:3067 (ETRS-TM35FIN) easting/northing metres, while the Qt
    Quick map layer and the live-train feed work in WGS84 latitude/longitude.
-   `toWgs84()` / `fromWgs84()` convert between the two using the Snyder
-   inverse/forward Transverse Mercator series (sub-metre accurate across
-   Finland).
+   `toWgs84()` converts the former to the latter using the Snyder inverse
+   Transverse Mercator series (sub-metre accurate across Finland).
 2. **Local nearest-point-on-segment matching.** A small set of helpers projects a
    GPS fix onto a track segment in a local east/north tangent plane (metres),
    which is the shared kernel behind all of the app's map-matching: Tier-1
@@ -70,13 +69,6 @@ Implements the Snyder inverse Transverse Mercator series. Because ETRS89 and
 WGS84 differ by only a few centimetres over Finland, the result is used directly
 as WGS84. Used by `RailGraph::loadFromJson` to project every baked track vertex
 into map space.
-
-#### void fromWgs84(double latDeg, double lonDeg, double &E, double &N)
-
-Converts a WGS84 latitude/longitude (degrees) to EPSG:3067 easting/northing
-(metres), returned through the out-parameters `E` and `N`. The forward of
-`toWgs84`. Provided for completeness/symmetry with the datum used by the source
-data.
 
 #### double metresPerDegLon(const QGeoCoordinate &fix)
 

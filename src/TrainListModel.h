@@ -10,7 +10,7 @@
 #include <QVector>
 #include <QtQmlIntegration>
 
-#include "TrackMatcher.h"
+class TrackService;
 
 /// Live running status for a train, from the bulk /live-trains poll. Combined
 /// with each train's position age + speed to pick a marker status ring.
@@ -145,7 +145,7 @@ public:
 
     /// Set the rail-network map-matcher used to snap/flag incoming GPS fixes.
     /// Optional: with none set, positions are stored raw. Not owned.
-    void setMatcher(const TrackMatcher *matcher) { m_matcher = matcher; }
+    void setMatcher(const TrackService *matcher) { m_matcher = matcher; }
 
     /// Supply station short-code -> WGS84 coordinate (from /metadata/stations).
     /// Used to pin a stopped, off-network train to the station it's booked at.
@@ -187,13 +187,10 @@ private:
     /// Bearing from the train's previous coordinate; also records the new one.
     double bearingFor(const TrainKey &key, const QGeoCoordinate &coordinate);
 
-    /// Nearest scheduled-route station to `fix` within the station-snap radius, or
-    /// an invalid coordinate if the train has no known route, no station coords are
-    /// loaded yet, or none is close enough.
-    QGeoCoordinate nearestRouteStation(const TrainKey &key, const QGeoCoordinate &fix) const;
-
     /// Short code of the nearest scheduled station to `fix` within the snap radius
-    /// (for platform snapping), or "" when none qualifies.
+    /// (for platform snapping and the off-network station pin), or "" when the
+    /// train has no known route, no station coords are loaded, or none is close
+    /// enough.
     QString nearestRouteStationCode(const TrainKey &key, const QGeoCoordinate &fix) const;
 
     QVector<Row> m_rows;
@@ -206,7 +203,7 @@ private:
     QHash<QString, QGeoCoordinate> m_stationCoords; ///< station short code -> coord
     QHash<TrainKey, TrainRoute> m_routeByKey;       ///< (date,number) -> scheduled route
 
-    const TrackMatcher *m_matcher = nullptr;   ///< snaps/flags GPS fixes; not owned
+    const TrackService *m_matcher = nullptr;   ///< snaps/flags GPS fixes; not owned
 
     /// Resolve the status-ring state for a row from its position + cached status.
     QString ringStateFor(const Row &row) const;

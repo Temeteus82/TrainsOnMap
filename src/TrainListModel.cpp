@@ -1,5 +1,7 @@
 #include "TrainListModel.h"
 
+#include "TrackService.h"
+
 #include <QSet>
 
 #include <algorithm>
@@ -118,28 +120,6 @@ double TrainListModel::bearingFor(const TrainKey &key, const QGeoCoordinate &coo
     }
     m_previous.insert(key, coordinate);
     return bearing;
-}
-
-QGeoCoordinate TrainListModel::nearestRouteStation(const TrainKey &key,
-                                                   const QGeoCoordinate &fix) const
-{
-    const auto route = m_routeByKey.constFind(key);
-    if (route == m_routeByKey.constEnd() || m_stationCoords.isEmpty())
-        return {};
-
-    QGeoCoordinate best;
-    double bestDist = kStationSnapMeters;
-    for (const QString &code : route->codes) {
-        const auto it = m_stationCoords.constFind(code);
-        if (it == m_stationCoords.constEnd() || !it->isValid())
-            continue;
-        const double d = fix.distanceTo(*it);
-        if (d < bestDist) {
-            bestDist = d;
-            best = *it;
-        }
-    }
-    return best;
 }
 
 QString TrainListModel::nearestRouteStationCode(const TrainKey &key,
@@ -376,7 +356,10 @@ void TrainListModel::applyOne(const TrainPosition &train)
                 if (havePrev && prev->distanceTo(raw) < kStoppedHoldMeters) {
                     snapped = *prev;
                 } else if (!m.onTrack) {
-                    const QGeoCoordinate st = nearestRouteStation(key, raw);
+                    // Pin to the nearest scheduled station, if one is in range
+                    // (value() of a missing/"" code is an invalid coordinate).
+                    const QGeoCoordinate st =
+                        m_stationCoords.value(nearestRouteStationCode(key, raw));
                     if (st.isValid())
                         snapped = st;
                 }

@@ -70,8 +70,8 @@ void DigitrafficClient::setMatcher(TrackService *matcher)
     if (m_matcher == matcher)
         return;
     m_matcher = matcher;
-    // TrackService implements TrackMatcher; hand the model the interface so it can
-    // snap/flag every fix (REST and the shared MQTT path both funnel through it).
+    // Hand the matcher to the model so it can snap/flag every fix (REST and the
+    // shared MQTT path both funnel through it).
     m_model->setMatcher(matcher);
     emit matcherChanged();
 }
@@ -237,15 +237,19 @@ void DigitrafficClient::handleStations(QNetworkReply *reply)
     const QJsonArray arr = doc.array();
     QHash<QString, QGeoCoordinate> coords;
     coords.reserve(arr.size());
+    m_stationNames.clear();
+    m_stationNames.reserve(arr.size());
     for (const QJsonValue &v : arr) {
         const QJsonObject o = v.toObject();
         const QString code = o.value("stationShortCode").toString();
-        const double lat = o.value("latitude").toDouble();
-        const double lon = o.value("longitude").toDouble();
-        if (!code.isEmpty())
-            coords.insert(code, QGeoCoordinate(lat, lon));
+        if (code.isEmpty())
+            continue;
+        coords.insert(code, QGeoCoordinate(o.value("latitude").toDouble(),
+                                           o.value("longitude").toDouble()));
+        m_stationNames.insert(code, o.value("stationName").toString());
     }
     m_model->setStationCoords(coords);
+    emit stationNamesChanged();
 }
 
 void DigitrafficClient::handleReply(QNetworkReply *reply)

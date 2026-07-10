@@ -5,8 +5,8 @@
 #include <algorithm>
 #include <cmath>
 
-/// Conversions between EPSG:3067 (ETRS-TM35FIN, the CRS the Digitraffic
-/// infra-api returns) and WGS84 lon/lat (what the map layer expects).
+/// Conversion from EPSG:3067 (ETRS-TM35FIN, the CRS the Digitraffic infra-api
+/// returns) to WGS84 lon/lat (what the map layer expects).
 ///
 /// ETRS-TM35FIN is a Transverse Mercator projection on the GRS80 ellipsoid.
 /// ETRS89 and WGS84 differ by only a few centimetres here, so the result is
@@ -65,43 +65,6 @@ inline QGeoCoordinate toWgs84(double E, double N)
               / cosp;
 
     return QGeoCoordinate(lat * 180.0 / kPi, lon * 180.0 / kPi);
-}
-
-/// WGS84 lat/lon (degrees) -> EPSG:3067 easting/northing (metres).
-inline void fromWgs84(double latDeg, double lonDeg, double &E, double &N)
-{
-    const double e2  = f * (2.0 - f);
-    const double ep2 = e2 / (1.0 - e2);
-
-    const double phi = latDeg * kPi / 180.0;
-    const double lam = lonDeg * kPi / 180.0;
-
-    const double sinp = std::sin(phi);
-    const double cosp = std::cos(phi);
-    const double tanp = std::tan(phi);
-
-    const double Nn = a / std::sqrt(1 - e2 * sinp * sinp);
-    const double T  = tanp * tanp;
-    const double C  = ep2 * cosp * cosp;
-    const double A  = (lam - lon0) * cosp;
-
-    const double M = a
-        * ((1 - e2 / 4 - 3 * e2 * e2 / 64 - 5 * e2 * e2 * e2 / 256) * phi
-           - (3 * e2 / 8 + 3 * e2 * e2 / 32 + 45 * e2 * e2 * e2 / 1024) * std::sin(2 * phi)
-           + (15 * e2 * e2 / 256 + 45 * e2 * e2 * e2 / 1024) * std::sin(4 * phi)
-           - (35 * e2 * e2 * e2 / 3072) * std::sin(6 * phi));
-
-    E = FE + k0 * Nn
-            * (A
-               + (1 - T + C) * std::pow(A, 3) / 6
-               + (5 - 18 * T + T * T + 72 * C - 58 * ep2) * std::pow(A, 5) / 120);
-
-    N = FN + k0
-            * (M
-               + Nn * tanp
-                     * (A * A / 2
-                        + (5 - T + 9 * C + 4 * C * C) * std::pow(A, 4) / 24
-                        + (61 - 58 * T + T * T + 600 * C - 330 * ep2) * std::pow(A, 6) / 720));
 }
 
 // --- Local tangent-plane nearest-point-on-segment matching -------------------

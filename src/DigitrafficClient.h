@@ -46,6 +46,12 @@ public:
     TrackService *matcher() const { return m_matcher; }
     void setMatcher(TrackService *matcher);
 
+    /// Station short-code -> display name, parsed from the same one-shot
+    /// /metadata/stations reply that feeds the model's coordinates. Shared with
+    /// TrainDetailsService (via its `fleet` property) so the endpoint is fetched
+    /// once per launch. Empty until the fetch lands (stationNamesChanged fires).
+    QHash<QString, QString> stationNames() const { return m_stationNames; }
+
 public slots:
     /// Fetch the latest positions once, immediately.
     void refresh();
@@ -61,14 +67,15 @@ signals:
     void pollIntervalMsChanged();
     void statusChanged();
     void matcherChanged();
+    void stationNamesChanged();
 
 private:
     void handleReply(QNetworkReply *reply);
     /// @param full  true for an authoritative full snapshot (accumulated maps are
     ///              reset first); false for an incremental version-delta merge.
     void handleCategories(QNetworkReply *reply, bool full);
-    /// One-shot at startup: load station short-code -> coordinate so the model can
-    /// pin a parked, off-network train to its scheduled station.
+    /// One-shot at startup: load station short-code -> coordinate (for the model's
+    /// parked-train station pin) and -> name (shared via stationNames()).
     void fetchStations();
     void handleStations(QNetworkReply *reply);
     void setStatus(const QString &status);
@@ -79,6 +86,7 @@ private:
     QTimer m_timer;
     bool m_active = false;
     QString m_status;
+    QHash<QString, QString> m_stationNames;   ///< shortCode -> name (see stationNames())
 
     // ---- /live-trains incremental polling state ----------------------------
     // Highest Train.version seen since the last full snapshot; the next delta

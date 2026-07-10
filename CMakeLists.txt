@@ -27,7 +27,6 @@ qt_add_executable(TrainsOnMap
     src/DigitrafficClient.h     src/DigitrafficClient.cpp
     src/TrainListModel.h        src/TrainListModel.cpp
     src/TrackService.h          src/TrackService.cpp
-    src/TrackMatcher.h
     src/RailGraph.h             src/RailGraph.cpp
     src/TrackListModel.h        src/TrackListModel.cpp
     src/TrainDetailsService.h   src/TrainDetailsService.cpp
