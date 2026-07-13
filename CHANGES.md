@@ -8,6 +8,50 @@ Legend: ✨ feature · 🐛 bug fix · ♻️ change/refactor · ✅ verificatio
 
 ---
 
+## UI-audit accessibility fixes — marker contrast, type scale, a11y, panel overflow
+
+Four `qt-ui-design` audit findings, applied to the QML surface (no C++). PR #41.
+
+### 🐛 Marker label contrast (WCAG)
+- [x] `TrainMarker` capsule labels hardcoded white ink, which fell below 4.5:1 on the
+      light train hues (cyan/orange/pink/stale-grey). New `inkFor()` picks black or
+      white by true sRGB relative luminance — per train type, mirroring
+      `Theme.accentText` — and `labelInk` drives the badge, km/h and `+N min` labels.
+
+### ♻️ Type scale + accessibility polish
+- [x] Capsule labels routed through `TypeScale.caption` (were raw 9/11 px; the 9 px
+      sub-labels sat below the scale's documented 11 px floor).
+- [x] Carriage cells expose `Accessible.name`/`description` (type · power · amenities)
+      so that detail is reachable without the hover tooltip (`TrainDetailPanel.qml`).
+- [x] `InfoPanel` wraps its content in a `Flickable` and caps its height to the space
+      below the top margin, so a short window scrolls the card (themed scrollbar)
+      instead of clipping the lower sections off-screen (`InfoPanel.qml`).
+
+### ✅ Verification
+- [x] Clean `linux-release` build (qmlcachegen validates the QML); smoke-launched with
+      an empty log (no QML warnings). Deferred: keyboard-reachable markers and sidebar
+      cursor consistency (audit #3/#6) — see **Still open** below.
+
+---
+
+## Track-category styling + themed timetable scrollbar
+
+PR #38. Running lines vs sidings now read distinctly, and the timetable scrollbar
+matches the dark panel.
+
+### ✨ Track categories by `paaraide`
+- [x] `RailGraph`/`TrackService` carry each segment's `paaraide` main-track flag
+      through to a `mainTrack` role on `TrackListModel`; the `Main.qml` track delegate
+      draws running lines bolder/opaque (`Theme.railColor`, width 2.2) and sidings
+      thinner/dimmer (`Theme.railSidingColor`, width 1.3). Sidings hide via the legend
+      toggle.
+
+### ✨ Themed timetable scrollbar
+- [x] The timetable `ScrollBar` gets a thin muted-ink handle that fades in on
+      hover/press, reading correctly on the dark card (`TrainDetailPanel.qml`).
+
+---
+
 ## Map/legend polish — filters, cause text, breadcrumb trail
 
 Four small features, each reusing an existing service/pattern rather than
@@ -399,6 +443,8 @@ implemented (see "Dark mode, map panning & UI-audit polish" above).
 - [ ] Action buttons are 32 px tall (below the 44 px desktop / 48 px touch guide).
 - [ ] `TrainDetailPanel` only toggles `visible` — add a 200–300 ms enter/exit
       transition.
-- [ ] Timetable `ScrollBar` styling needs refinement to match the dark panel.
-- [ ] Dark basemap tile cache: stale `light_all` tiles linger after switching
-      theme (the Qt `osm` plugin caches tiles by coordinates, not by host).
+- [x] ~~Timetable `ScrollBar` styling needs refinement to match the dark panel.~~
+      Done — themed handle (PR #38).
+- [x] ~~Dark basemap tile cache: stale `light_all` tiles linger after switching
+      theme.~~ Done — `Main.qml` gives each basemap style its own cache directory
+      (`cacheDirFor`).
