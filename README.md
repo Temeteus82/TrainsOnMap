@@ -237,11 +237,17 @@ matching compiler, and Run.
   `Theme.qml`; edit the CARTO style strings or palette tokens there.
 - **Reduced motion:** `Theme.reducedMotion` (persisted via `QtCore.Settings`,
   category `Appearance`) — when `true`, non-essential animation (the LIVE pulse)
-  is skipped. Type scale lives in `TypeScale.qml`.
+  is skipped. Type scale lives in `TypeScale.qml`: the plain roles
+  (`caption`/`body`/…) size map-space text, and a `panel*` family at 0.75×
+  sizes the overlay panels and train marker badges.
 - **Train colours:** the type/category→colour map is in `TrainMarker.qml`
   (`colorFor()`); tweak the hex values or add train types there.
-- **Marker labels:** `labelsVisible: map.zoomLevel >= 8.0` on the `TrainMarker`
-  delegate in `Main.qml` — below this zoom only dots are drawn, to avoid clutter.
+- **Marker labels:** `labelsVisible` on the `TrainMarker` delegate in `Main.qml`
+  drops to dots-only below zoom 8, **and** whenever another train sits within
+  ~30 px on screen (`nearestNeighborMeters` vs. `map.metersPerPixel()`) — the
+  latter declutters a busy terminus like Helsinki even when zoomed in enough
+  for labels elsewhere. Marker text renders via `Text.NativeRendering` (crisper
+  than the GPU distance-field default at this small a size).
 - **Start region:** the `mapLoader` `savedCenterLat` / `savedCenterLon` /
   `savedZoom` properties in `Main.qml` (the view is restored from these and
   preserved across a theme-driven map reload).
@@ -251,13 +257,16 @@ matching compiler, and Run.
 
 ## Ideas for next steps
 
-- Favourite/pinned trains, persisted via `QtCore.Settings`.
-- "Nearest trains to me" using the already-linked `QtPositioning` module.
+No open feature ideas right now — favourite/pinned trains and "nearest trains
+to me" were both considered and declined (see `CHANGES.md`). The one
+remaining deferred item is a `/trains/{date}` summary cache, held back only
+because `/live-trains` already covers the same need.
 
 Recently shipped: a **station departure board** (click a station dot),
 **punctuality stats** (on-time % per category, aggregated from `/live-trains`),
-and an optional **road-weather overlay** (Fintraffic road stations — the rail API
-has no weather, so it's a nearby-conditions proxy, labelled as road).
+an optional **weather overlay** (FMI open-data observations), and a round of
+UI polish — OS-scalable panel text, density-aware marker-label declutter near
+busy termini, keyboard map panning, and fade transitions on the side panels.
 
 See `CHANGES.md`'s **Known issues / follow-ups** for the full rationale on
-why each of these is deferred rather than done.
+why the remaining item is deferred rather than done.

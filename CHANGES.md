@@ -33,6 +33,56 @@ The road-weather proxy is replaced with real weather observations.
 
 ---
 
+## Panel/marker type scale + crisper small text
+
+### 🐛 Side-panel and marker text too large
+- [x] `TypeScale` gained a `panel*` role family (`panelCaption`/`panelBody`/
+      `panelSubhead`/`panelTitle` + matching icon sizes) at a fixed 0.75×
+      `panelScale`, alongside the existing plain roles. `InfoPanel`,
+      `TrainDetailPanel`, `StationBoardPanel`, `ToggleRow`, and the train
+      marker badge text (`TrainMarker.qml`) now reference the `panel*` roles;
+      the FMI weather map chip still uses the plain scale (untouched — not
+      flagged).
+
+### 🐛 Blurry small text on train markers
+- [x] Shrinking the marker text to `panelCaption` (8.25 pt) exposed the
+      softness of Qt Quick's default `Text.QtRendering` (GPU distance-field
+      glyphs) at small sizes. Set `renderType: Text.NativeRendering` on the
+      three `TrainMarker.qml` labels (badge, speed, delay) — platform-hinted
+      rasterisation, crisp at small sizes, and fine here since this text is
+      never transformed/scaled (NativeRendering's one real limitation).
+
+### ✅ Verification
+- [x] Clean `linux-release` build after each step; `ctest` 3/3; app launched
+      (persistent, not just a smoke-timeout) and eyeballed live by the user,
+      who confirmed the result looks good.
+
+---
+
+## Marker declutter near busy termini (e.g. Helsinki)
+
+### ✨ Density-aware label suppression
+- [x] Qt Location has no built-in marker clustering (`MapItemView` is a plain
+      model→delegate repeater — checked against the Qt 6.11 docs), so this is
+      app logic. `TrainListModel` now precomputes `nearestNeighborMeters` for
+      every row once per REST snapshot (O(n²) over the live fleet, but only
+      every 60 s, so trivially cheap); MQTT single-train upserts don't
+      recompute it since a terminus is essentially stationary between polls.
+- [x] `Main.qml`'s train delegate combines that with a zoom/latitude-derived
+      ground resolution (`map.metersPerPixel`, standard spherical-Mercator
+      formula) so `labelsVisible` drops to a bare dot whenever another train
+      is closer than ~30 px on screen — on top of the existing zoom < 8
+      country-scale collapse. A stationary cluster at a terminus platform now
+      reads as dots instead of overlapping text badges.
+
+### ✅ Verification
+- [x] Clean `linux-release` build; app launches with no QML warnings; `ctest`
+      3/3. Not yet eyeballed against a live cluster of trains at Helsinki
+      (needs the app running against live Digitraffic data at the right time
+      of day).
+
+---
+
 ## Feature batch — station board, punctuality stats, road-weather overlay
 
 Three of the deferred feature ideas, built API-first (endpoints verified against
@@ -467,14 +517,8 @@ From the `qt-ui-design` audit. The three **Critical** (WCAG / core-law) findings
 - [x] **Station departure board** — done: clickable station layer +
       `StationBoardService`/`StationBoardModel` + `StationBoardPanel` over
       `/live-trains/station/{code}` (see the feature batch section above).
-- [ ] **Favourite/pinned trains** — persist a few train numbers via
-      `QtCore.Settings` (same mechanism as `Theme.reducedMotion`), badge them
-      on the map. Small, but touches `TrainMarker`/`TrainListModel` for the
-      badge and needs a UI to manage the pinned list.
-- [ ] **"Nearest trains to me"** — `QtPositioning` is already a linked module
-      and unused; a "locate me" button + distance sort. Needs a geolocation
-      permission prompt and a sorted/filtered train list UI (InfoPanel doesn't
-      have a list view today, only counts).
+- [x] ~~**Favourite/pinned trains**~~ — declined, not appealing.
+- [x] ~~**"Nearest trains to me"**~~ — declined, not appealing.
 - [x] **Rail-weather overlay** — done: first as a Fintraffic **road**-weather
       proxy (the rail API publishes no weather), since replaced by real FMI
       open-data observations (`FmiWeatherClient`, see the FMI section above).
@@ -495,15 +539,24 @@ implemented (see "Dark mode, map panning & UI-audit polish" above).
 - [x] Dark theme for overlays — basemap + all overlay colours follow `Theme`.
 
 **📋 Still open**
-- [ ] Type sizes are px, not `pointSize` — they don't yet honour the OS
-      "Large font" scale (only the count/number of distinct sizes was fixed).
-- [ ] Sidebar redundant affordances: "Load tracks" re-pushes the static network
-      (no-op), and the track count is shown twice (count label + `status`).
-- [ ] Map markers are click-only (`MouseArea`) — not keyboard-reachable; no
-      keyboard pan.
-- [ ] Action buttons are 32 px tall (below the 44 px desktop / 48 px touch guide).
-- [ ] `TrainDetailPanel` only toggles `visible` — add a 200–300 ms enter/exit
-      transition.
+- [x] ~~Type sizes are px, not `pointSize`.~~ Done — every `TypeScale`-driven
+      label now sets `font.pointSize` instead of `pixelSize`, so text follows
+      the OS "Large text" / accessibility DPI setting.
+- [x] ~~Sidebar redundant affordances.~~ Done — dropped the "Load tracks"
+      button (auto-refresh on pan/zoom already covered it, so it was a no-op)
+      and stopped `TrackService::loadForBounds` from restating the viewport
+      count into `status`, which duplicated the dedicated track-count label.
+- [x] ~~Map markers are click-only; no keyboard pan.~~ Partially done — the map
+      itself now pans with the arrow keys (existing Ctrl+/- already zoomed).
+      Individual train markers still aren't Tab-reachable one-by-one; doing
+      that properly needs a train list view, which is out of scope now that
+      the list-dependent feature ideas below were declined.
+- [x] ~~Action buttons are 32 px tall.~~ Done — Refresh is now 44 px
+      (the only action button left after "Load tracks" was removed).
+- [x] ~~`TrainDetailPanel` only toggles `visible`.~~ Done — both right-side
+      panels (train detail + station board) now fade over 220 ms; the loaded
+      item is kept around (hidden) after first use instead of being torn down,
+      so the closing fade has something to animate.
 - [x] ~~Timetable `ScrollBar` styling needs refinement to match the dark panel.~~
       Done — themed handle (PR #38).
 - [x] ~~Dark basemap tile cache: stale `light_all` tiles linger after switching

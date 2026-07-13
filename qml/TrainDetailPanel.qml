@@ -51,13 +51,13 @@ Rectangle {
                 Label {
                     text: root.details.title
                     font.bold: true
-                    font.pixelSize: TypeScale.title
+                    font.pointSize: TypeScale.panelTitle
                     color: Theme.textStrong
                 }
                 Label {
                     text: root.details.subtitle
                     color: Theme.textMuted
-                    font.pixelSize: TypeScale.body
+                    font.pointSize: TypeScale.panelBody
                     visible: text.length > 0
                 }
             }
@@ -65,7 +65,7 @@ Rectangle {
                 text: qsTr("CANCELLED")
                 color: "white"
                 padding: 4
-                font.pixelSize: TypeScale.caption
+                font.pointSize: TypeScale.panelCaption
                 font.bold: true
                 background: Rectangle { color: Theme.cancelledBg; radius: 4 }
                 visible: root.details.cancelled
@@ -84,7 +84,7 @@ Rectangle {
                     anchors.centerIn: parent
                     name: "close"
                     color: Theme.textMuted
-                    size: TypeScale.iconSm
+                    size: TypeScale.panelIconSm
                 }
                 // Keyboard focus ring.
                 Rectangle {
@@ -110,7 +110,7 @@ Rectangle {
         Label {
             text: root.details.status
             color: Theme.textMuted
-            font.pixelSize: TypeScale.caption
+            font.pointSize: TypeScale.panelCaption
             visible: text.length > 0
         }
 
@@ -121,7 +121,7 @@ Rectangle {
             Layout.fillWidth: true
             wrapMode: Text.WordWrap
             color: Theme.textMuted
-            font.pixelSize: TypeScale.caption
+            font.pointSize: TypeScale.panelCaption
             visible: root.matchInfo
                      && ((root.matchInfo.offset !== undefined && root.matchInfo.offset >= 0)
                          || (root.matchInfo.accuracy !== undefined && root.matchInfo.accuracy >= 0))
@@ -163,14 +163,14 @@ Rectangle {
             Label {
                 text: qsTr("Carriage order")
                 font.bold: true
-                font.pixelSize: TypeScale.body
+                font.pointSize: TypeScale.panelBody
                 color: Theme.textStrong
             }
             Label {
                 text: root.details.compositionLeg
                 visible: text.length > 0
                 color: Theme.textMuted
-                font.pixelSize: TypeScale.caption
+                font.pointSize: TypeScale.panelCaption
             }
 
             // Carriage strip. Cars size up to fill the width on one row, then wrap
@@ -247,14 +247,14 @@ Rectangle {
                                         visible: car.locomotive
                                         name: "train"
                                         color: Theme.textStrong
-                                        size: TypeScale.iconSm
+                                        size: TypeScale.panelIconSm
                                     }
                                     Label {
                                         anchors.centerIn: parent
                                         visible: !car.locomotive
                                         text: car.label
                                         font.bold: true
-                                        font.pixelSize: TypeScale.body
+                                        font.pointSize: TypeScale.panelBody
                                         color: Theme.textStrong
                                     }
                                 }
@@ -264,7 +264,7 @@ Rectangle {
                                     Layout.fillWidth: true
                                     horizontalAlignment: Text.AlignHCenter
                                     text: car.vehicleType
-                                    font.pixelSize: TypeScale.caption
+                                    font.pointSize: TypeScale.panelCaption
                                     color: Theme.textMuted
                                     elide: Text.ElideRight
                                     visible: text.length > 0
@@ -306,13 +306,13 @@ Rectangle {
                 text: root.details.compositionSummary
                 visible: text.length > 0
                 color: Theme.textMuted
-                font.pixelSize: TypeScale.caption
+                font.pointSize: TypeScale.panelCaption
             }
             Label {
                 text: qsTr("Consist changes en route")
                 visible: root.details.compositionSectionCount > 1
                 color: Theme.textMuted
-                font.pixelSize: TypeScale.caption
+                font.pointSize: TypeScale.panelCaption
                 font.italic: true
             }
 
@@ -328,7 +328,7 @@ Rectangle {
                 text: qsTr("%1 of %2 stops").arg(root.details.model.passedStops)
                                             .arg(root.details.model.totalStops)
                 color: Theme.textMuted
-                font.pixelSize: TypeScale.caption
+                font.pointSize: TypeScale.panelCaption
             }
             Rectangle {   // progress track
                 Layout.fillWidth: true
@@ -391,7 +391,7 @@ Rectangle {
                 Label {
                     Layout.fillWidth: true
                     text: qsTr("Show all timing points")
-                    font.pixelSize: TypeScale.body
+                    font.pointSize: TypeScale.panelBody
                     color: Theme.textStrong
                 }
             }
@@ -513,7 +513,7 @@ Rectangle {
                             spacing: 6
                             Label {
                                 text: stopRow.stationName
-                                font.pixelSize: TypeScale.body
+                                font.pointSize: TypeScale.panelBody
                                 font.strikeout: stopRow.cancelled
                                 font.bold: stopRow.isNext
                                 color: stopRow.stopping ? Theme.textStrong : Theme.textMuted
@@ -532,7 +532,7 @@ Rectangle {
                                     anchors.centerIn: parent
                                     text: qsTr("NEXT")
                                     color: Theme.accentText
-                                    font.pixelSize: TypeScale.caption
+                                    font.pointSize: TypeScale.panelCaption
                                     font.bold: true
                                 }
                             }
@@ -542,7 +542,7 @@ Rectangle {
                                   ? (stopRow.track.length > 0 ? qsTr("Track %1").arg(stopRow.track) : "")
                                   : qsTr("passing")
                             color: Theme.textMuted
-                            font.pixelSize: TypeScale.caption
+                            font.pointSize: TypeScale.panelCaption
                             font.italic: !stopRow.stopping
                             visible: text.length > 0
                         }
@@ -551,7 +551,7 @@ Rectangle {
                             Layout.fillWidth: true
                             text: stopRow.causeText
                             color: Theme.textMuted
-                            font.pixelSize: TypeScale.caption
+                            font.pointSize: TypeScale.panelCaption
                             font.italic: true
                             elide: Text.ElideRight
                             visible: text.length > 0
@@ -565,7 +565,7 @@ Rectangle {
                         visible: stopRow.stopping
                         Label {
                             Layout.alignment: Qt.AlignRight
-                            font.pixelSize: TypeScale.body
+                            font.pointSize: TypeScale.panelBody
                             color: Theme.textStrong
                             visible: stopRow.scheduledArrival.length > 0
                             text: stopRow.estimatedArrival.length > 0
@@ -574,7 +574,7 @@ Rectangle {
                         }
                         Label {
                             Layout.alignment: Qt.AlignRight
-                            font.pixelSize: TypeScale.body
+                            font.pointSize: TypeScale.panelBody
                             color: Theme.textStrong
                             visible: stopRow.scheduledDeparture.length > 0
                             text: stopRow.estimatedDeparture.length > 0
@@ -587,7 +587,7 @@ Rectangle {
                     Label {
                         Layout.alignment: Qt.AlignRight
                         visible: !stopRow.stopping && stopRow.passTime.length > 0
-                        font.pixelSize: TypeScale.body
+                        font.pointSize: TypeScale.panelBody
                         color: Theme.textMuted
                         text: stopRow.passEst.length > 0
                               ? qsTr("%1 → %2").arg(stopRow.passTime).arg(stopRow.passEst)
@@ -599,7 +599,7 @@ Rectangle {
                         Layout.alignment: Qt.AlignRight
                         Layout.preferredWidth: 42
                         horizontalAlignment: Text.AlignRight
-                        font.pixelSize: TypeScale.body
+                        font.pointSize: TypeScale.panelBody
                         font.bold: true
                         visible: stopRow.stopping
                         color: stopRow.delayMinutes > 0 ? Theme.delayLate

@@ -56,7 +56,7 @@ Item {
         Label {
             Layout.fillWidth: true
             text: root.label
-            font.pixelSize: TypeScale.body
+            font.pointSize: TypeScale.panelBody
             color: Theme.textStrong
         }
     }

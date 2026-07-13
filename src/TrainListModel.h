@@ -111,6 +111,8 @@ public:
         DelayMinutesRole, ///< live delay at the last passed stop (pairs a number with the ring colour)
         AccuracyRole,     ///< GPS uncertainty radius in metres; -1 if unreported
         TrackOffsetRole,  ///< metres from the nearest rail (map-matched); -1 if not matched yet
+        NearestNeighborRole, ///< metres to the nearest other live train; -1 if none. Drives
+                             ///< label declutter near a busy terminus (e.g. Helsinki).
     };
 
     explicit TrainListModel(QObject *parent = nullptr);
@@ -169,6 +171,7 @@ private:
         TrainPosition pos;
         double bearing = 0.0;
         double trackOffsetMeters = -1.0;  ///< raw fix's distance to nearest rail; -1 if unmatched
+        double nearestNeighborMeters = -1.0;  ///< distance to nearest other live train; -1 if none
         QGeoCoordinate rawCoordinate;     ///< unsnapped fix (for the debug overlay)
         QString matchedTunniste;          ///< track OID the fix matched, "" if none
         double chainage = -1.0;           ///< 1-D route position carried across fixes
@@ -183,6 +186,12 @@ private:
 
     /// Rebuild trainNumber -> row index after rows are removed.
     void reindex();
+
+    /// Recompute nearestNeighborMeters for every row (O(n^2) over the live
+    /// fleet). Only called once per REST snapshot in updateTrains() — cheap at
+    /// that cadence, and MQTT single-train upserts don't move a parked train
+    /// (the case this matters for, e.g. a terminus) enough to need it live.
+    void recomputeNearestNeighbors();
 
     /// Bearing from the train's previous coordinate; also records the new one.
     double bearingFor(const TrainKey &key, const QGeoCoordinate &coordinate);

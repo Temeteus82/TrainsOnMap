@@ -16,11 +16,6 @@ ApplicationWindow {
     title: qsTr("Trains on Map — Finland (Digitraffic)")
     color: Theme.windowBg
 
-    // Ask the (Loader-hosted) map to reload tracks for the current viewport.
-    // Routed as a signal so the call lives inside the Map's typed scope rather
-    // than reaching through the loosely-typed Loader.item.
-    signal requestTrackReload()
-
     // Per-style basemap tile-cache directory. Qt's OSM disk cache keys tiles by
     // map-type id only (both light_all and dark_all are the one CustomMap type),
     // not by host — so without separate directories the two styles share a cache
@@ -197,6 +192,13 @@ ApplicationWindow {
             copyrightsVisible: true
             color: Theme.windowBg     // neutral backdrop shown while tiles load
 
+            // Ground resolution (metres/px) at this latitude and the map's current
+            // zoom — standard spherical-Mercator formula for 256 px tiles. Used to
+            // turn a screen-space declutter radius into a real-world one.
+            function metersPerPixel(lat) {
+                return 156543.03392 * Math.cos(lat * Math.PI / 180) / Math.pow(2, zoomLevel)
+            }
+
             // The CARTO tiles arrive as the plugin's "custom" map type; activate it.
             function selectBasemap() {
                 for (let i = 0; i < supportedMapTypes.length; ++i) {
@@ -252,12 +254,6 @@ ApplicationWindow {
             Connections {
                 target: trackService
                 function onGeometryReady() { map.refreshTracks() }
-            }
-
-            // "Load tracks" button (relayed via win) → refresh this viewport.
-            Connections {
-                target: win
-                function onRequestTrackReload() { map.refreshTracks() }
             }
 
             // Track geometry layer (drawn beneath the trains).
@@ -359,7 +355,7 @@ ApplicationWindow {
                             id: chipText
                             anchors.centerIn: parent
                             text: model.tempText
-                            font.pixelSize: TypeScale.caption
+                            font.pointSize: TypeScale.caption
                             color: Theme.textStrong
                         }
                     }
@@ -402,7 +398,17 @@ ApplicationWindow {
                     selected: trainDetails.hasSelection && trainDetails.trainNumber === model.trainNumber
                     // Dots only at country scale; reveal the text badges once
                     // zoomed in enough that they no longer collide into a blur.
+                    // Density check on top: a terminus (e.g. Helsinki) can have
+                    // several trains within a couple hundred metres of each other
+                    // even at a zoom where labels are otherwise legible, so also
+                    // drop to a dot if the nearest other train is closer than
+                    // ~30 px on screen (nearestNeighborMeters is precomputed once
+                    // per poll in TrainListModel; ponytail: 30 px is a tuned
+                    // heuristic, not derived from the badge's actual size).
                     labelsVisible: map.zoomLevel >= 8.0
+                                   && (model.nearestNeighborMeters < 0
+                                       || model.nearestNeighborMeters
+                                          > 30 * map.metersPerPixel(model.coordinate.latitude))
                     onClicked: (trainNumber, departureDate) => {
                         trainDetails.show(trainNumber, departureDate)
                         stationBoard.clear()   // right panel shows one thing
@@ -412,7 +418,19 @@ ApplicationWindow {
 
             // ---- Pan / zoom input (Qt 6 needs explicit handlers) --------------
             // Drag to pan, wheel/trackpad to zoom, pinch to zoom; the map stays
-            // north-up (no rotation handler). Keyboard +/- zoom in steps too.
+            // north-up (no rotation handler). Keyboard +/- zoom in steps too, and
+            // arrow keys pan (W4 — markers themselves stay mouse-only, but the map
+            // view is now fully keyboard-reachable).
+            focus: true
+            Keys.onPressed: (event) => {
+                const step = 80   // px per key-repeat, matches a comfortable drag
+                switch (event.key) {
+                case Qt.Key_Left:  map.pan(-step, 0); event.accepted = true; break
+                case Qt.Key_Right: map.pan(step, 0);  event.accepted = true; break
+                case Qt.Key_Up:    map.pan(0, -step); event.accepted = true; break
+                case Qt.Key_Down:  map.pan(0, step);  event.accepted = true; break
+                }
+            }
             PinchHandler {
                 id: pinch
                 target: null
@@ -461,21 +479,26 @@ ApplicationWindow {
 
         trainCount: trainClient.model.count
         trackCount: trackService.model.count
-        tracksLoading: trackService.loading
         streamConnected: trainStream.connected
         streamStatus: trainStream.status
         punctuality: trainClient.punctuality
         statusText: trackService.status.length > 0 ? trackService.status : trainClient.status
 
         onRefreshRequested: trainClient.refresh()
-        onLoadTracksRequested: win.requestTrackReload()
     }
 
-    // Timetable detail panel — only built once a train is picked, so its
-    // subtree isn't constructed/compiled on the startup path.
+    // Timetable detail panel — only built once a train is picked (still true:
+    // `everShown` latches true on first use so the item then persists, hidden,
+    // instead of being torn down — that's what lets the close fade actually play
+    // rather than popping the panel out instantly).
     Loader {
         id: detailPanelLoader
-        active: trainDetails.hasSelection
+        property bool everShown: false
+        active: trainDetails.hasSelection || everShown
+        onActiveChanged: if (active) everShown = true
+        opacity: trainDetails.hasSelection ? 1 : 0
+        visible: opacity > 0
+        Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
         width: 340
         anchors.right: parent.right
         anchors.top: parent.top
@@ -489,10 +512,15 @@ ApplicationWindow {
 
     // Station board — same right-side slot as the train detail panel; the two are
     // mutually exclusive (selecting a train clears the station board and vice
-    // versa), so they never overlap. Built only while a station is selected.
+    // versa), so they never overlap. Same lazy-build-then-fade treatment as above.
     Loader {
         id: stationBoardLoader
-        active: stationBoard.hasSelection
+        property bool everShown: false
+        active: stationBoard.hasSelection || everShown
+        onActiveChanged: if (active) everShown = true
+        opacity: stationBoard.hasSelection ? 1 : 0
+        visible: opacity > 0
+        Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
         width: 320
         anchors.right: parent.right
         anchors.top: parent.top
