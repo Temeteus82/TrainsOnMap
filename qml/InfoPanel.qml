@@ -32,9 +32,8 @@ Rectangle {
     // declutter the map; running lines always show.
     property bool showSidings: true
 
-    // Optional road-weather overlay (off by default). Fintraffic *road* stations
-    // — the rail API has no weather — shown as a nearby-conditions proxy.
-    property bool showRoadWeather: false
+    // Optional weather overlay (off by default): FMI open-data observations.
+    property bool showWeather: false
 
     signal refreshRequested()
     signal loadTracksRequested()
@@ -324,17 +323,17 @@ Rectangle {
         }
 
         ToggleRow {
-            label: qsTr("Road weather")
-            checked: root.showRoadWeather
-            onToggled: root.showRoadWeather = !root.showRoadWeather
+            label: qsTr("Weather")
+            checked: root.showWeather
+            onToggled: root.showWeather = !root.showWeather
         }
         Label {
             Layout.fillWidth: true
-            text: qsTr("Fintraffic road stations (air °C) — nearby-conditions proxy, not rail.")
+            text: qsTr("FMI weather stations (air °C).")
             font.pixelSize: TypeScale.caption
             color: Theme.textMuted
             wrapMode: Text.WordWrap
-            visible: root.showRoadWeather
+            visible: root.showWeather
         }
 
         Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.hairline }

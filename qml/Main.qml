@@ -117,11 +117,11 @@ ApplicationWindow {
         fleet: trainClient       // reuses the station code -> name map for destinations
     }
 
-    // Optional ROAD-weather overlay (Fintraffic tie.digitraffic.fi). Idle until the
-    // sidebar toggle turns it on — the rail API has no weather; this is a proxy.
-    RoadWeatherClient {
-        id: roadWeather
-        active: panel.showRoadWeather
+    // Optional weather overlay (FMI open data, opendata.fmi.fi). Idle until the
+    // sidebar toggle turns it on.
+    FmiWeatherClient {
+        id: fmiWeather
+        active: panel.showWeather
     }
 
     // ---- Map ---------------------------------------------------------------
@@ -337,10 +337,10 @@ ApplicationWindow {
                 path: win.trailPoints
             }
 
-            // Optional road-weather overlay: air-temperature chips, shown only
+            // Optional weather overlay (FMI): air-temperature chips, shown only
             // when the layer is enabled (model is empty otherwise) and zoomed in.
             MapItemView {
-                model: roadWeather.model
+                model: fmiWeather.model
                 delegate: MapQuickItem {
                     required property var model
                     visible: map.zoomLevel >= 8.0

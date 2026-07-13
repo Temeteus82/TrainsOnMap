@@ -38,7 +38,7 @@ qt_add_executable(TrainsOnMap
     src/StationBoardModel.h     src/StationBoardModel.cpp
     src/StationBoardService.h   src/StationBoardService.cpp
     src/WeatherStationModel.h   src/WeatherStationModel.cpp
-    src/RoadWeatherClient.h     src/RoadWeatherClient.cpp
+    src/FmiWeatherClient.h      src/FmiWeatherClient.cpp
     src/Projection.h
     src/MqttCodec.h
 )

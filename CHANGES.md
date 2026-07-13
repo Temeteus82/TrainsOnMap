@@ -8,6 +8,31 @@ Legend: ✨ feature · 🐛 bug fix · ♻️ change/refactor · ✅ verificatio
 
 ---
 
+## Weather overlay switched to FMI open data
+
+The road-weather proxy is replaced with real weather observations.
+
+### ♻️ FMI observations replace the Fintraffic road-weather proxy
+- [x] New `FmiWeatherClient` fetches `opendata.fmi.fi` WFS
+      (`fmi::observations::weather::simple`, `parameters=temperature`, whole-country
+      bbox, last-30-min window) and keeps each station's latest reading. The simple
+      format is flat XML (`BsWfsElement`: coordinate + time + value inline), parsed
+      with `QXmlStreamReader` — one request, so the old two-stage
+      station-metadata + data fetch collapses into one. `NaN` values (missing
+      sensor) are skipped. Poll every 10 min (FMI's reporting cadence).
+- [x] `RoadWeatherClient` deleted; `WeatherPoint` drops the unused `name` role
+      (the map chips never showed it and FMI simple has no station names).
+      Sidebar toggle relabelled "Weather" (`showWeather`) — no proxy disclaimer
+      needed now that it's actual weather-station data.
+
+### ✅ Verification
+- [x] Clean `windows-llvm` build; `ctest` 3/3. The client's exact query verified
+      against live FMI data (~190 stations return temperature records).
+      Chip rendering on the running map not yet eyeballed (same delegate as
+      before, only the model source changed).
+
+---
+
 ## Feature batch — station board, punctuality stats, road-weather overlay
 
 Three of the deferred feature ideas, built API-first (endpoints verified against
@@ -450,9 +475,9 @@ From the `qt-ui-design` audit. The three **Critical** (WCAG / core-law) findings
       and unused; a "locate me" button + distance sort. Needs a geolocation
       permission prompt and a sorted/filtered train list UI (InfoPanel doesn't
       have a list view today, only counts).
-- [x] **Rail-weather overlay** — done as a **road**-weather overlay: the rail API
-      publishes no weather, so `RoadWeatherClient` uses Fintraffic road stations
-      (`tie.digitraffic.fi`) as a proxy, labelled as such (see the feature batch).
+- [x] **Rail-weather overlay** — done: first as a Fintraffic **road**-weather
+      proxy (the rail API publishes no weather), since replaced by real FMI
+      open-data observations (`FmiWeatherClient`, see the FMI section above).
 - [x] **On-time / punctuality stats** — done: there is no statistics endpoint, so
       it's aggregated client-side from the `/live-trains` delay data
       (`DigitrafficClient::recomputePunctuality`), no new fetch.
