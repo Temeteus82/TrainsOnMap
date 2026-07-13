@@ -34,6 +34,11 @@ qt_add_executable(TrainsOnMap
     src/TimetableFilterModel.h  src/TimetableFilterModel.cpp
     src/CompositionModel.h      src/CompositionModel.cpp
     src/DigitrafficMqttClient.h src/DigitrafficMqttClient.cpp
+    src/StationListModel.h      src/StationListModel.cpp
+    src/StationBoardModel.h     src/StationBoardModel.cpp
+    src/StationBoardService.h   src/StationBoardService.cpp
+    src/WeatherStationModel.h   src/WeatherStationModel.cpp
+    src/RoadWeatherClient.h     src/RoadWeatherClient.cpp
     src/Projection.h
     src/MqttCodec.h
 )
@@ -51,6 +56,7 @@ qt_add_qml_module(TrainsOnMap
         qml/TrainMarker.qml
         qml/InfoPanel.qml
         qml/TrainDetailPanel.qml
+        qml/StationBoardPanel.qml
         qml/ToggleRow.qml
         qml/Theme.qml
         qml/TypeScale.qml

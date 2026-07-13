@@ -251,12 +251,13 @@ matching compiler, and Run.
 
 ## Ideas for next steps
 
-- Station departure board (click a station, not just a train, to see everything
-  passing through it).
 - Favourite/pinned trains, persisted via `QtCore.Settings`.
 - "Nearest trains to me" using the already-linked `QtPositioning` module.
-- Rail-weather overlay (Digitraffic also publishes track condition data).
-- On-time / punctuality stats badge per train type.
+
+Recently shipped: a **station departure board** (click a station dot),
+**punctuality stats** (on-time % per category, aggregated from `/live-trains`),
+and an optional **road-weather overlay** (Fintraffic road stations — the rail API
+has no weather, so it's a nearby-conditions proxy, labelled as road).
 
 See `CHANGES.md`'s **Known issues / follow-ups** for the full rationale on
 why each of these is deferred rather than done.

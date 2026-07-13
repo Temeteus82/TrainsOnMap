@@ -112,6 +112,18 @@ ApplicationWindow {
         fleet: trainClient       // shares its station code -> name map (one fetch)
     }
 
+    StationBoardService {
+        id: stationBoard
+        fleet: trainClient       // reuses the station code -> name map for destinations
+    }
+
+    // Optional ROAD-weather overlay (Fintraffic tie.digitraffic.fi). Idle until the
+    // sidebar toggle turns it on — the rail API has no weather; this is a proxy.
+    RoadWeatherClient {
+        id: roadWeather
+        active: panel.showRoadWeather
+    }
+
     // ---- Map ---------------------------------------------------------------
     // The CARTO basemap (light_all / dark_all) is chosen by Theme. The osm
     // plugin only reads its tile host at construction, so a theme flip rebuilds
@@ -325,6 +337,63 @@ ApplicationWindow {
                 path: win.trailPoints
             }
 
+            // Optional road-weather overlay: air-temperature chips, shown only
+            // when the layer is enabled (model is empty otherwise) and zoomed in.
+            MapItemView {
+                model: roadWeather.model
+                delegate: MapQuickItem {
+                    required property var model
+                    visible: map.zoomLevel >= 8.0
+                    coordinate: model.coordinate
+                    anchorPoint.x: chip.width / 2
+                    anchorPoint.y: chip.height / 2
+                    sourceItem: Rectangle {
+                        id: chip
+                        radius: 3
+                        color: Theme.cardBg
+                        border.width: 1
+                        border.color: model.tempC < 0 ? "#5b9bf3" : "#e08a3c"
+                        implicitWidth: chipText.implicitWidth + 8
+                        implicitHeight: chipText.implicitHeight + 3
+                        Text {
+                            id: chipText
+                            anchors.centerIn: parent
+                            text: model.tempText
+                            font.pixelSize: TypeScale.caption
+                            color: Theme.textStrong
+                        }
+                    }
+                }
+            }
+
+            // Clickable passenger-station layer (under the trains). Dots appear
+            // once zoomed in enough to pick one out; clicking opens its board.
+            MapItemView {
+                model: trainClient.stations
+                delegate: MapQuickItem {
+                    required property var model
+                    visible: map.zoomLevel >= 9.0
+                    coordinate: model.coordinate
+                    anchorPoint.x: 5
+                    anchorPoint.y: 5
+                    sourceItem: Rectangle {
+                        width: 10; height: 10; radius: 5
+                        color: Theme.cardBg
+                        border.color: Theme.accent
+                        border.width: 2
+                        MouseArea {
+                            anchors.fill: parent
+                            anchors.margins: -6   // enlarge the hit target
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                stationBoard.show(model.code, model.name)
+                                trainDetails.clear()   // right panel shows one thing
+                            }
+                        }
+                    }
+                }
+            }
+
             // Live train layer.
             MapItemView {
                 model: trainClient.model
@@ -334,7 +403,10 @@ ApplicationWindow {
                     // Dots only at country scale; reveal the text badges once
                     // zoomed in enough that they no longer collide into a blur.
                     labelsVisible: map.zoomLevel >= 8.0
-                    onClicked: (trainNumber, departureDate) => trainDetails.show(trainNumber, departureDate)
+                    onClicked: (trainNumber, departureDate) => {
+                        trainDetails.show(trainNumber, departureDate)
+                        stationBoard.clear()   // right panel shows one thing
+                    }
                 }
             }
 
@@ -392,6 +464,7 @@ ApplicationWindow {
         tracksLoading: trackService.loading
         streamConnected: trainStream.connected
         streamStatus: trainStream.status
+        punctuality: trainClient.punctuality
         statusText: trackService.status.length > 0 ? trackService.status : trainClient.status
 
         onRefreshRequested: trainClient.refresh()
@@ -411,6 +484,22 @@ ApplicationWindow {
         sourceComponent: TrainDetailPanel {
             details: trainDetails
             matchInfo: win.selMatch
+        }
+    }
+
+    // Station board — same right-side slot as the train detail panel; the two are
+    // mutually exclusive (selecting a train clears the station board and vice
+    // versa), so they never overlap. Built only while a station is selected.
+    Loader {
+        id: stationBoardLoader
+        active: stationBoard.hasSelection
+        width: 320
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        anchors.margins: 12
+        sourceComponent: StationBoardPanel {
+            service: stationBoard
         }
     }
 }

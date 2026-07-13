@@ -14,6 +14,7 @@ Rectangle {
     property bool tracksLoading: false
     property bool streamConnected: false
     property string streamStatus: ""
+    property string punctuality: ""
 
     // Train-category filter (marker visibility); an unrecognised/empty category
     // (metadata not loaded yet) is always shown, so trains never vanish at startup.
@@ -30,6 +31,10 @@ Rectangle {
     // Track-category toggle: sidings/yards (non-main tracks) can be hidden to
     // declutter the map; running lines always show.
     property bool showSidings: true
+
+    // Optional road-weather overlay (off by default). Fintraffic *road* stations
+    // — the rail API has no weather — shown as a nearby-conditions proxy.
+    property bool showRoadWeather: false
 
     signal refreshRequested()
     signal loadTracksRequested()
@@ -167,6 +172,17 @@ Rectangle {
             color: Theme.textMuted
         }
 
+        // Live on-time summary (per broad category), aggregated from the fleet's
+        // /live-trains delay data. Empty until the first categories fetch lands.
+        Label {
+            Layout.fillWidth: true
+            text: root.punctuality
+            font.pixelSize: TypeScale.caption
+            color: Theme.textMuted
+            wrapMode: Text.WordWrap
+            visible: text.length > 0
+        }
+
         Label {
             Layout.fillWidth: true
             text: root.statusText
@@ -295,6 +311,30 @@ Rectangle {
             label: qsTr("Show sidings")
             checked: root.showSidings
             onToggled: root.showSidings = !root.showSidings
+        }
+
+        Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.hairline }
+
+        // ---- Overlays -------------------------------------------------------
+        Label {
+            text: qsTr("Overlays")
+            font.pixelSize: TypeScale.caption
+            font.bold: true
+            color: Theme.textMuted
+        }
+
+        ToggleRow {
+            label: qsTr("Road weather")
+            checked: root.showRoadWeather
+            onToggled: root.showRoadWeather = !root.showRoadWeather
+        }
+        Label {
+            Layout.fillWidth: true
+            text: qsTr("Fintraffic road stations (air °C) — nearby-conditions proxy, not rail.")
+            font.pixelSize: TypeScale.caption
+            color: Theme.textMuted
+            wrapMode: Text.WordWrap
+            visible: root.showRoadWeather
         }
 
         Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.hairline }

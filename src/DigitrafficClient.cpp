@@ -43,6 +43,7 @@ DigitrafficClient::DigitrafficClient(QObject *parent)
     : QObject(parent)
     , m_net(new QNetworkAccessManager(this))
     , m_model(new TrainListModel(this))
+    , m_stations(new StationListModel(this))
 {
     m_net->setTransferTimeout(kRequestTimeout);
 
@@ -210,6 +211,7 @@ void DigitrafficClient::handleCategories(QNetworkReply *reply, bool full)
     m_model->setTrainMetadata(m_accTypes, m_accCategories, m_accLines);
     m_model->setTrainStatuses(m_accStatuses);
     m_model->setTrainRoutes(m_accRoutes);
+    recomputePunctuality();
 
     if (m_matcher) {
         QVector<QVector<QString>> routeSequences;
@@ -243,16 +245,24 @@ void DigitrafficClient::handleStations(QNetworkReply *reply)
     coords.reserve(arr.size());
     m_stationNames.clear();
     m_stationNames.reserve(arr.size());
+    QVector<StationPoint> passengerStations;   // for the clickable map layer
     for (const QJsonValue &v : arr) {
         const QJsonObject o = v.toObject();
         const QString code = o.value("stationShortCode").toString();
         if (code.isEmpty())
             continue;
-        coords.insert(code, QGeoCoordinate(o.value("latitude").toDouble(),
-                                           o.value("longitude").toDouble()));
-        m_stationNames.insert(code, o.value("stationName").toString());
+        const QGeoCoordinate coord(o.value("latitude").toDouble(),
+                                   o.value("longitude").toDouble());
+        const QString name = o.value("stationName").toString();
+        coords.insert(code, coord);
+        m_stationNames.insert(code, name);
+        // Only passenger stations get a map dot (freight/junction points would
+        // just clutter the board layer, and their station board is uninteresting).
+        if (o.value("passengerTraffic").toBool() && coord.isValid())
+            passengerStations.push_back({code, name, coord});
     }
     m_model->setStationCoords(coords);
+    m_stations->setStations(passengerStations);
     emit stationNamesChanged();
 }
 
@@ -325,4 +335,46 @@ void DigitrafficClient::setStatus(const QString &status)
         return;
     m_status = status;
     emit statusChanged();
+}
+
+void DigitrafficClient::recomputePunctuality()
+{
+    // Aggregate on-time performance from the running fleet: a train is punctual
+    // when it's running, not cancelled, and ≤5 min behind schedule at its last
+    // passed stop. Grouped by the broad categories the sidebar filters on. Reuses
+    // the /live-trains data already polled each cycle — no extra request.
+    struct Tally { int onTime = 0; int total = 0; };
+    QHash<QString, Tally> byCat;
+    for (auto it = m_accStatuses.constBegin(); it != m_accStatuses.constEnd(); ++it) {
+        const TrainStatus &st = it.value();
+        if (!st.known || !st.running || st.cancelled)
+            continue;
+        const QString cat = m_accCategories.value(it.key());
+        if (cat != "Long-distance" && cat != "Commuter" && cat != "Cargo")
+            continue;
+        Tally &t = byCat[cat];
+        ++t.total;
+        if (st.delayMinutes <= 5)
+            ++t.onTime;
+    }
+
+    // Fixed order (matches the sidebar), abbreviated labels.
+    struct Row { const char *cat; const char *label; };
+    static const Row order[] = {
+        {"Long-distance", "LD"}, {"Commuter", "Cmtr"}, {"Cargo", "Cargo"}};
+    QStringList parts;
+    for (const Row &r : order) {
+        const Tally t = byCat.value(QString::fromLatin1(r.cat));
+        if (t.total == 0)
+            continue;
+        parts << QStringLiteral("%1 %2%").arg(QString::fromLatin1(r.label))
+                                         .arg(t.onTime * 100 / t.total);
+    }
+    const QString s = parts.isEmpty()
+        ? QString()
+        : QStringLiteral("On time (≤5m): ") + parts.join(QStringLiteral(" · "));
+    if (m_punctuality != s) {
+        m_punctuality = s;
+        emit punctualityChanged();
+    }
 }

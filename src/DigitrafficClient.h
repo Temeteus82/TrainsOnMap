@@ -7,6 +7,7 @@
 
 #include "TrainListModel.h"
 #include "TrackService.h"
+#include "StationListModel.h"
 
 class QNetworkAccessManager;
 class QNetworkReply;
@@ -23,9 +24,15 @@ class DigitrafficClient : public QObject
     Q_OBJECT
     QML_ELEMENT
     Q_PROPERTY(TrainListModel *model READ model CONSTANT)
+    // Passenger stations for the map's clickable station layer (station board).
+    Q_PROPERTY(StationListModel *stations READ stations CONSTANT)
     Q_PROPERTY(bool active READ isActive WRITE setActive NOTIFY activeChanged)
     Q_PROPERTY(int pollIntervalMs READ pollIntervalMs WRITE setPollIntervalMs NOTIFY pollIntervalMsChanged)
     Q_PROPERTY(QString status READ status NOTIFY statusChanged)
+    // Live punctuality summary (% on time, ≤5 min late) per broad category,
+    // aggregated from the /live-trains delay data already polled each cycle — no
+    // extra request. Empty until the first categories fetch lands.
+    Q_PROPERTY(QString punctuality READ punctuality NOTIFY punctualityChanged)
     // Optional rail-network matcher (a TrackService); when set, the model snaps
     // and flags incoming GPS fixes against the track geometry.
     Q_PROPERTY(TrackService *matcher READ matcher WRITE setMatcher NOTIFY matcherChanged)
@@ -34,6 +41,7 @@ public:
     explicit DigitrafficClient(QObject *parent = nullptr);
 
     TrainListModel *model() const { return m_model; }
+    StationListModel *stations() const { return m_stations; }
 
     bool isActive() const { return m_active; }
     void setActive(bool active);
@@ -42,6 +50,8 @@ public:
     void setPollIntervalMs(int ms);
 
     QString status() const { return m_status; }
+
+    QString punctuality() const { return m_punctuality; }
 
     TrackService *matcher() const { return m_matcher; }
     void setMatcher(TrackService *matcher);
@@ -72,6 +82,7 @@ signals:
     void activeChanged();
     void pollIntervalMsChanged();
     void statusChanged();
+    void punctualityChanged();
     void matcherChanged();
     void stationNamesChanged();
     void causeCategoryNamesChanged();
@@ -90,13 +101,18 @@ private:
     void fetchCauseCategories();
     void handleCauseCategories(QNetworkReply *reply);
     void setStatus(const QString &status);
+    /// Recompute the punctuality summary from the accumulated per-train status +
+    /// category maps (called at the end of handleCategories).
+    void recomputePunctuality();
 
     QNetworkAccessManager *m_net = nullptr;
     TrainListModel *m_model = nullptr;
+    StationListModel *m_stations = nullptr;
     TrackService *m_matcher = nullptr;
     QTimer m_timer;
     bool m_active = false;
     QString m_status;
+    QString m_punctuality;   ///< see punctuality()
     QHash<QString, QString> m_stationNames;   ///< shortCode -> name (see stationNames())
     QHash<QString, QString> m_causeCategoryNames; ///< categoryCode -> name (see causeCategoryNames())
 
