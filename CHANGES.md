@@ -8,6 +8,44 @@ Legend: ✨ feature · 🐛 bug fix · ♻️ change/refactor · ✅ verificatio
 
 ---
 
+## Feature batch — station board, punctuality stats, road-weather overlay
+
+Three of the deferred feature ideas, built API-first (endpoints verified against
+live Digitraffic before coding).
+
+### ✨ #1 Station departure board
+- [x] Passenger stations render as clickable dots (`StationListModel`, populated
+      from the existing /metadata/stations fetch — passenger stations only, shown
+      at zoom ≥ 9). Clicking one opens a board panel.
+- [x] `StationBoardService` fetches `/live-trains/station/{code}` (same train-object
+      shape the app already parses) and turns each calling train into a board row
+      (`StationBoardModel`): time + live estimate, destination, track, delay,
+      arriving/departing. `StationBoardPanel.qml` lists them, sorted by time.
+- [x] Shares the right-side slot with the train detail panel — selecting a station
+      clears any train selection and vice versa, so they never overlap.
+
+### ✨ #5 Punctuality stats
+- [x] No stats endpoint exists, so it's aggregated **client-side** from the
+      `/live-trains` delay data already polled each cycle (`DigitrafficClient::`
+      `recomputePunctuality`): % on time (≤5 min) per broad category, shown as a
+      sidebar caption line. No extra request.
+
+### ✨ #4 Road-weather overlay (labelled as road, not rail)
+- [x] The rail API publishes **no** weather; this uses Fintraffic **road** weather
+      (`tie.digitraffic.fi`) as a nearby-conditions proxy, clearly labelled as such.
+      `RoadWeatherClient` fetches station coords once + air temperature (`ILMA`
+      sensor) on a slow timer; `WeatherStationModel` feeds a map layer of
+      temperature chips. Off by default (idle, no traffic) behind a sidebar
+      "Road weather" toggle.
+
+### ✅ Verification
+- [x] Clean `linux-release` build; app launches with no QML warnings; `ctest` 3/3.
+      Endpoints (`/live-trains/station`, road weather stations + data) verified
+      against live data before implementation. Interactive click/toggle paths not
+      yet eyeballed on the running map.
+
+---
+
 ## UI-audit accessibility fixes — marker contrast, type scale, a11y, panel overflow
 
 Four `qt-ui-design` audit findings, applied to the QML surface (no C++). PR #41.
@@ -400,12 +438,10 @@ From the `qt-ui-design` audit. The three **Critical** (WCAG / core-law) findings
       it's unnecessary for now. Revisit only if a type source independent of
       "currently running" is needed.
 
-### Feature ideas — deferred (bigger than a reuse-only change)
-- [ ] **Station departure board** — click a station (not just a train) and
-      reuse the `TrainDetailsService`/`TimetableModel` pattern to show every
-      train passing through it. Needs a station-click hit target on the map
-      (stations aren't currently a separate map layer) and a new query path
-      (by station, not by train).
+### Feature ideas
+- [x] **Station departure board** — done: clickable station layer +
+      `StationBoardService`/`StationBoardModel` + `StationBoardPanel` over
+      `/live-trains/station/{code}` (see the feature batch section above).
 - [ ] **Favourite/pinned trains** — persist a few train numbers via
       `QtCore.Settings` (same mechanism as `Theme.reducedMotion`), badge them
       on the map. Small, but touches `TrainMarker`/`TrainListModel` for the
@@ -414,12 +450,12 @@ From the `qt-ui-design` audit. The three **Critical** (WCAG / core-law) findings
       and unused; a "locate me" button + distance sort. Needs a geolocation
       permission prompt and a sorted/filtered train list UI (InfoPanel doesn't
       have a list view today, only counts).
-- [ ] **Rail-weather overlay** — Digitraffic also publishes rail weather-station
-      data (temperature, track condition). Needs a new client class mirroring
-      `DigitrafficClient` plus a new marker/overlay type.
-- [ ] **On-time / punctuality stats** — Digitraffic has a statistics endpoint;
-      a badge like "87% on time today" per train type. Needs a new fetch +
-      aggregation, not just a reuse of existing models.
+- [x] **Rail-weather overlay** — done as a **road**-weather overlay: the rail API
+      publishes no weather, so `RoadWeatherClient` uses Fintraffic road stations
+      (`tie.digitraffic.fi`) as a proxy, labelled as such (see the feature batch).
+- [x] **On-time / punctuality stats** — done: there is no statistics endpoint, so
+      it's aggregated client-side from the `/live-trains` delay data
+      (`DigitrafficClient::recomputePunctuality`), no new fetch.
 
 ### UI design audit (qt-ui-design)
 All audit findings — Criticals **and** the Warnings/Opportunities below — are now
