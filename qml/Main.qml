@@ -43,6 +43,16 @@ ApplicationWindow {
     // invokable, not a notifying role) while a train is selected, and drives the
     // route/raw-vs-snapped debug overlay and the detail-panel diagnostics line.
     property var selMatch: ({})
+    // Fading breadcrumb trail: the selected train's snapped positions, appended
+    // as selMatch is refreshed (below), capped so the trail stays short.
+    property var trailPoints: []
+    readonly property int maxTrailPoints: 8
+    onSelMatchChanged: {
+        if (selMatch.snapLat === undefined)
+            return
+        trailPoints = trailPoints.concat([QtPositioning.coordinate(selMatch.snapLat, selMatch.snapLon)])
+                                  .slice(-maxTrailPoints)
+    }
     Timer {
         running: trainDetails.hasSelection
         interval: 750
@@ -58,6 +68,7 @@ ApplicationWindow {
     Connections {
         target: trainDetails
         function onSelectionChanged() {
+            win.trailPoints = []   // new/no selection: don't carry the old train's trail
             win.selMatch = trainDetails.hasSelection
                 ? trainClient.model.matchInfoFor(trainDetails.trainNumber,
                                                  trainDetails.departureDate)
@@ -244,6 +255,8 @@ ApplicationWindow {
                     required property var model
                     // Style by line category: running lines (paaraide) read as the
                     // network; sidings/yards recede as thinner, dimmer strands.
+                    // Sidings can be hidden entirely via the legend toggle.
+                    visible: model.mainTrack || panel.showSidings
                     line.width: model.mainTrack ? 2.2 : 1.3
                     line.color: model.mainTrack ? Theme.railColor : Theme.railSidingColor
                     path: model.path
@@ -301,10 +314,22 @@ ApplicationWindow {
                 }
             }
 
+            // Fading breadcrumb trail of the selected train's recent matched
+            // positions (win.trailPoints, appended from the same 750 ms poll that
+            // drives the route/connector overlay above).
+            MapPolyline {
+                visible: win.trailPoints.length > 1
+                line.width: 3
+                line.color: Theme.accent
+                opacity: 0.35
+                path: win.trailPoints
+            }
+
             // Live train layer.
             MapItemView {
                 model: trainClient.model
                 delegate: TrainMarker {
+                    visible: panel.categoryVisible(model.category)
                     selected: trainDetails.hasSelection && trainDetails.trainNumber === model.trainNumber
                     // Dots only at country scale; reveal the text badges once
                     // zoomed in enough that they no longer collide into a blur.

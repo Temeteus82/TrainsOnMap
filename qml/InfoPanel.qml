@@ -15,6 +15,22 @@ Rectangle {
     property bool streamConnected: false
     property string streamStatus: ""
 
+    // Train-category filter (marker visibility); an unrecognised/empty category
+    // (metadata not loaded yet) is always shown, so trains never vanish at startup.
+    property bool showCommuter: true
+    property bool showLongDistance: true
+    property bool showCargo: true
+    function categoryVisible(category) {
+        if (category === "Commuter") return root.showCommuter
+        if (category === "Long-distance") return root.showLongDistance
+        if (category === "Cargo") return root.showCargo
+        return true
+    }
+
+    // Track-category toggle: sidings/yards (non-main tracks) can be hidden to
+    // declutter the map; running lines always show.
+    property bool showSidings: true
+
     signal refreshRequested()
     signal loadTracksRequested()
 
@@ -199,6 +215,64 @@ Rectangle {
                     border.width: tracksBtn.visualFocus ? 2 : 1
                 }
             }
+        }
+
+        Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.hairline }
+
+        // ---- Train-type filter ---------------------------------------------
+        Label {
+            text: qsTr("Show trains")
+            font.pixelSize: TypeScale.caption
+            font.bold: true
+            color: Theme.textMuted
+        }
+
+        ToggleRow {
+            label: qsTr("Commuter")
+            checked: root.showCommuter
+            onToggled: root.showCommuter = !root.showCommuter
+        }
+        ToggleRow {
+            label: qsTr("Long-distance")
+            checked: root.showLongDistance
+            onToggled: root.showLongDistance = !root.showLongDistance
+        }
+        ToggleRow {
+            label: qsTr("Cargo")
+            checked: root.showCargo
+            onToggled: root.showCargo = !root.showCargo
+        }
+
+        Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.hairline }
+
+        // ---- Track legend + siding toggle -----------------------------------
+        Label {
+            text: qsTr("Track legend")
+            font.pixelSize: TypeScale.caption
+            font.bold: true
+            color: Theme.textMuted
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 16
+
+            RowLayout {
+                spacing: 6
+                Rectangle { width: 16; height: 3; radius: 1.5; color: Theme.railColor }
+                Label { text: qsTr("Running line"); font.pixelSize: TypeScale.caption; color: Theme.textMuted }
+            }
+            RowLayout {
+                spacing: 6
+                Rectangle { width: 16; height: 3; radius: 1.5; color: Theme.railSidingColor }
+                Label { text: qsTr("Siding"); font.pixelSize: TypeScale.caption; color: Theme.textMuted }
+            }
+        }
+
+        ToggleRow {
+            label: qsTr("Show sidings")
+            checked: root.showSidings
+            onToggled: root.showSidings = !root.showSidings
         }
 
         Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.hairline }

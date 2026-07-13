@@ -101,6 +101,7 @@ signals:
 
 private:
     void onStationNames();   ///< pull the fleet's name map; re-resolve loaded stops
+    void onCauseCategoryNames();   ///< pull the fleet's cause-category map; re-resolve loaded stops
     void handleTrain(QNetworkReply *reply);
     void applyTrainObject(const QJsonObject &train, bool live);  ///< header + stops
     void fetchComposition(int trainNumber, const QString &departureDate);
@@ -119,6 +120,7 @@ private:
     DigitrafficClient *m_fleet = nullptr;
 
     QHash<QString, QString> m_stationNames;   ///< shortCode -> name (from `fleet`)
+    QHash<QString, QString> m_causeCategoryNames; ///< cause category code -> name (from `fleet`)
     QVector<TimetableStop> m_stops;           ///< last fetched stops (codes resolved lazily)
 
     bool m_hasSelection = false;

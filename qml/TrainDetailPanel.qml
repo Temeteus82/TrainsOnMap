@@ -477,6 +477,7 @@ Rectangle {
                 required property bool stopping
                 required property bool passed
                 required property bool isNext
+                required property string causeText
 
                 // One compact time for a passing point (departure preferred).
                 readonly property string passTime: scheduledDeparture.length > 0 ? scheduledDeparture
@@ -535,6 +536,16 @@ Rectangle {
                             color: Theme.textMuted
                             font.pixelSize: TypeScale.caption
                             font.italic: !stopRow.stopping
+                            visible: text.length > 0
+                        }
+                        // Delay cause (top-level category, e.g. "Onnettomuus"), when known.
+                        Label {
+                            Layout.fillWidth: true
+                            text: stopRow.causeText
+                            color: Theme.textMuted
+                            font.pixelSize: TypeScale.caption
+                            font.italic: true
+                            elide: Text.ElideRight
                             visible: text.length > 0
                         }
                     }

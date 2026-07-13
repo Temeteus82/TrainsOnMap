@@ -82,6 +82,16 @@ QVector<TimetableStop> buildStops(const QJsonArray &rows)
         if (row.value(QStringLiteral("cancelled")).toBool())
             s.cancelled = true;
 
+        // Delay cause (top-level category only; a row rarely carries more than
+        // one). Departure preferred over arrival, mirroring delayMinutes above.
+        const QJsonArray causes = row.value(QStringLiteral("causes")).toArray();
+        if (!causes.isEmpty() && (!isArrival || s.causeCode.isEmpty())) {
+            const QString code = causes.first().toObject()
+                                      .value(QStringLiteral("categoryCode")).toString();
+            if (!code.isEmpty())
+                s.causeCode = code;
+        }
+
         const QString track = row.value(QStringLiteral("commercialTrack")).toString();
         if (!track.isEmpty())
             s.track = track;
@@ -179,6 +189,13 @@ void TrainDetailsService::onStationNames()
     m_stationNames = m_fleet->stationNames();
     if (!m_stationNames.isEmpty() && !m_stops.isEmpty())
         rebuildStops();   // a timetable arrived before the names did
+}
+
+void TrainDetailsService::onCauseCategoryNames()
+{
+    m_causeCategoryNames = m_fleet->causeCategoryNames();
+    if (!m_causeCategoryNames.isEmpty() && !m_stops.isEmpty())
+        rebuildStops();   // a timetable arrived before the cause map did
 }
 
 void TrainDetailsService::show(int trainNumber, const QString &departureDate)
@@ -371,8 +388,11 @@ void TrainDetailsService::onStreamTrainMessage(const QByteArray &payload)
 void TrainDetailsService::rebuildStops()
 {
     QVector<TimetableStop> resolved = m_stops;
-    for (TimetableStop &s : resolved)
+    for (TimetableStop &s : resolved) {
         s.stationName = m_stationNames.value(s.stationShortCode, s.stationShortCode);
+        s.causeText = s.causeCode.isEmpty() ? QString()
+                                            : m_causeCategoryNames.value(s.causeCode);
+    }
     m_model->setStops(resolved);
 }
 
@@ -408,6 +428,9 @@ void TrainDetailsService::setFleet(DigitrafficClient *fleet)
         connect(m_fleet, &DigitrafficClient::stationNamesChanged,
                 this, &TrainDetailsService::onStationNames);
         onStationNames();   // the names may have loaded before we were wired up
+        connect(m_fleet, &DigitrafficClient::causeCategoryNamesChanged,
+                this, &TrainDetailsService::onCauseCategoryNames);
+        onCauseCategoryNames();   // the cause map may have loaded before we were wired up
     }
     emit fleetChanged();
 }

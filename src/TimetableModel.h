@@ -27,6 +27,7 @@ struct TimetableStop {
     Q_PROPERTY(bool    stopping           MEMBER stopping)
     Q_PROPERTY(bool    passed             MEMBER passed)
     Q_PROPERTY(bool    isNext             MEMBER isNext)
+    Q_PROPERTY(QString causeText          MEMBER causeText)
 public:
     QString stationShortCode;
     QString stationName;          ///< resolved from station metadata; falls back to code
@@ -40,9 +41,11 @@ public:
     bool stopping = true;         ///< true = a commercial/booked stop; false = passed through
     bool passed = false;          ///< the train has already departed/arrived here (journey progress)
     bool isNext = false;          ///< first booked stop the train hasn't reached yet
+    QString causeText;             ///< delay cause category name (e.g. "Onnettomuus"), "" if none
 
-    // Build-time accumulators (not exposed as roles); used to resolve `stopping`
-    // and `passed`.
+    // Build-time accumulator (not exposed as a role); the raw cause category code
+    // (e.g. "A"), resolved to causeText once the code->name map is available.
+    QString causeCode;
     bool sawCommercial = false;
     bool sawTrainStopping = false;
     bool sawActual = false;       ///< a row recorded an actualTime → the train has been here
