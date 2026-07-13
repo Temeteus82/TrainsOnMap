@@ -66,6 +66,15 @@ MapQuickItem {
     // the train fill varies per type so it's computed: hardcoded white fell below
     // 4.5:1 on the light hues (cyan/orange/pink/stale-grey).
     function inkFor(fill) {
+        // WCAG 2's relative-luminance formula weights red at only 0.2126, so a
+        // fully saturated red/magenta (IC's #FF0000, HV/MV's #FF006E) scores as
+        // "dark enough" for black text to numerically win (5.25:1 vs 4.0:1 for
+        // white) — even though white reads far more legibly in practice. This is
+        // a known blind spot of the WCAG 2 math for red hues (part of why WCAG 3
+        // proposes APCA instead); bias to white for that specific case rather
+        // than reimplementing a whole perceptual-contrast algorithm for it.
+        if (fill.r > 0.9 && fill.g < 0.1)
+            return "white"
         const lin = (c) => c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)
         const L = 0.2126 * lin(fill.r) + 0.7152 * lin(fill.g) + 0.0722 * lin(fill.b)
         return (L + 0.05) / 0.05 >= 1.05 / (L + 0.05) ? "#15171b" : "white"
@@ -245,10 +254,14 @@ MapQuickItem {
                     font.bold: true
                     color: marker.labelInk
                     // QtRendering's distance-field glyphs go soft at this small a
-                    // size; NativeRendering uses the platform's hinted rasteriser
-                    // instead, which stays crisp (this text is never transformed,
-                    // so NativeRendering's one real limitation doesn't apply).
-                    renderType: Text.NativeRendering
+                    // size. NativeRendering fixed that but pixelated during a map
+                    // zoom gesture — this marker DOES get transformed (selection
+                    // scale, and the Map's own zoom animation), which is exactly
+                    // the case Qt's docs warn NativeRendering handles poorly.
+                    // renderTypeQuality raises the distance-field texture's
+                    // resolution instead, staying crisp without that limitation.
+                    renderType: Text.QtRendering
+                    renderTypeQuality: Text.VeryHighRenderTypeQuality
                 }
 
                 Text {
@@ -258,7 +271,8 @@ MapQuickItem {
                     font.pointSize: TypeScale.panelCaption
                     color: marker.labelInk
                     opacity: 0.9
-                    renderType: Text.NativeRendering
+                    renderType: Text.QtRendering
+                    renderTypeQuality: Text.VeryHighRenderTypeQuality
                 }
 
                 // Lateness as text (paired with the ring colour, not colour alone).
@@ -269,7 +283,8 @@ MapQuickItem {
                     font.pointSize: TypeScale.panelCaption
                     font.bold: true
                     color: marker.labelInk
-                    renderType: Text.NativeRendering
+                    renderType: Text.QtRendering
+                    renderTypeQuality: Text.VeryHighRenderTypeQuality
                 }
             }
         }
