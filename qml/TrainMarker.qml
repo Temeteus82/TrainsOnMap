@@ -61,6 +61,16 @@ MapQuickItem {
         return "" + number;                    // "967" until the type cache loads
     }
 
+    // Pick black or white ink for text on a coloured capsule — whichever gives the
+    // most contrast (WCAG relative luminance). Same idea as Theme.accentText, but
+    // the train fill varies per type so it's computed: hardcoded white fell below
+    // 4.5:1 on the light hues (cyan/orange/pink/stale-grey).
+    function inkFor(fill) {
+        const lin = (c) => c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)
+        const L = 0.2126 * lin(fill.r) + 0.7152 * lin(fill.g) + 0.0722 * lin(fill.b)
+        return (L + 0.05) / 0.05 >= 1.05 / (L + 0.05) ? "#15171b" : "white"
+    }
+
     readonly property color trainColor: colorFor(model.trainType, model.category, model.speed)
     readonly property string badgeLabel: labelFor(model.commuterLine, model.trainType, model.trainNumber)
 
@@ -80,6 +90,8 @@ MapQuickItem {
     }
     // Greyed when stale, else the type colour. Drives the capsule fill + arrow.
     readonly property color dotColor: stale ? "#9AA0A6" : trainColor
+    // Contrast-correct ink for the capsule labels (computed once per fill change).
+    readonly property color labelInk: inkFor(dotColor)
 
     // ---- Direction-arrow geometry (TrainSpotter parity) ------------------
     readonly property real arrowW: 11
@@ -229,17 +241,18 @@ MapQuickItem {
                 Text {
                     anchors.horizontalCenter: parent.horizontalCenter
                     text: marker.badgeLabel
-                    font.pixelSize: 11
+                    font.pixelSize: TypeScale.caption
                     font.bold: true
-                    color: "white"
+                    color: marker.labelInk
                 }
 
                 Text {
                     anchors.horizontalCenter: parent.horizontalCenter
                     visible: marker.model.speed > 0
                     text: Math.round(marker.model.speed) + " km/h"
-                    font.pixelSize: 9
-                    color: Qt.rgba(1, 1, 1, 0.9)
+                    font.pixelSize: TypeScale.caption
+                    color: marker.labelInk
+                    opacity: 0.9
                 }
 
                 // Lateness as text (paired with the ring colour, not colour alone).
@@ -247,9 +260,9 @@ MapQuickItem {
                     anchors.horizontalCenter: parent.horizontalCenter
                     visible: marker.late
                     text: qsTr("+%1 min").arg(marker.model.delayMinutes)
-                    font.pixelSize: 9
+                    font.pixelSize: TypeScale.caption
                     font.bold: true
-                    color: "white"
+                    color: marker.labelInk
                 }
             }
         }

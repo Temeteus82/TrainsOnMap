@@ -40,6 +40,9 @@ Rectangle {
     border.width: 1
     implicitWidth: 268
     implicitHeight: layout.implicitHeight + 32
+    // Don't run off the bottom on a short window: cap to the space below the
+    // top margin (y) and let the content scroll (flick) when it doesn't fit.
+    height: parent ? Math.min(implicitHeight, parent.height - y - 12) : implicitHeight
 
     // Soft drop shadow for a floating-card feel (drawn behind the card).
     Rectangle {
@@ -52,10 +55,29 @@ Rectangle {
         color: Theme.shadow
     }
 
-    ColumnLayout {
-        id: layout
+    Flickable {
+        id: flick
         anchors.fill: parent
         anchors.margins: 16
+        contentWidth: width
+        contentHeight: layout.implicitHeight
+        clip: true
+        boundsBehavior: Flickable.StopAtBounds
+        // Only scrolls when the card is height-capped on a short window.
+        ScrollBar.vertical: ScrollBar {
+            id: vbar
+            contentItem: Rectangle {
+                implicitWidth: 5
+                radius: width / 2
+                color: Theme.textMuted
+                opacity: vbar.pressed ? 0.7 : (vbar.hovered ? 0.5 : 0.3)
+                Behavior on opacity { NumberAnimation { duration: 120 } }
+            }
+        }
+
+    ColumnLayout {
+        id: layout
+        width: flick.width
         spacing: 12
 
         // ---- Header --------------------------------------------------------
@@ -362,5 +384,6 @@ Rectangle {
             font.pixelSize: TypeScale.caption
             wrapMode: Text.WordWrap
         }
+    }
     }
 }
