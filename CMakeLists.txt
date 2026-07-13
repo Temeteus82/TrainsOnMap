@@ -51,6 +51,7 @@ qt_add_qml_module(TrainsOnMap
         qml/TrainMarker.qml
         qml/InfoPanel.qml
         qml/TrainDetailPanel.qml
+        qml/ToggleRow.qml
         qml/Theme.qml
         qml/TypeScale.qml
         qml/AppIcon.qml

@@ -27,14 +27,19 @@ and a QML map front-end, plus clearly marked extension points.
   focus rings; colour-blind-safe train state (colour **and** ring **and** text);
   a reduced-motion opt-out; and crisp, theme-recolourable icons (`AppIcon`).
 - **Click a train** to open a timetable panel: stops, scheduled vs. estimated
-  arrival/departure times, live delay, and track, with station codes resolved to
-  names from the metadata API. While open, the panel **updates live** from the
-  MQTT `trains/#` topic (scoped to the selected train).
+  arrival/departure times, live delay (with its **cause category**, e.g.
+  "Onnettomuus", resolved from `/metadata/cause-category-codes`), and track,
+  with station codes resolved to names from the metadata API. While open, the
+  panel **updates live** from the MQTT `trains/#` topic (scoped to the selected
+  train). Selecting a train also draws a short fading **breadcrumb trail** of
+  its recent matched positions.
 - **Track geometry** drawn automatically for the current viewport (once zoomed
   in past the threshold), served from a **pre-baked national snapshot embedded in
   the binary** (`scripts/bake_rails.py` → `:/data/rails.geojson.qz`) — no infra-api
   fetch at launch. `loadForBounds()` just culls the resident geometry to the
-  viewport via a spatial grid.
+  viewport via a spatial grid. A sidebar **legend + toggle** can hide sidings/yards
+  (running lines always show); a **train-type filter** (Commuter / Long-distance /
+  Cargo) can hide whole marker categories.
 - Clean split between a **C++ networking/model backend** and a **QML map UI**.
 
 ## Architecture
@@ -246,4 +251,12 @@ matching compiler, and Run.
 
 ## Ideas for next steps
 
-- Add a small map legend / toggle for the track categories (running lines vs sidings).
+- Station departure board (click a station, not just a train, to see everything
+  passing through it).
+- Favourite/pinned trains, persisted via `QtCore.Settings`.
+- "Nearest trains to me" using the already-linked `QtPositioning` module.
+- Rail-weather overlay (Digitraffic also publishes track condition data).
+- On-time / punctuality stats badge per train type.
+
+See `CHANGES.md`'s **Known issues / follow-ups** for the full rationale on
+why each of these is deferred rather than done.

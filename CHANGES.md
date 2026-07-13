@@ -8,6 +8,45 @@ Legend: ✨ feature · 🐛 bug fix · ♻️ change/refactor · ✅ verificatio
 
 ---
 
+## Map/legend polish — filters, cause text, breadcrumb trail
+
+Four small features, each reusing an existing service/pattern rather than
+adding new architecture.
+
+### ✨ Track-category legend + siding toggle
+- [x] `InfoPanel` legend swatches (`Theme.railColor` / `railSidingColor`) plus a
+      "Show sidings" toggle (`showSidings`); the track `MapPolyline` delegate in
+      `Main.qml` hides non-`mainTrack` segments when it's off.
+
+### ✨ Train-type filter
+- [x] `InfoPanel` gained `showCommuter` / `showLongDistance` / `showCargo`
+      toggles + `categoryVisible(category)`; the `TrainMarker` delegate binds
+      `visible` to it. An unrecognised/empty category (metadata not loaded yet)
+      always shows, so trains never vanish at startup.
+- [x] New shared `ToggleRow.qml` (labelled checkbox, keyboard-focusable with a
+      focus ring, mirrors the Appearance segment's accessibility pattern) —
+      4 call sites (siding + 3 category toggles) justified factoring it out.
+
+### ✨ Delay-cause text on the timetable
+- [x] `DigitrafficClient` fetches `/metadata/cause-category-codes` once
+      (mirrors the existing one-shot station-names fetch) and exposes
+      `causeCategoryNames()` (categoryCode -> Finnish name).
+- [x] `TrainDetailsService::buildStops()` captures each stop's top-level cause
+      `categoryCode` (departure preferred over arrival, like `delayMinutes`);
+      `rebuildStops()` resolves it to `TimetableStop::causeText`, shown as an
+      italic caption line under the track/passing label in
+      `TrainDetailPanel.qml`. Only the top-level code is resolved (not
+      `detailedCategoryCode`/`thirdCategoryCode`) — coarser, but one fetch.
+
+### ✨ Breadcrumb trail for the selected train
+- [x] `Main.qml` appends the selected train's snapped position (from the
+      existing `matchInfoFor()` 750 ms poll) to `win.trailPoints` (capped at 8),
+      reset on selection change, rendered as a fading `MapPolyline`. No new
+      C++/model state — reuses the same diagnostics feed as the route/connector
+      overlay.
+
+---
+
 ## Track accuracy — Tier 2 (topology-routed map matching)
 
 Route-constrained map matching: markers now follow each train's *scheduled* path
@@ -316,6 +355,27 @@ From the `qt-ui-design` audit. The three **Critical** (WCAG / core-law) findings
       type/category/line for currently-running trains (covers cross-midnight), so
       it's unnecessary for now. Revisit only if a type source independent of
       "currently running" is needed.
+
+### Feature ideas — deferred (bigger than a reuse-only change)
+- [ ] **Station departure board** — click a station (not just a train) and
+      reuse the `TrainDetailsService`/`TimetableModel` pattern to show every
+      train passing through it. Needs a station-click hit target on the map
+      (stations aren't currently a separate map layer) and a new query path
+      (by station, not by train).
+- [ ] **Favourite/pinned trains** — persist a few train numbers via
+      `QtCore.Settings` (same mechanism as `Theme.reducedMotion`), badge them
+      on the map. Small, but touches `TrainMarker`/`TrainListModel` for the
+      badge and needs a UI to manage the pinned list.
+- [ ] **"Nearest trains to me"** — `QtPositioning` is already a linked module
+      and unused; a "locate me" button + distance sort. Needs a geolocation
+      permission prompt and a sorted/filtered train list UI (InfoPanel doesn't
+      have a list view today, only counts).
+- [ ] **Rail-weather overlay** — Digitraffic also publishes rail weather-station
+      data (temperature, track condition). Needs a new client class mirroring
+      `DigitrafficClient` plus a new marker/overlay type.
+- [ ] **On-time / punctuality stats** — Digitraffic has a statistics endpoint;
+      a badge like "87% on time today" per train type. Needs a new fetch +
+      aggregation, not just a reuse of existing models.
 
 ### UI design audit (qt-ui-design)
 All audit findings — Criticals **and** the Warnings/Opportunities below — are now

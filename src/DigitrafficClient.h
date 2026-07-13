@@ -52,6 +52,12 @@ public:
     /// once per launch. Empty until the fetch lands (stationNamesChanged fires).
     QHash<QString, QString> stationNames() const { return m_stationNames; }
 
+    /// Cause category code -> Finnish display name, from the same one-shot
+    /// /metadata/cause-category-codes fetch (e.g. "A" -> "Aikataulu ja
+    /// liikennöinti"). Shared with TrainDetailsService for the timetable's delay
+    /// cause line. Empty until the fetch lands (causeCategoryNamesChanged fires).
+    QHash<QString, QString> causeCategoryNames() const { return m_causeCategoryNames; }
+
 public slots:
     /// Fetch the latest positions once, immediately.
     void refresh();
@@ -68,6 +74,7 @@ signals:
     void statusChanged();
     void matcherChanged();
     void stationNamesChanged();
+    void causeCategoryNamesChanged();
 
 private:
     void handleReply(QNetworkReply *reply);
@@ -78,6 +85,10 @@ private:
     /// parked-train station pin) and -> name (shared via stationNames()).
     void fetchStations();
     void handleStations(QNetworkReply *reply);
+    /// One-shot at startup: load cause-category code -> name for the timetable's
+    /// delay-cause line.
+    void fetchCauseCategories();
+    void handleCauseCategories(QNetworkReply *reply);
     void setStatus(const QString &status);
 
     QNetworkAccessManager *m_net = nullptr;
@@ -87,6 +98,7 @@ private:
     bool m_active = false;
     QString m_status;
     QHash<QString, QString> m_stationNames;   ///< shortCode -> name (see stationNames())
+    QHash<QString, QString> m_causeCategoryNames; ///< categoryCode -> name (see causeCategoryNames())
 
     // ---- /live-trains incremental polling state ----------------------------
     // Highest Train.version seen since the last full snapshot; the next delta
