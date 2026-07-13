@@ -215,6 +215,14 @@ Rectangle {
                         width: carGrid.cellW
                         height: carGrid.cellH
 
+                        // Expose the same detail the hover tooltip shows to assistive
+                        // tech, so type/power/amenities aren't pointer-only (W: §1.3).
+                        Accessible.role: Accessible.StaticText
+                        Accessible.name: car.locomotive ? qsTr("Locomotive")
+                                                         : qsTr("Car %1").arg(car.label)
+                        Accessible.description: [car.vehicleType, car.powerType,
+                                                 car.amenities.join(", ")].filter(s => s.length > 0).join(" · ")
+
                         Rectangle {
                             id: carBody
                             anchors.fill: parent
