@@ -32,14 +32,14 @@ Rectangle {
                     Layout.fillWidth: true
                     text: root.service.stationName
                     font.bold: true
-                    font.pixelSize: TypeScale.title
+                    font.pointSize: TypeScale.panelTitle
                     color: Theme.textStrong
                     elide: Text.ElideRight
                 }
                 Label {
                     text: qsTr("Station board")
                     color: Theme.textMuted
-                    font.pixelSize: TypeScale.caption
+                    font.pointSize: TypeScale.panelCaption
                 }
             }
             // Close button — keyboard-focusable (matches the detail panel).
@@ -56,7 +56,7 @@ Rectangle {
                     anchors.centerIn: parent
                     name: "close"
                     color: Theme.textMuted
-                    size: TypeScale.iconSm
+                    size: TypeScale.panelIconSm
                 }
                 Rectangle {
                     anchors.fill: parent
@@ -82,7 +82,7 @@ Rectangle {
             Layout.fillWidth: true
             text: root.service.status
             color: Theme.textMuted
-            font.pixelSize: TypeScale.caption
+            font.pointSize: TypeScale.panelCaption
             visible: text.length > 0
         }
 
@@ -139,7 +139,7 @@ Rectangle {
                         Layout.preferredWidth: 50
                         Label {
                             text: boardRow.timeText
-                            font.pixelSize: TypeScale.body
+                            font.pointSize: TypeScale.panelBody
                             font.bold: true
                             font.strikeout: boardRow.cancelled
                             color: Theme.textStrong
@@ -147,7 +147,7 @@ Rectangle {
                         Label {
                             text: boardRow.estimateText
                             visible: text.length > 0
-                            font.pixelSize: TypeScale.caption
+                            font.pointSize: TypeScale.panelCaption
                             color: boardRow.delayMinutes > 0 ? Theme.delayLate : Theme.delayEarly
                         }
                     }
@@ -159,7 +159,7 @@ Rectangle {
                         Label {
                             Layout.fillWidth: true
                             text: boardRow.trainLabel + (boardRow.arriving ? qsTr("  · arrives") : "")
-                            font.pixelSize: TypeScale.body
+                            font.pointSize: TypeScale.panelBody
                             font.bold: true
                             color: Theme.textStrong
                             elide: Text.ElideRight
@@ -167,7 +167,7 @@ Rectangle {
                         Label {
                             Layout.fillWidth: true
                             text: boardRow.destination
-                            font.pixelSize: TypeScale.caption
+                            font.pointSize: TypeScale.panelCaption
                             color: Theme.textMuted
                             elide: Text.ElideRight
                         }
@@ -181,7 +181,7 @@ Rectangle {
                             Layout.alignment: Qt.AlignRight
                             text: boardRow.track.length > 0 ? qsTr("Trk %1").arg(boardRow.track) : ""
                             visible: text.length > 0
-                            font.pixelSize: TypeScale.caption
+                            font.pointSize: TypeScale.panelCaption
                             color: Theme.textMuted
                         }
                         Label {
@@ -191,7 +191,7 @@ Rectangle {
                                   : (boardRow.delayMinutes === 0
                                      ? "±0"
                                      : (boardRow.delayMinutes > 0 ? "+" : "") + boardRow.delayMinutes)
-                            font.pixelSize: TypeScale.caption
+                            font.pointSize: TypeScale.panelCaption
                             font.bold: true
                             color: boardRow.cancelled || boardRow.delayMinutes > 0
                                    ? Theme.delayLate

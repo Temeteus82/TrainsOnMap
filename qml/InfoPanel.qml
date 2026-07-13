@@ -11,7 +11,6 @@ Rectangle {
     property string statusText: ""
     property int trainCount: 0
     property int trackCount: 0
-    property bool tracksLoading: false
     property bool streamConnected: false
     property string streamStatus: ""
     property string punctuality: ""
@@ -36,7 +35,6 @@ Rectangle {
     property bool showWeather: false
 
     signal refreshRequested()
-    signal loadTracksRequested()
 
     radius: 12
     color: Theme.cardBg
@@ -98,7 +96,7 @@ Rectangle {
                     anchors.centerIn: parent
                     name: "train"
                     color: Theme.accent
-                    size: TypeScale.iconMd
+                    size: TypeScale.panelIconMd
                 }
             }
 
@@ -108,12 +106,12 @@ Rectangle {
                 Label {
                     text: qsTr("Trains on Map")
                     font.bold: true
-                    font.pixelSize: TypeScale.subhead
+                    font.pointSize: TypeScale.panelSubhead
                     color: Theme.textStrong
                 }
                 Label {
                     text: qsTr("Finland · Digitraffic")
-                    font.pixelSize: TypeScale.caption
+                    font.pointSize: TypeScale.panelCaption
                     color: Theme.textMuted
                 }
             }
@@ -151,14 +149,14 @@ Rectangle {
             Label {
                 Layout.fillWidth: true
                 text: qsTr("%1 live trains").arg(root.trainCount)
-                font.pixelSize: TypeScale.body
+                font.pointSize: TypeScale.panelBody
                 font.bold: true
                 color: Theme.textStrong
             }
 
             Label {
                 text: root.streamConnected ? qsTr("LIVE") : root.streamStatus
-                font.pixelSize: TypeScale.caption
+                font.pointSize: TypeScale.panelCaption
                 font.bold: true
                 color: root.streamConnected ? Theme.liveOn : Theme.textMuted
             }
@@ -167,7 +165,7 @@ Rectangle {
         Label {
             Layout.fillWidth: true
             text: qsTr("%1 track segments").arg(root.trackCount)
-            font.pixelSize: TypeScale.body
+            font.pointSize: TypeScale.panelBody
             color: Theme.textMuted
         }
 
@@ -176,7 +174,7 @@ Rectangle {
         Label {
             Layout.fillWidth: true
             text: root.punctuality
-            font.pixelSize: TypeScale.caption
+            font.pointSize: TypeScale.panelCaption
             color: Theme.textMuted
             wrapMode: Text.WordWrap
             visible: text.length > 0
@@ -186,70 +184,41 @@ Rectangle {
             Layout.fillWidth: true
             text: root.statusText
             color: Theme.textMuted
-            font.pixelSize: TypeScale.body
+            font.pointSize: TypeScale.panelBody
             wrapMode: Text.WordWrap
             visible: text.length > 0
         }
 
         // ---- Actions -------------------------------------------------------
-        RowLayout {
+        Button {
+            id: refreshBtn
             Layout.fillWidth: true
-            spacing: 8
-
-            Button {
-                id: refreshBtn
-                Layout.fillWidth: true
-                focusPolicy: Qt.StrongFocus
-                text: qsTr("Refresh")
-                onClicked: root.refreshRequested()
-                contentItem: Label {
-                    text: refreshBtn.text
-                    font.pixelSize: TypeScale.body
-                    font.bold: true
-                    color: Theme.accentText
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                }
-                background: Rectangle {
-                    radius: 8
-                    implicitHeight: 32
-                    color: refreshBtn.down ? Qt.darker(Theme.accent, 1.15)
-                                           : (refreshBtn.hovered ? Qt.lighter(Theme.accent, 1.08) : Theme.accent)
-
-                    // Keyboard focus ring (sits in the card margin around the button).
-                    Rectangle {
-                        anchors.fill: parent
-                        anchors.margins: -4
-                        radius: 12
-                        color: "transparent"
-                        border.color: Theme.focusRing
-                        border.width: 2
-                        visible: refreshBtn.visualFocus
-                    }
-                }
+            focusPolicy: Qt.StrongFocus
+            text: qsTr("Refresh")
+            onClicked: root.refreshRequested()
+            contentItem: Label {
+                text: refreshBtn.text
+                font.pointSize: TypeScale.panelBody
+                font.bold: true
+                color: Theme.accentText
+                horizontalAlignment: Text.AlignHCenter
+                verticalAlignment: Text.AlignVCenter
             }
+            background: Rectangle {
+                radius: 8
+                implicitHeight: 44   // W-guide: 44 px desktop touch target (was 32)
+                color: refreshBtn.down ? Qt.darker(Theme.accent, 1.15)
+                                       : (refreshBtn.hovered ? Qt.lighter(Theme.accent, 1.08) : Theme.accent)
 
-            Button {
-                id: tracksBtn
-                Layout.fillWidth: true
-                focusPolicy: Qt.StrongFocus
-                enabled: !root.tracksLoading
-                text: root.tracksLoading ? qsTr("Loading…") : qsTr("Load tracks")
-                onClicked: root.loadTracksRequested()
-                contentItem: Label {
-                    text: tracksBtn.text
-                    font.pixelSize: TypeScale.body
-                    font.bold: true
-                    color: tracksBtn.enabled ? Theme.accent : Theme.textMuted
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                }
-                background: Rectangle {
-                    radius: 8
-                    implicitHeight: 32
-                    color: tracksBtn.down ? Theme.subtlePress : (tracksBtn.hovered ? Theme.subtleHover : "transparent")
-                    border.color: tracksBtn.visualFocus ? Theme.focusRing : Theme.hairline
-                    border.width: tracksBtn.visualFocus ? 2 : 1
+                // Keyboard focus ring (sits in the card margin around the button).
+                Rectangle {
+                    anchors.fill: parent
+                    anchors.margins: -4
+                    radius: 12
+                    color: "transparent"
+                    border.color: Theme.focusRing
+                    border.width: 2
+                    visible: refreshBtn.visualFocus
                 }
             }
         }
@@ -259,7 +228,7 @@ Rectangle {
         // ---- Train-type filter ---------------------------------------------
         Label {
             text: qsTr("Show trains")
-            font.pixelSize: TypeScale.caption
+            font.pointSize: TypeScale.panelCaption
             font.bold: true
             color: Theme.textMuted
         }
@@ -285,7 +254,7 @@ Rectangle {
         // ---- Track legend + siding toggle -----------------------------------
         Label {
             text: qsTr("Track legend")
-            font.pixelSize: TypeScale.caption
+            font.pointSize: TypeScale.panelCaption
             font.bold: true
             color: Theme.textMuted
         }
@@ -297,12 +266,12 @@ Rectangle {
             RowLayout {
                 spacing: 6
                 Rectangle { width: 16; height: 3; radius: 1.5; color: Theme.railColor }
-                Label { text: qsTr("Running line"); font.pixelSize: TypeScale.caption; color: Theme.textMuted }
+                Label { text: qsTr("Running line"); font.pointSize: TypeScale.panelCaption; color: Theme.textMuted }
             }
             RowLayout {
                 spacing: 6
                 Rectangle { width: 16; height: 3; radius: 1.5; color: Theme.railSidingColor }
-                Label { text: qsTr("Siding"); font.pixelSize: TypeScale.caption; color: Theme.textMuted }
+                Label { text: qsTr("Siding"); font.pointSize: TypeScale.panelCaption; color: Theme.textMuted }
             }
         }
 
@@ -317,7 +286,7 @@ Rectangle {
         // ---- Overlays -------------------------------------------------------
         Label {
             text: qsTr("Overlays")
-            font.pixelSize: TypeScale.caption
+            font.pointSize: TypeScale.panelCaption
             font.bold: true
             color: Theme.textMuted
         }
@@ -330,7 +299,7 @@ Rectangle {
         Label {
             Layout.fillWidth: true
             text: qsTr("FMI weather stations (air °C).")
-            font.pixelSize: TypeScale.caption
+            font.pointSize: TypeScale.panelCaption
             color: Theme.textMuted
             wrapMode: Text.WordWrap
             visible: root.showWeather
@@ -341,7 +310,7 @@ Rectangle {
         // ---- Theme toggle (Auto follows the desktop colour scheme) ---------
         Label {
             text: qsTr("Appearance")
-            font.pixelSize: TypeScale.caption
+            font.pointSize: TypeScale.panelCaption
             font.bold: true
             color: Theme.textMuted
         }
@@ -404,7 +373,7 @@ Rectangle {
                         Label {
                             anchors.centerIn: parent
                             text: seg.label
-                            font.pixelSize: TypeScale.caption
+                            font.pointSize: TypeScale.panelCaption
                             font.bold: seg.active
                             color: seg.active ? Theme.accentText : Theme.textMuted
                         }
@@ -420,7 +389,7 @@ Rectangle {
             Layout.fillWidth: true
             text: qsTr("Data © Fintraffic / Digitraffic (CC BY 4.0)\nMap © OpenStreetMap contributors, © CARTO")
             color: Theme.textMuted   // ≥ 4.5:1 on the card
-            font.pixelSize: TypeScale.caption
+            font.pointSize: TypeScale.panelCaption
             wrapMode: Text.WordWrap
         }
     }

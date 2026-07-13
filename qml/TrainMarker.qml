@@ -241,18 +241,24 @@ MapQuickItem {
                 Text {
                     anchors.horizontalCenter: parent.horizontalCenter
                     text: marker.badgeLabel
-                    font.pixelSize: TypeScale.caption
+                    font.pointSize: TypeScale.panelCaption
                     font.bold: true
                     color: marker.labelInk
+                    // QtRendering's distance-field glyphs go soft at this small a
+                    // size; NativeRendering uses the platform's hinted rasteriser
+                    // instead, which stays crisp (this text is never transformed,
+                    // so NativeRendering's one real limitation doesn't apply).
+                    renderType: Text.NativeRendering
                 }
 
                 Text {
                     anchors.horizontalCenter: parent.horizontalCenter
                     visible: marker.model.speed > 0
                     text: Math.round(marker.model.speed) + " km/h"
-                    font.pixelSize: TypeScale.caption
+                    font.pointSize: TypeScale.panelCaption
                     color: marker.labelInk
                     opacity: 0.9
+                    renderType: Text.NativeRendering
                 }
 
                 // Lateness as text (paired with the ring colour, not colour alone).
@@ -260,9 +266,10 @@ MapQuickItem {
                     anchors.horizontalCenter: parent.horizontalCenter
                     visible: marker.late
                     text: qsTr("+%1 min").arg(marker.model.delayMinutes)
-                    font.pixelSize: TypeScale.caption
+                    font.pointSize: TypeScale.panelCaption
                     font.bold: true
                     color: marker.labelInk
+                    renderType: Text.NativeRendering
                 }
             }
         }

@@ -69,6 +69,7 @@ name in parentheses). Used as the `role` argument to `data()` and surfaced via
 | `DelayMinutesRole` | +11 | Live delay at the last passed stop (`delayMinutes`). |
 | `AccuracyRole` | +12 | GPS uncertainty radius in metres (`accuracy`); −1 if unreported. |
 | `TrackOffsetRole` | +13 | Metres from the nearest rail after map-matching (`trackOffsetMeters`); −1 if not matched. |
+| `NearestNeighborRole` | +14 | Metres to the nearest other live train (`nearestNeighborMeters`); −1 if none. Drives label declutter near a busy terminus. Recomputed once per REST snapshot, not per MQTT upsert. |
 
 ## 6. Public Member Variables
 
@@ -131,7 +132,9 @@ Merges a REST snapshot: upserts every fetched train through `applyOne`, then
 prunes trains missing from the snapshot **only once they've aged past a 120 s
 grace window** (so a just-arrived MQTT-only train isn't deleted before REST catches
 up). Merges rather than replaces so concurrent MQTT updates aren't clobbered and
-markers don't flicker. Also garbage-collects bearing history down to live trains.
+markers don't flicker. Also recomputes `nearestNeighborMeters` for every row
+(`recomputeNearestNeighbors`, O(n²) over the live fleet — cheap at the 60 s REST
+cadence) and garbage-collects bearing history down to live trains.
 
 #### void upsertTrain(const TrainPosition &train)
 

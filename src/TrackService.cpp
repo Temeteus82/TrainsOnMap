@@ -381,7 +381,9 @@ void TrackService::loadForBounds(double west, double south, double east, double 
     }
 
     m_model->setVisibleSegments(ids, paths, mains);
-    setStatus(QStringLiteral("%1 track segments").arg(ids.size()));
+    // Not setStatus() here: the sidebar already shows this figure live via the
+    // dedicated track-count label (model.count), so repeating it in status on
+    // every viewport pan just duplicated it (UI audit).
 }
 
 void TrackService::setLoading(bool loading)

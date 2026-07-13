@@ -87,6 +87,7 @@ QVariant TrainListModel::data(const QModelIndex &index, int role) const
     case DelayMinutesRole: return m_statusByNumber.value(keyOf(row.pos)).delayMinutes;
     case AccuracyRole:    return row.pos.accuracy;
     case TrackOffsetRole: return row.trackOffsetMeters;
+    case NearestNeighborRole: return row.nearestNeighborMeters;
     default:              return {};
     }
 }
@@ -107,6 +108,7 @@ QHash<int, QByteArray> TrainListModel::roleNames() const
         { DelayMinutesRole, "delayMinutes" },
         { AccuracyRole,    "accuracy" },
         { TrackOffsetRole, "trackOffsetMeters" },
+        { NearestNeighborRole, "nearestNeighborMeters" },
     };
 }
 
@@ -196,6 +198,8 @@ void TrainListModel::updateTrains(const QVector<TrainPosition> &trains)
     // Merge every fetched row through the single, timestamp-guarded funnel.
     for (const TrainPosition &tp : trains)
         applyOne(tp);
+
+    recomputeNearestNeighbors();
 
     // Garbage-collect bearing history down to currently-live trains so it can't
     // grow unbounded over a long session.
@@ -409,6 +413,29 @@ void TrainListModel::reindex()
     m_indexByKey.reserve(m_rows.size());
     for (int i = 0; i < m_rows.size(); ++i)
         m_indexByKey.insert(keyOf(m_rows.at(i).pos), i);
+}
+
+void TrainListModel::recomputeNearestNeighbors()
+{
+    for (int i = 0; i < m_rows.size(); ++i) {
+        const QGeoCoordinate &a = m_rows.at(i).pos.coordinate;
+        double best = -1.0;
+        if (a.isValid()) {
+            for (int j = 0; j < m_rows.size(); ++j) {
+                if (j == i)
+                    continue;
+                const QGeoCoordinate &b = m_rows.at(j).pos.coordinate;
+                if (!b.isValid())
+                    continue;
+                const double d = a.distanceTo(b);
+                if (best < 0.0 || d < best)
+                    best = d;
+            }
+        }
+        m_rows[i].nearestNeighborMeters = best;
+    }
+    if (!m_rows.isEmpty())
+        emit dataChanged(index(0), index(m_rows.size() - 1), { NearestNeighborRole });
 }
 
 void TrainListModel::setTrainMetadata(const QHash<TrainKey, QString> &types,
