@@ -47,9 +47,12 @@ TrackService::TrackService(QObject *parent)
         m_grid = loaded.grid;
         m_graph = loaded.graph;
         setLoading(false);
-        setStatus(m_all.isEmpty()
-                      ? QStringLiteral("Rail geometry could not be loaded")
-                      : QStringLiteral("%1 track segments ready").arg(m_all.size()));
+        // On success, clear status rather than reporting the total network size:
+        // the sidebar's live "N track segments" label already shows the current
+        // viewport count, and a permanent "ready" message would otherwise block
+        // the statusText fallback to the live train-fetch status forever.
+        setStatus(m_all.isEmpty() ? QStringLiteral("Rail geometry could not be loaded")
+                                  : QString());
         emit geometryReady();
         // Categories (and their route sequences) can arrive before the graph has
         // finished parsing; resolve anything stashed in the meantime now (#5).

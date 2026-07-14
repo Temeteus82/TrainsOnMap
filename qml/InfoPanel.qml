@@ -11,6 +11,7 @@ Rectangle {
     property string statusText: ""
     property int trainCount: 0
     property int trackCount: 0
+    property bool refreshing: false
     property bool streamConnected: false
     property string streamStatus: ""
     property string punctuality: ""
@@ -79,7 +80,9 @@ Rectangle {
 
     ColumnLayout {
         id: layout
-        width: flick.width
+        // Leave a gutter for the vertical ScrollBar so its thumb doesn't sit on
+        // top of edge-to-edge content (fillWidth rows, wrapped attribution text).
+        width: flick.width - 12
         spacing: 12
 
         // ---- Header --------------------------------------------------------
@@ -194,7 +197,10 @@ Rectangle {
             id: refreshBtn
             Layout.fillWidth: true
             focusPolicy: Qt.StrongFocus
-            text: qsTr("Refresh")
+            // Doherty Threshold: a network round-trip can take well over 400 ms,
+            // so say so instead of leaving the button looking inert.
+            enabled: !root.refreshing
+            text: root.refreshing ? qsTr("Refreshing…") : qsTr("Refresh")
             onClicked: root.refreshRequested()
             contentItem: Label {
                 text: refreshBtn.text
@@ -317,7 +323,7 @@ Rectangle {
 
         Rectangle {
             Layout.fillWidth: true
-            Layout.preferredHeight: 30
+            Layout.preferredHeight: 32   // toward the 44 px desktop hit-target guideline
             radius: 8
             color: Theme.subtleHover
             border.color: Theme.hairline

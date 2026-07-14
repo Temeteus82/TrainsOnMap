@@ -51,7 +51,7 @@ world, and the app's map-matcher: `matchToNetwork` (Tier 1) and `matchOnRoute`
 |----------|------|------|-------|--------|-------------|
 | `model` | `TrackListModel *` | `model` | — | — (`CONSTANT`) | The viewport-filtered render model bound to a `MapItemView`. Read-only, set once at construction. |
 | `loading` | `bool` | `isLoading` | — | `loadingChanged` | True while the network is being parsed on the worker thread. |
-| `status` | `QString` | `status` | — | `statusChanged` | Human-readable status line (e.g. "Loading rail geometry…", "12345 track segments ready"). |
+| `status` | `QString` | `status` | — | `statusChanged` | Human-readable status line; only non-empty while loading or on failure (e.g. "Loading rail geometry…", "Rail geometry could not be loaded"). Empty on success so the UI's `statusText` falls back to the live train-fetch status instead of a stale one-time message. |
 
 ## 5. Enumerations
 

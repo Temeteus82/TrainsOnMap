@@ -29,6 +29,10 @@ class DigitrafficClient : public QObject
     Q_PROPERTY(bool active READ isActive WRITE setActive NOTIFY activeChanged)
     Q_PROPERTY(int pollIntervalMs READ pollIntervalMs WRITE setPollIntervalMs NOTIFY pollIntervalMsChanged)
     Q_PROPERTY(QString status READ status NOTIFY statusChanged)
+    // True while a refresh() round-trip (position + category fetch) is in
+    // flight, so the sidebar can show feedback instead of the Refresh button
+    // sitting inert for the duration of the network call (Doherty Threshold).
+    Q_PROPERTY(bool loading READ isLoading NOTIFY loadingChanged)
     // Live punctuality summary (% on time, ≤5 min late) per broad category,
     // aggregated from the /live-trains delay data already polled each cycle — no
     // extra request. Empty until the first categories fetch lands.
@@ -50,6 +54,8 @@ public:
     void setPollIntervalMs(int ms);
 
     QString status() const { return m_status; }
+
+    bool isLoading() const { return m_pendingRequests > 0; }
 
     QString punctuality() const { return m_punctuality; }
 
@@ -82,6 +88,7 @@ signals:
     void activeChanged();
     void pollIntervalMsChanged();
     void statusChanged();
+    void loadingChanged();
     void punctualityChanged();
     void matcherChanged();
     void stationNamesChanged();
@@ -104,6 +111,11 @@ private:
     /// Recompute the punctuality summary from the accumulated per-train status +
     /// category maps (called at the end of handleCategories).
     void recomputePunctuality();
+    /// +1 when issuing a request, -1 when its handler runs (always paired, even
+    /// on an error/early-return path). Flips loading()/loadingChanged() only on
+    /// the 0 <-> >0 transition, so the two in-flight requests refresh() issues
+    /// (position + categories) don't fire the signal twice.
+    void adjustPending(int delta);
 
     QNetworkAccessManager *m_net = nullptr;
     TrainListModel *m_model = nullptr;
@@ -111,6 +123,7 @@ private:
     TrackService *m_matcher = nullptr;
     QTimer m_timer;
     bool m_active = false;
+    int m_pendingRequests = 0;   ///< see adjustPending()/isLoading()
     QString m_status;
     QString m_punctuality;   ///< see punctuality()
     QHash<QString, QString> m_stationNames;   ///< shortCode -> name (see stationNames())

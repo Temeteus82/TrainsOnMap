@@ -73,8 +73,8 @@ Rectangle {
             // Close button — keyboard-focusable (W4) with a drawn icon (O3).
             Rectangle {
                 id: closeBtn
-                Layout.preferredWidth: 26
-                Layout.preferredHeight: 26
+                Layout.preferredWidth: 32
+                Layout.preferredHeight: 32
                 radius: 6
                 color: closeHover.hovered ? Theme.subtleHover : "transparent"
                 activeFocusOnTab: true
@@ -215,6 +215,10 @@ Rectangle {
                         width: carGrid.cellW
                         height: carGrid.cellH
 
+                        // Tab-reachable so the tooltip's detail (type/power/amenities)
+                        // has a keyboard path too, not just hover (§1.3).
+                        activeFocusOnTab: true
+
                         // Expose the same detail the hover tooltip shows to assistive
                         // tech, so type/power/amenities aren't pointer-only (W: §1.3).
                         Accessible.role: Accessible.StaticText
@@ -229,9 +233,13 @@ Rectangle {
                             anchors.topMargin: 2
                             anchors.bottomMargin: 2
                             radius: 5
+                            // Contain an oversized label (e.g. a long car number under
+                            // OS "Large text" scaling) instead of letting it spill into
+                            // neighbouring cells — the fixed cellW/cellH don't grow with it.
+                            clip: true
                             color: car.locomotive ? Theme.subtlePress : Theme.iconBadgeBg
-                            border.color: carHover.hovered ? Theme.accent : Theme.hairline
-                            border.width: 1
+                            border.color: (carHover.hovered || car.activeFocus) ? Theme.accent : Theme.hairline
+                            border.width: car.activeFocus ? 2 : 1
 
                             ColumnLayout {
                                 anchors.fill: parent
@@ -251,6 +259,9 @@ Rectangle {
                                     }
                                     Label {
                                         anchors.centerIn: parent
+                                        width: parent.width
+                                        horizontalAlignment: Text.AlignHCenter
+                                        elide: Text.ElideRight
                                         visible: !car.locomotive
                                         text: car.label
                                         font.bold: true
@@ -278,19 +289,32 @@ Rectangle {
                                     visible: car.amenities.length > 0
                                     Repeater {
                                         model: car.amenities
+                                        // A colour-only dot fails colour-blind /
+                                        // low-vision users who can't hover for the
+                                        // tooltip; the amenity's own initial (C/A/F/P)
+                                        // makes each badge distinguishable without
+                                        // relying on hue at all.
                                         delegate: Rectangle {
+                                            id: badge
                                             required property string modelData
-                                            implicitWidth: 5
-                                            implicitHeight: 5
-                                            radius: 2.5
+                                            implicitWidth: 12
+                                            implicitHeight: 12
+                                            radius: height / 2
                                             color: root.amenityColor(modelData)
+                                            Text {
+                                                anchors.centerIn: parent
+                                                text: badge.modelData.charAt(0)
+                                                font.pointSize: TypeScale.panelCaption
+                                                font.bold: true
+                                                color: Theme.inkFor(badge.color)
+                                            }
                                         }
                                     }
                                 }
                             }
 
                             HoverHandler { id: carHover }
-                            ToolTip.visible: carHover.hovered
+                            ToolTip.visible: carHover.hovered || car.activeFocus
                             ToolTip.text: car.locomotive
                                 ? (car.vehicleType + (car.powerType.length > 0
                                                       ? " · " + car.powerType : ""))
@@ -352,7 +376,7 @@ Rectangle {
         Item {
             id: allToggle
             Layout.fillWidth: true
-            implicitHeight: 24
+            implicitHeight: 32   // toward the 44 px desktop hit-target guideline
             property bool checked: false
 
             activeFocusOnTab: true

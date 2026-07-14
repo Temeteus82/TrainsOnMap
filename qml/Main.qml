@@ -479,6 +479,7 @@ ApplicationWindow {
 
         trainCount: trainClient.model.count
         trackCount: trackService.model.count
+        refreshing: trainClient.loading
         streamConnected: trainStream.connected
         streamStatus: trainStream.status
         punctuality: trainClient.punctuality
@@ -498,7 +499,10 @@ ApplicationWindow {
         onActiveChanged: if (active) everShown = true
         opacity: trainDetails.hasSelection ? 1 : 0
         visible: opacity > 0
-        Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+        Behavior on opacity {
+            enabled: !Theme.reducedMotion
+            NumberAnimation { duration: 220; easing.type: Easing.OutCubic }
+        }
         width: 340
         anchors.right: parent.right
         anchors.top: parent.top
@@ -520,7 +524,10 @@ ApplicationWindow {
         onActiveChanged: if (active) everShown = true
         opacity: stationBoard.hasSelection ? 1 : 0
         visible: opacity > 0
-        Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+        Behavior on opacity {
+            enabled: !Theme.reducedMotion
+            NumberAnimation { duration: 220; easing.type: Easing.OutCubic }
+        }
         width: 320
         anchors.right: parent.right
         anchors.top: parent.top

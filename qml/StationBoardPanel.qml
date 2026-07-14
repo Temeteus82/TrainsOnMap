@@ -45,8 +45,8 @@ Rectangle {
             // Close button — keyboard-focusable (matches the detail panel).
             Rectangle {
                 id: closeBtn
-                Layout.preferredWidth: 26
-                Layout.preferredHeight: 26
+                Layout.preferredWidth: 32
+                Layout.preferredHeight: 32
                 radius: 6
                 color: closeHover.hovered ? Theme.subtleHover : "transparent"
                 activeFocusOnTab: true
