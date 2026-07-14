@@ -99,6 +99,7 @@ void DigitrafficClient::refresh()
     // return raw compressed bytes and JSON parsing would fail.
 
     QNetworkReply *reply = m_net->get(req);
+    adjustPending(+1);
     connect(reply, &QNetworkReply::finished, this, [this, reply] { handleReply(reply); });
     setStatus(QStringLiteral("Fetching train positions…"));
 
@@ -128,6 +129,7 @@ void DigitrafficClient::refreshCategories()
     req.setRawHeader("Digitraffic-User", kUserAgent);
 
     QNetworkReply *reply = m_net->get(req);
+    adjustPending(+1);
     connect(reply, &QNetworkReply::finished, this,
             [this, reply, full] { handleCategories(reply, full); });
 }
@@ -135,6 +137,7 @@ void DigitrafficClient::refreshCategories()
 void DigitrafficClient::handleCategories(QNetworkReply *reply, bool full)
 {
     reply->deleteLater();
+    adjustPending(-1);
     if (reply->error() != QNetworkReply::NoError)
         return;   // markers keep their last colours until the next refresh
 
@@ -299,6 +302,7 @@ void DigitrafficClient::handleCauseCategories(QNetworkReply *reply)
 void DigitrafficClient::handleReply(QNetworkReply *reply)
 {
     reply->deleteLater();
+    adjustPending(-1);
 
     if (reply->error() != QNetworkReply::NoError) {
         setStatus(QStringLiteral("Network error: %1").arg(reply->errorString()));
@@ -335,6 +339,14 @@ void DigitrafficClient::setStatus(const QString &status)
         return;
     m_status = status;
     emit statusChanged();
+}
+
+void DigitrafficClient::adjustPending(int delta)
+{
+    const bool wasLoading = m_pendingRequests > 0;
+    m_pendingRequests += delta;
+    if ((m_pendingRequests > 0) != wasLoading)
+        emit loadingChanged();
 }
 
 void DigitrafficClient::recomputePunctuality()

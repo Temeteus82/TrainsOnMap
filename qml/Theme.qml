@@ -63,4 +63,14 @@ QtObject {
     readonly property string basemapStyle: isDark ? "dark_all" : "light_all"
     readonly property color railColor: isDark ? "#5a6470" : "#8c95a0"        // running lines
     readonly property color railSidingColor: isDark ? "#3d444e" : "#bcc3cb"  // yards / sidings
+
+    // Pick black or white ink for text/glyphs on a data-driven background colour,
+    // whichever gives the most contrast (WCAG 2 relative luminance). Shared by any
+    // surface that colours its own fill at runtime (train markers, amenity badges)
+    // instead of picking from Theme's own fixed light/dark pairs.
+    function inkFor(fill) {
+        const lin = (c) => c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)
+        const L = 0.2126 * lin(fill.r) + 0.7152 * lin(fill.g) + 0.0722 * lin(fill.b)
+        return (L + 0.05) / 0.05 >= 1.05 / (L + 0.05) ? "#15171b" : "white"
+    }
 }

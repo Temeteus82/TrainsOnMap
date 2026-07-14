@@ -16,7 +16,9 @@ Item {
     signal toggled()
 
     Layout.fillWidth: true
-    implicitHeight: 24
+    // 32 px: a step toward the 44 px desktop hit-target guideline without
+    // ballooning the sidebar (5 of these stack per screen).
+    implicitHeight: 32
 
     activeFocusOnTab: true
     Accessible.role: Accessible.CheckBox
@@ -43,13 +45,12 @@ Item {
             border.color: root.checked ? Theme.accent : Theme.hairline
             border.width: 1.5
 
-            Text {
+            AppIcon {
                 anchors.centerIn: parent
                 visible: root.checked
-                text: "✓"
+                name: "check"
                 color: Theme.accentText
-                font.pixelSize: 11
-                font.bold: true
+                size: TypeScale.panelIconSm
             }
         }
 

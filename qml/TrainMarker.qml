@@ -75,9 +75,7 @@ MapQuickItem {
         // than reimplementing a whole perceptual-contrast algorithm for it.
         if (fill.r > 0.9 && fill.g < 0.1)
             return "white"
-        const lin = (c) => c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)
-        const L = 0.2126 * lin(fill.r) + 0.7152 * lin(fill.g) + 0.0722 * lin(fill.b)
-        return (L + 0.05) / 0.05 >= 1.05 / (L + 0.05) ? "#15171b" : "white"
+        return Theme.inkFor(fill)
     }
 
     readonly property color trainColor: colorFor(model.trainType, model.category, model.speed)
@@ -182,7 +180,10 @@ MapQuickItem {
         // grows in place. Mirrors TrainSpotter's 1.15× selected scale.
         transformOrigin: Item.Center
         scale: marker.selected ? 1.15 : 1.0
-        Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+        Behavior on scale {
+            enabled: !Theme.reducedMotion
+            NumberAnimation { duration: 120; easing.type: Easing.OutCubic }
+        }
 
         // Dim a stale / not-running train most; a suspect (low-confidence
         // position) train a little, so it reads as present-but-approximate (#1).

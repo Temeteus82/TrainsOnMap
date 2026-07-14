@@ -8,6 +8,131 @@ Legend: ✨ feature · 🐛 bug fix · ♻️ change/refactor · ✅ verificatio
 
 ---
 
+## `qt-ui-design` audit — Warning findings
+
+The five Warning-tier findings from the same audit pass.
+
+### 🐛 Carriage cells were pointer-only despite carrying rich `Accessible.description`
+- [x] Each carriage cell (`TrainDetailPanel.qml`) now sets `activeFocusOnTab: true`
+      and shows the same accent focus border used elsewhere (thicker when
+      focused) instead of only on hover; `ToolTip.visible` now also triggers on
+      `car.activeFocus`, so the type/power/amenity detail has a keyboard path,
+      not just a mouse one. Verified by tabbing through an IC train's carriage
+      strip: each cell gets a visible focus ring and its own tooltip in order.
+
+### ♻️ Compact toggle rows and close buttons sat below the 44 px desktop guideline
+- [x] Bumped `ToggleRow` (24→32 px), `TrainDetailPanel`'s "Show all timing
+      points" checkbox (24→32 px), both panels' close buttons (26→32 px), and
+      `InfoPanel`'s Appearance segmented control (30→32 px) — a step toward the
+      44 px guideline without doubling the sidebar's height (five toggles stack
+      per screen).
+
+### ♻️ Carriage grid's fixed-pixel cells didn't defend against text overflow
+- [x] Added `clip: true` to the carriage cell body and `elide: Text.ElideRight`
+      to the car-number label, so a label that outgrows its cell (e.g. under
+      OS "Large text" scaling) is contained/truncated instead of spilling into
+      neighbouring cells. Left the compact `panelBody`/`TypeScale` base as-is —
+      that's a documented, deliberate "dense HUD" choice, not a bug.
+
+### 🐛 Reduced-motion opt-out had three gaps
+- [x] `Theme.reducedMotion` gated the LIVE pulse, marker glide, and direction
+      arrow, but not `TrainMarker`'s selection-scale bump or the two side
+      panels' opacity fades (`Main.qml`) — all three now check it too.
+
+### ✨ No feedback while a refresh is in flight
+- [x] `DigitrafficClient` gained a `loading` property (`Q_PROPERTY(bool
+      loading …)`), true from the moment `refresh()` issues its position +
+      category requests until both replies land (a paired increment/decrement
+      counter, `adjustPending()`, so the two in-flight requests don't
+      double-fire the signal). The sidebar's Refresh button now reads
+      "Refreshing…" and disables itself for the round-trip instead of sitting
+      inert (Doherty Threshold). Verified live: clicking Refresh flips the
+      button text immediately and it reverts once the fetch completes.
+
+### 📋 Left open
+- [ ] Map markers and station dots remain pointer-only (Tab-reaching an
+      individual train/station to open its panel). This is a bigger,
+      previously-declined scope item — the project's own history notes it
+      "needs a train list view, out of scope now that the list-dependent
+      feature ideas were declined" — so it's left as a known limitation rather
+      than silently re-opening that decision.
+
+### ✅ Verification
+- [x] Clean `windows-llvm` build; `ctest` 3/3. All five fixes eyeballed live
+      (see notes above); no regressions in the sidebar's visual density.
+
+---
+
+## `qt-ui-design` audit — Critical findings (ToggleRow icon, amenity colour)
+
+Two Critical findings from a fresh `qt-ui-design` audit pass over the QML surface.
+
+### 🐛 `ToggleRow` checkmark regressed to hardcoded `pixelSize`
+- [x] Every label in the app was migrated to `font.pointSize` (so text follows
+      the OS "Large text" scale) except `ToggleRow`'s checkmark, which still
+      drew a raw `"✓"` glyph at `font.pixelSize: 11` — the sole `pixelSize`
+      survivor in the whole `qml/` tree, and inconsistent with the `AppIcon`
+      component used for every other check/close glyph. `ToggleRow` backs the
+      sidebar's Commuter/Long-distance/Cargo/Siding/Weather toggles. Swapped
+      for `AppIcon { name: "check"; size: TypeScale.panelIconSm }`
+      (`ToggleRow.qml`), matching `TrainDetailPanel`'s own checkbox.
+
+### 🐛 Carriage amenity dots: colour was the sole carrier, hover the only disclosure
+- [x] The catering/accessible/family/pet dots on each carriage cell
+      (`TrainDetailPanel.qml`) were bare colour-only circles, with the meaning
+      exposed only via a hover `ToolTip` (pointer) or `Accessible.description`
+      (screen reader) — a sighted, keyboard-only user had no way to tell them
+      apart (WCAG 1.4.1 Use of Color). Each badge now shows the amenity
+      string's own first letter (C/A/F/P) so the dots are distinguishable
+      without relying on hue at all. Ink colour picked via a new
+      `Theme.inkFor(fill)` — the WCAG relative-luminance formula extracted
+      from `TrainMarker`'s marker-label ink picker so both call sites share
+      one implementation; `TrainMarker` keeps its local wrapper only for its
+      saturated-red special case before delegating to `Theme.inkFor()`.
+
+### ✅ Verification
+- [x] Clean `windows-llvm` build; `ctest` 3/3. Both fixes eyeballed live:
+      confirmed the sidebar toggles render a crisp check icon, and confirmed
+      an IC train's carriage strip shows legible white "P"/"C" and dark
+      "A"/"F" letters on their respective amenity-colour badges.
+
+---
+
+## Sidebar polish — scrollbar overlap, duplicate track count
+
+Two UI issues spotted by the user while eyeballing the running app.
+
+### 🐛 Sidebar ScrollBar overlapped text
+- [x] `InfoPanel`'s `ColumnLayout` filled the full `Flickable` width, leaving no
+      gutter for the `ScrollBar` docked on the right edge — invisible while the
+      panel's content fit without scrolling, but the recent `panel*` type-scale
+      pass added enough rows that it now does, and the thumb drew on top of the
+      last few pixels of every `fillWidth` row (worst on the wrapped attribution
+      text). Reserved a 12 px gutter (`width: flick.width - 12`) so the thumb no
+      longer sits on top of content (`InfoPanel.qml`).
+
+### 🐛 Track-segment count shown twice, and disagreeing
+- [x] The sidebar showed **two** track-segment counts that didn't match: the
+      live viewport-filtered count (`trackCount`, e.g. "2514 track segments")
+      next to a one-time "N track segments ready" status line reporting the
+      *total* baked network (e.g. "4934"). Root cause: `TrackService` set that
+      status once after the initial load and never cleared it, permanently
+      blocking `statusText`'s intended fallback to the live train-fetch status
+      (`trackService.status.length > 0 ? trackService.status : trainClient.status`
+      in `Main.qml`). Cleared the status on success instead of reporting the
+      total (`TrackService.cpp`) — the live count already conveys what's
+      rendered, and the status line now correctly shows the live train-fetch
+      status ("N trains • updated HH:MM:SS") once tracks finish loading.
+
+### ✅ Verification
+- [x] Clean `windows-llvm` build. Both fixes eyeballed live: shrank the running
+      app's window to force the sidebar into scroll mode and confirmed the
+      thumb no longer overlaps any row (including the wrapped attribution
+      text); confirmed the sidebar now shows a single track count and the
+      status line falls through to the live train-fetch status after load.
+
+---
+
 ## Weather overlay switched to FMI open data
 
 The road-weather proxy is replaced with real weather observations.
