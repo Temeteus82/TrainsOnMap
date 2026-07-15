@@ -61,8 +61,10 @@ signals:
 
 private:
     void onStationNames();                       ///< pull the fleet's name map
+    void onCauseCategoryNames();                  ///< pull the fleet's cause code -> name map
     void handleReply(QNetworkReply *reply, const QString &code);
     QString stationLabel(const QString &code) const;   ///< resolved name, code fallback
+    void rebuildBoard();                          ///< re-resolve causeText for m_rows, push to the model
     void setLoading(bool loading);
     void setStatus(const QString &status);
 
@@ -70,6 +72,9 @@ private:
     StationBoardModel *m_board = nullptr;
     DigitrafficClient *m_fleet = nullptr;
     QHash<QString, QString> m_stationNames;   ///< shortCode -> name (from `fleet`)
+    QHash<QString, QString> m_causeCategoryNames;   ///< categoryCode -> name (from `fleet`)
+    QHash<QString, QString> m_detailedCauseCategoryNames;   ///< detailedCategoryCode -> name (from `fleet`)
+    QVector<StationBoardRow> m_rows;          ///< last fetched rows, with unresolved causeCode
 
     QString m_stationCode;
     QString m_stationName;

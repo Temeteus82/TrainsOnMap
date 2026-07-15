@@ -82,14 +82,17 @@ QVector<TimetableStop> buildStops(const QJsonArray &rows)
         if (row.value(QStringLiteral("cancelled")).toBool())
             s.cancelled = true;
 
-        // Delay cause (top-level category only; a row rarely carries more than
-        // one). Departure preferred over arrival, mirroring delayMinutes above.
+        // Delay cause (top-level + detailed category; a row rarely carries more
+        // than one cause). Departure preferred over arrival, mirroring
+        // delayMinutes above.
         const QJsonArray causes = row.value(QStringLiteral("causes")).toArray();
         if (!causes.isEmpty() && (!isArrival || s.causeCode.isEmpty())) {
-            const QString code = causes.first().toObject()
-                                      .value(QStringLiteral("categoryCode")).toString();
-            if (!code.isEmpty())
+            const QJsonObject cause = causes.first().toObject();
+            const QString code = cause.value(QStringLiteral("categoryCode")).toString();
+            if (!code.isEmpty()) {
                 s.causeCode = code;
+                s.causeDetailedCode = cause.value(QStringLiteral("detailedCategoryCode")).toString();
+            }
         }
 
         const QString track = row.value(QStringLiteral("commercialTrack")).toString();
@@ -194,6 +197,7 @@ void TrainDetailsService::onStationNames()
 void TrainDetailsService::onCauseCategoryNames()
 {
     m_causeCategoryNames = m_fleet->causeCategoryNames();
+    m_detailedCauseCategoryNames = m_fleet->detailedCauseCategoryNames();
     if (!m_causeCategoryNames.isEmpty() && !m_stops.isEmpty())
         rebuildStops();   // a timetable arrived before the cause map did
 }
@@ -390,8 +394,14 @@ void TrainDetailsService::rebuildStops()
     QVector<TimetableStop> resolved = m_stops;
     for (TimetableStop &s : resolved) {
         s.stationName = m_stationNames.value(s.stationShortCode, s.stationShortCode);
-        s.causeText = s.causeCode.isEmpty() ? QString()
-                                            : m_causeCategoryNames.value(s.causeCode);
+        if (s.causeCode.isEmpty()) {
+            s.causeText.clear();
+        } else {
+            const QString category = m_causeCategoryNames.value(s.causeCode);
+            const QString detail = m_detailedCauseCategoryNames.value(s.causeDetailedCode);
+            s.causeText = detail.isEmpty() ? category
+                                            : QStringLiteral("%1: %2").arg(category, detail);
+        }
     }
     m_model->setStops(resolved);
 }

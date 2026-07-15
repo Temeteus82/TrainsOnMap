@@ -43,9 +43,10 @@ public:
     bool isNext = false;          ///< first booked stop the train hasn't reached yet
     QString causeText;             ///< delay cause category name (e.g. "Onnettomuus"), "" if none
 
-    // Build-time accumulator (not exposed as a role); the raw cause category code
-    // (e.g. "A"), resolved to causeText once the code->name map is available.
+    // Build-time accumulators (not exposed as roles); the raw cause category codes
+    // (e.g. "A" / "A1"), resolved to causeText once the code->name maps are available.
     QString causeCode;
+    QString causeDetailedCode;
     bool sawCommercial = false;
     bool sawTrainStopping = false;
     bool sawActual = false;       ///< a row recorded an actualTime → the train has been here
