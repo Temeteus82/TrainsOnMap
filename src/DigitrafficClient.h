@@ -74,6 +74,13 @@ public:
     /// cause line. Empty until the fetch lands (causeCategoryNamesChanged fires).
     QHash<QString, QString> causeCategoryNames() const { return m_causeCategoryNames; }
 
+    /// Detailed cause category code -> Finnish display name, from the one-shot
+    /// /metadata/detailed-cause-category-codes fetch (e.g. "S2" -> "Sähköratavika").
+    /// The top-level category alone (e.g. "Sähkörata") is too coarse to be useful;
+    /// consumers combine this with causeCategoryNames() for the full reason.
+    /// Empty until the fetch lands (causeCategoryNamesChanged fires).
+    QHash<QString, QString> detailedCauseCategoryNames() const { return m_detailedCauseCategoryNames; }
+
 public slots:
     /// Fetch the latest positions once, immediately.
     void refresh();
@@ -107,6 +114,11 @@ private:
     /// delay-cause line.
     void fetchCauseCategories();
     void handleCauseCategories(QNetworkReply *reply);
+    /// One-shot at startup: load detailed-cause-category code -> name, paired with
+    /// fetchCauseCategories() to make the delay-cause line specific rather than
+    /// just the coarse top-level category.
+    void fetchDetailedCauseCategories();
+    void handleDetailedCauseCategories(QNetworkReply *reply);
     void setStatus(const QString &status);
     /// Recompute the punctuality summary from the accumulated per-train status +
     /// category maps (called at the end of handleCategories).
@@ -128,6 +140,7 @@ private:
     QString m_punctuality;   ///< see punctuality()
     QHash<QString, QString> m_stationNames;   ///< shortCode -> name (see stationNames())
     QHash<QString, QString> m_causeCategoryNames; ///< categoryCode -> name (see causeCategoryNames())
+    QHash<QString, QString> m_detailedCauseCategoryNames; ///< detailedCategoryCode -> name (see detailedCauseCategoryNames())
 
     // ---- /live-trains incremental polling state ----------------------------
     // Highest Train.version seen since the last full snapshot; the next delta

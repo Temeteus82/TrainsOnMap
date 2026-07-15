@@ -121,6 +121,7 @@ private:
 
     QHash<QString, QString> m_stationNames;   ///< shortCode -> name (from `fleet`)
     QHash<QString, QString> m_causeCategoryNames; ///< cause category code -> name (from `fleet`)
+    QHash<QString, QString> m_detailedCauseCategoryNames; ///< detailed cause category code -> name (from `fleet`)
     QVector<TimetableStop> m_stops;           ///< last fetched stops (codes resolved lazily)
 
     bool m_hasSelection = false;

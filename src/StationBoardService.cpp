@@ -47,8 +47,21 @@ void StationBoardService::setFleet(DigitrafficClient *fleet)
         connect(m_fleet, &DigitrafficClient::stationNamesChanged,
                 this, &StationBoardService::onStationNames);
         onStationNames();   // the names may already be loaded
+        connect(m_fleet, &DigitrafficClient::causeCategoryNamesChanged,
+                this, &StationBoardService::onCauseCategoryNames);
+        onCauseCategoryNames();   // the cause map may already be loaded
     }
     emit fleetChanged();
+}
+
+void StationBoardService::onCauseCategoryNames()
+{
+    if (m_fleet) {
+        m_causeCategoryNames = m_fleet->causeCategoryNames();
+        m_detailedCauseCategoryNames = m_fleet->detailedCauseCategoryNames();
+    }
+    if (!m_causeCategoryNames.isEmpty() && !m_rows.isEmpty())
+        rebuildBoard();   // the board arrived before the cause map did
 }
 
 void StationBoardService::onStationNames()
@@ -80,6 +93,7 @@ void StationBoardService::show(const QString &code, const QString &name)
     m_hasSelection = true;
     emit selectionChanged();
 
+    m_rows.clear();
     m_board->clear();
     setLoading(true);
     setStatus(QStringLiteral("Loading board…"));
@@ -101,6 +115,7 @@ void StationBoardService::clear()
     m_stationCode.clear();
     m_stationName.clear();
     m_hasSelection = false;
+    m_rows.clear();
     m_board->clear();
     setLoading(false);
     setStatus(QString());
@@ -180,6 +195,15 @@ void StationBoardService::handleReply(QNetworkReply *reply, const QString &code)
         row.delayMinutes = r.value("differenceInMinutes").toInt();
         row.cancelled = o.value("cancelled").toBool() || r.value("cancelled").toBool();
 
+        // Delay cause (top-level + detailed category), same extraction as
+        // TrainDetailsService::buildStops.
+        const QJsonArray causes = r.value("causes").toArray();
+        if (!causes.isEmpty()) {
+            const QJsonObject cause = causes.first().toObject();
+            row.causeCode = cause.value("categoryCode").toString();
+            row.causeDetailedCode = cause.value("detailedCategoryCode").toString();
+        }
+
         const QString sortIso = live.isEmpty() ? sched : live;
         QDateTime st = QDateTime::fromString(sortIso, Qt::ISODateWithMs);
         if (!st.isValid())
@@ -193,8 +217,25 @@ void StationBoardService::handleReply(QNetworkReply *reply, const QString &code)
         return a.sortTime < b.sortTime;
     });
 
-    m_board->setRows(rows);
-    setStatus(rows.isEmpty() ? QStringLiteral("No trains") : QString());
+    m_rows = std::move(rows);
+    rebuildBoard();
+    setStatus(m_rows.isEmpty() ? QStringLiteral("No trains") : QString());
+}
+
+void StationBoardService::rebuildBoard()
+{
+    QVector<StationBoardRow> resolved = m_rows;
+    for (StationBoardRow &row : resolved) {
+        if (row.causeCode.isEmpty()) {
+            row.causeText.clear();
+            continue;
+        }
+        const QString category = m_causeCategoryNames.value(row.causeCode);
+        const QString detail = m_detailedCauseCategoryNames.value(row.causeDetailedCode);
+        row.causeText = detail.isEmpty() ? category
+                                          : QStringLiteral("%1: %2").arg(category, detail);
+    }
+    m_board->setRows(resolved);
 }
 
 void StationBoardService::setLoading(bool loading)

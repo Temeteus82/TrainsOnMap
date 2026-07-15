@@ -25,6 +25,10 @@ constexpr auto kStationsUrl = "https://rata.digitraffic.fi/api/v1/metadata/stati
 // Delay-cause category codes (e.g. "A" -> "Aikataulu ja liikennöinti"); fetched
 // once at startup for the timetable's delay-cause line.
 constexpr auto kCauseCategoriesUrl = "https://rata.digitraffic.fi/api/v1/metadata/cause-category-codes";
+// Detailed cause category codes (e.g. "S2" -> "Sähköratavika"); the top-level
+// category alone (e.g. "Sähkörata") is too coarse to be a useful delay reason.
+constexpr auto kDetailedCauseCategoriesUrl
+    = "https://rata.digitraffic.fi/api/v1/metadata/detailed-cause-category-codes";
 // Digitraffic asks every client to identify itself. Replace with your own app id.
 constexpr auto kUserAgent = "TrainsOnMap/0.1 (Qt6 scaffolding)";
 // REST is the bootstrap + prune path; MQTT carries live deltas in between, so
@@ -54,6 +58,7 @@ DigitrafficClient::DigitrafficClient(QObject *parent)
 
     fetchStations();   // one-shot: station coordinates for parked-train pinning
     fetchCauseCategories();   // one-shot: delay-cause code -> name
+    fetchDetailedCauseCategories();   // one-shot: detailed delay-cause code -> name
 }
 
 void DigitrafficClient::setActive(bool active)
@@ -295,6 +300,37 @@ void DigitrafficClient::handleCauseCategories(QNetworkReply *reply)
         const QString code = o.value("categoryCode").toString();
         if (!code.isEmpty())
             m_causeCategoryNames.insert(code, o.value("categoryName").toString());
+    }
+    emit causeCategoryNamesChanged();
+}
+
+void DigitrafficClient::fetchDetailedCauseCategories()
+{
+    QNetworkRequest req{QUrl(QString::fromLatin1(kDetailedCauseCategoriesUrl))};
+    req.setRawHeader("Digitraffic-User", kUserAgent);
+    QNetworkReply *reply = m_net->get(req);
+    connect(reply, &QNetworkReply::finished, this,
+            [this, reply] { handleDetailedCauseCategories(reply); });
+}
+
+void DigitrafficClient::handleDetailedCauseCategories(QNetworkReply *reply)
+{
+    reply->deleteLater();
+    if (reply->error() != QNetworkReply::NoError)
+        return;   // the delay-cause line just stays at the coarser top-level category
+
+    const QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
+    if (!doc.isArray())
+        return;
+
+    const QJsonArray arr = doc.array();
+    m_detailedCauseCategoryNames.clear();
+    m_detailedCauseCategoryNames.reserve(arr.size());
+    for (const QJsonValue &v : arr) {
+        const QJsonObject o = v.toObject();
+        const QString code = o.value("detailedCategoryCode").toString();
+        if (!code.isEmpty())
+            m_detailedCauseCategoryNames.insert(code, o.value("detailedCategoryName").toString());
     }
     emit causeCategoryNamesChanged();
 }

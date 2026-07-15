@@ -22,6 +22,7 @@ struct StationBoardRow {
     Q_PROPERTY(int delayMinutes MEMBER delayMinutes)
     Q_PROPERTY(bool cancelled MEMBER cancelled)
     Q_PROPERTY(bool arriving MEMBER arriving)            ///< true = terminates here (arrival), false = departure
+    Q_PROPERTY(QString causeText MEMBER causeText)        ///< delay cause category name, "" if none
 public:
     QString trainLabel;
     QString destination;
@@ -31,7 +32,14 @@ public:
     int delayMinutes = 0;
     bool cancelled = false;
     bool arriving = false;
+    QString causeText;
     QDateTime sortTime;   ///< ordering key; deliberately not a role
+
+    // Build-time accumulators (not exposed as roles); the raw cause category codes
+    // (e.g. "A" / "A1"), resolved to causeText once the code->name maps are
+    // available. See TimetableStop::causeCode / causeDetailedCode.
+    QString causeCode;
+    QString causeDetailedCode;
 };
 
 // Named roles on one item (Qt 6.11+), as the other QRangeModel gadgets do.

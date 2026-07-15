@@ -123,6 +123,7 @@ Rectangle {
                 required property int delayMinutes
                 required property bool cancelled
                 required property bool arriving
+                required property string causeText
                 width: ListView.view.width
                 height: rowLayout.implicitHeight + 12
 
@@ -170,6 +171,16 @@ Rectangle {
                             font.pointSize: TypeScale.panelCaption
                             color: Theme.textMuted
                             elide: Text.ElideRight
+                        }
+                        // Delay cause (top-level category, e.g. "Onnettomuus"), when known.
+                        Label {
+                            Layout.fillWidth: true
+                            text: boardRow.causeText
+                            color: Theme.textMuted
+                            font.pointSize: TypeScale.panelCaption
+                            font.italic: true
+                            elide: Text.ElideRight
+                            visible: text.length > 0
                         }
                     }
 
