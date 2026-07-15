@@ -9,11 +9,11 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
-# QtLocation/QtPositioning require 6.5+. Qml/Quick give us the Qt Quick map UI;
-# Network is used by the Digitraffic REST/GeoJSON clients.
-find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Qml Quick Network Positioning Location WebSockets Concurrent Test)
+# Floor is 6.10, not QtLocation/QtPositioning's 6.5+: TimetableModel uses
+# QRangeModel (QtCore, since 6.10).
+find_package(Qt6 6.10 REQUIRED COMPONENTS Core Gui Qml Quick Network Positioning Location WebSockets Concurrent Test)
 
-qt_standard_project_setup(REQUIRES 6.5)
+qt_standard_project_setup(REQUIRES 6.10)
 
 # QML files live in a subdirectory; opt in to the modern qmldir handling so a
 # qmldir is generated for each QML dir (QTP0004, Qt 6.8+). Guard on the Qt
