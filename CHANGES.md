@@ -8,6 +8,69 @@ Legend: ✨ feature · 🐛 bug fix · ♻️ change/refactor · ✅ verificatio
 
 ---
 
+## `qt-cpp-review` audit — src/ codebase scan
+
+Read-only review (lint + 6 parallel deep-analysis agents) over all of `src/`.
+No code changed. Model contracts, ownership/lifecycle, and thread safety came
+back clean; open items below are from API/correctness, error handling, and
+performance/quality.
+
+### 📋 Left open
+- [ ] `StationBoardService::rebuildBoard()` and `TrainDetailsService::rebuildStops()`
+      duplicate the causeCode→causeText composition logic (added by the two
+      delay-cause sessions). Extract one shared helper
+      `(causeCode, causeDetailedCode, categoryNames, detailedCategoryNames) -> QString`.
+- [ ] `TrainDetailsService::hhmm()` (`TrainDetailsService.cpp:25-33`) lacks the
+      `Qt::ISODate` fallback that `StationBoardService::hhmm()`
+      (`StationBoardService.cpp:21-29`) has — a timestamp missing fractional
+      seconds silently blanks in the train-detail panel but still renders on
+      the station board. Extract one shared timestamp-parsing helper.
+- [ ] `TimetableModel::setStops()` + `TrainDetailsService::rebuildStops()`
+      copy the stop vector 3x per rebuild (fires on every live MQTT update for
+      the selected train) instead of moving. `TimetableModel.cpp`'s
+      `m_stops = rows;` should be `m_stops = std::move(rows);`, and
+      `rebuildStops()` should move `resolved` into `setStops()`.
+- [ ] `FmiWeatherClient::handleData()` (`FmiWeatherClient.cpp:81-111`) never
+      checks `QXmlStreamReader::hasError()` after the parse loop — a
+      truncated/malformed response silently pushes partial data to the model
+      with no error signal.
+- [ ] `DigitrafficMqttClient`'s `QWebSocket` connection (`DigitrafficMqttClient.cpp:24-33`)
+      has no `sslErrors` handler (the four `QNetworkAccessManager` owners have
+      the same gap — low severity, public credential-free endpoints, but no
+      diagnostic detail on a cert failure today).
+- [ ] `TrainDetailsService::onStationNames()`/`onCauseCategoryNames()`
+      dereference `m_fleet` unconditionally; the near-identical
+      `StationBoardService` methods guard with `if (m_fleet)`. Not currently
+      exploitable, but the two sibling classes have drifted — add the guard
+      for consistency.
+- [ ] `m_packetId` in `DigitrafficMqttClient` (`quint16`, unguarded increment)
+      wraps to 0 after 65535 SUBSCRIBE/UNSUBSCRIBE calls, which MQTT 3.1.1
+      treats as an invalid packet id. Cheap fix: `if (++m_packetId == 0) m_packetId = 1;`.
+- [ ] Six bare `std::min`/`std::max` calls in `TrackService.cpp:102-112` (plus
+      one each in `DigitrafficClient.cpp:174` and `TrainListModel.cpp:354`)
+      aren't parenthesis-protected against the Windows.h macro clash — matters
+      once the `windows-msvc`/`windows-llvm` presets are actually built.
+- [ ] Two unscoped enums without an explicit underlying type
+      (`TrackListModel.h:26`, `TrainListModel.h:100`) risk a BiC break; add
+      `: int` to both.
+- [ ] `DigitrafficClient`'s `stationNames()`/`causeCategoryNames()`/
+      `detailedCauseCategoryNames()` (`DigitrafficClient.h:69,75,82`) return
+      `QHash` by value, copied on every call — likely negligible given call
+      frequency, worth a `const&` pass only if profiling ever shows otherwise.
+- [ ] `TrainListModel`/`TrackListModel`'s hand-written `roleNames()` rebuild
+      the role hash on every call instead of caching it — likely harmless
+      since Qt/QML calls it once per view attachment, but cheap to cache.
+
+Not left open (verified non-issues during the review): the lint pass's five
+`QString::arg()` "%2 but only 1 .arg()" hits are all false positives (chained
+`.arg().arg()` or the two-arg `arg(a, b)` overload, which the single-line
+scanner doesn't parse); `TrainListModel.cpp:91`'s `default:` in a role
+`switch` was traced and all 14 roles are in fact handled; the pervasive
+direct-brace-init style (`Type var{args};`) is this codebase's established
+idiom, not a defect.
+
+---
+
 ## `qt-ui-design` audit — Warning findings
 
 The five Warning-tier findings from the same audit pass.
