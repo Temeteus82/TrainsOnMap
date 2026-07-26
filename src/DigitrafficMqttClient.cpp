@@ -2,14 +2,20 @@
 
 #include "MqttCodec.h"
 
+#include <QDebug>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QNetworkRequest>
 #include <QRandomGenerator>
+#include <QStringList>
 #include <QUrl>
 #include <QWebSocket>
 #include <QWebSocketHandshakeOptions>
+
+#if QT_CONFIG(ssl)
+#include <QSslError>
+#endif
 
 namespace {
 constexpr auto kBrokerUrl = "wss://rata.digitraffic.fi:443/mqtt";
@@ -31,6 +37,22 @@ DigitrafficMqttClient::DigitrafficMqttClient(QObject *parent)
     connect(m_socket, &QWebSocket::errorOccurred, this, [this](QAbstractSocket::SocketError) {
         setStatus(QStringLiteral("Socket error: %1").arg(m_socket->errorString()));
     });
+#if QT_CONFIG(ssl)
+    // Diagnostics only — deliberately no ignoreSslErrors(): the handshake still
+    // fails, and errorOccurred above still drives the reconnect. Without this a
+    // cert failure reaches the user as a bare "Socket error" with no reason.
+    // (netdiag::logSslErrors covers the QNetworkAccessManager owners; QWebSocket
+    // has its own signal shape, and inlining it here keeps Qt WebSockets out of
+    // a header four non-WebSocket translation units include.)
+    connect(m_socket, &QWebSocket::sslErrors, this, [](const QList<QSslError> &errors) {
+        QStringList reasons;
+        reasons.reserve(errors.size());
+        for (const QSslError &e : errors)
+            reasons << e.errorString();
+        qWarning("DigitrafficMqttClient: TLS error connecting to the broker: %ls",
+                 qUtf16Printable(reasons.join(QStringLiteral("; "))));
+    });
+#endif
 
     m_pingTimer.setInterval(kKeepAliveSecs * 1000 / 2);
     connect(&m_pingTimer, &QTimer::timeout, this, [this] { send(mqttwire::buildPingReq()); });
@@ -105,14 +127,14 @@ void DigitrafficMqttClient::unsubscribeTrain()
     if (m_trainTopic.isEmpty())
         return;
     if (m_connected)
-        send(mqttwire::buildUnsubscribe(m_packetId++, m_trainTopic));
+        send(mqttwire::buildUnsubscribe(nextPacketId(), m_trainTopic));
     m_trainTopic.clear();
 }
 
 void DigitrafficMqttClient::sendTrainSubscription()
 {
     if (!m_trainTopic.isEmpty() && m_connected)
-        send(mqttwire::buildSubscribe(m_packetId++, m_trainTopic, 0));
+        send(mqttwire::buildSubscribe(nextPacketId(), m_trainTopic, 0));
 }
 
 void DigitrafficMqttClient::closeConnection()
@@ -186,7 +208,7 @@ void DigitrafficMqttClient::dispatchPacket(quint8 type, quint8 flags, const QByt
         if (body.size() >= 2 && body.at(1) == 0) {
             setConnected(true);
             m_pingTimer.start();
-            send(mqttwire::buildSubscribe(m_packetId++, QString::fromLatin1(kLocationsTopic), 0));
+            send(mqttwire::buildSubscribe(nextPacketId(), QString::fromLatin1(kLocationsTopic), 0));
             sendTrainSubscription();   // restore a selected-train sub across reconnects
             setStatus(QStringLiteral("Subscribing…"));
         } else {

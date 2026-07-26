@@ -41,6 +41,8 @@ qt_add_executable(TrainsOnMap
     src/FmiWeatherClient.h      src/FmiWeatherClient.cpp
     src/Projection.h
     src/MqttCodec.h
+    src/DigitrafficFormat.h
+    src/NetworkDiagnostics.h
 )
 
 # The theme palette and the type scale are QML singletons (one shared instance
@@ -245,3 +247,13 @@ qt_add_executable(tst_compositionmodel
 target_include_directories(tst_compositionmodel PRIVATE src)
 target_link_libraries(tst_compositionmodel PRIVATE Qt6::Core Qt6::Qml Qt6::Test)
 add_test(NAME compositionmodel COMMAND tst_compositionmodel)
+
+# DigitrafficFormat is header-only and pure QtCore — the timestamp and delay-cause
+# formatting the station board and the train detail panel both render. Pinned
+# because these started as per-service copies that silently drifted apart.
+qt_add_executable(tst_digitrafficformat
+    tests/tst_digitrafficformat.cpp
+    src/DigitrafficFormat.h)
+target_include_directories(tst_digitrafficformat PRIVATE src)
+target_link_libraries(tst_digitrafficformat PRIVATE Qt6::Core Qt6::Test)
+add_test(NAME digitrafficformat COMMAND tst_digitrafficformat)

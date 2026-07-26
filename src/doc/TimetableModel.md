@@ -104,12 +104,16 @@ None.
 
 Getters for the four model properties.
 
-#### void setStops(const QVector<TimetableStop> &stops)
+#### void setStops(QVector<TimetableStop> stops)
 
-Replaces the stop list. Before the swap it derives journey progress from each
-stop's `sawActual` flag: the last point that recorded an `actualTime` is the
-furthest the train has demonstrably reached, so every point up to and including it
-is marked `passed`, and the first booked stop after it is marked `isNext`. Counts
+Replaces the stop list. Takes its argument **by value** and moves it into the
+backing container: this is rebuilt on every live MQTT update for the selected
+train, so `TrainDetailsService::rebuildStops()` `std::move()`s its resolved
+vector in rather than paying a second copy. Before the swap it derives journey
+progress from each stop's `sawActual` flag: the last point that recorded an
+`actualTime` is the furthest the train has demonstrably reached, so every point
+up to and including it is marked `passed`, and the first booked stop after it is
+marked `isNext`. Counts
 `totalStops`/`passedStops` over the booked stops and records `nextStopRow`.
 Recomputed on every (re)build, so live MQTT updates advance the marker. Uses a full
 `beginResetModel`/`endResetModel` (timetables are small and arrive wholesale) and

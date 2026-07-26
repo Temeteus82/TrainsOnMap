@@ -66,6 +66,15 @@ private:
     void handleLocationPayload(const QByteArray &payload);
     void sendTrainSubscription();   ///< (re)subscribe to m_trainTopic if set & connected
     void send(const QByteArray &packet);
+    /// Next MQTT packet identifier. 0 is not a valid id in MQTT 3.1.1, so wrap
+    /// back to 1 instead of through 0 after 65535 SUBSCRIBE/UNSUBSCRIBEs.
+    quint16 nextPacketId()
+    {
+        const quint16 id = m_packetId++;
+        if (m_packetId == 0)
+            m_packetId = 1;
+        return id;
+    }
     void setConnected(bool connected);
     void setStatus(const QString &status);
 

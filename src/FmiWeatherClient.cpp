@@ -1,6 +1,9 @@
 #include "FmiWeatherClient.h"
 
+#include "NetworkDiagnostics.h"
+
 #include <QDateTime>
+#include <QDebug>
 #include <QGeoCoordinate>
 #include <QHash>
 #include <QNetworkAccessManager>
@@ -39,6 +42,7 @@ FmiWeatherClient::FmiWeatherClient(QObject *parent)
     , m_model(new WeatherStationModel(this))
 {
     m_net->setTransferTimeout(20000);
+    netdiag::logSslErrors(m_net, "FmiWeatherClient");
     m_timer.setInterval(kPollMs);
     connect(&m_timer, &QTimer::timeout, this, &FmiWeatherClient::fetchData);
 }
@@ -108,6 +112,15 @@ void FmiWeatherClient::handleData(QNetworkReply *reply)
             r.point.tempC = temp;
             r.point.tempText = QString::number(qRound(temp)) + QStringLiteral("°");
         }
+    }
+
+    // A truncated or malformed response leaves the loop with only the records
+    // parsed so far. Keep the previous (complete) overlay rather than replacing
+    // it with a partial one — the poll timer retries in a few minutes.
+    if (xml.hasError()) {
+        qWarning("FmiWeatherClient: observation parse failed at line %lld: %ls",
+                 xml.lineNumber(), qUtf16Printable(xml.errorString()));
+        return;
     }
 
     QVector<WeatherPoint> points;
