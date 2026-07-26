@@ -1,6 +1,5 @@
 #include "StationBoardService.h"
 
-#include <QDateTime>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -12,21 +11,11 @@
 #include <algorithm>
 
 #include "DigitrafficClient.h"
+#include "DigitrafficFormat.h"
+#include "NetworkDiagnostics.h"
 
 namespace {
 constexpr const char *kUserAgent = "TrainsOnMap/0.1 (Qt6 scaffolding)";
-
-/// Parse a Digitraffic ISO8601 timestamp (fractional seconds first, plain
-/// fallback) and format it as local "HH:mm"; empty in/out for a missing time.
-QString hhmm(const QString &iso)
-{
-    if (iso.isEmpty())
-        return {};
-    QDateTime dt = QDateTime::fromString(iso, Qt::ISODateWithMs);
-    if (!dt.isValid())
-        dt = QDateTime::fromString(iso, Qt::ISODate);
-    return dt.isValid() ? dt.toLocalTime().toString(QStringLiteral("HH:mm")) : QString();
-}
 }   // namespace
 
 StationBoardService::StationBoardService(QObject *parent)
@@ -34,6 +23,7 @@ StationBoardService::StationBoardService(QObject *parent)
     , m_net(new QNetworkAccessManager(this))
     , m_board(new StationBoardModel(this))
 {
+    netdiag::logSslErrors(m_net, "StationBoardService");
 }
 
 void StationBoardService::setFleet(DigitrafficClient *fleet)
@@ -187,8 +177,8 @@ void StationBoardService::handleReply(QNetworkReply *reply, const QString &code)
         const QString live = r.value("liveEstimateTime").toString().isEmpty()
                                  ? r.value("actualTime").toString()
                                  : r.value("liveEstimateTime").toString();
-        row.timeText = hhmm(sched);
-        const QString est = hhmm(live);
+        row.timeText = digitraffic::hhmm(sched);
+        const QString est = digitraffic::hhmm(live);
         if (!est.isEmpty() && est != row.timeText)
             row.estimateText = est;
         row.track = r.value("commercialTrack").toString();
@@ -204,11 +194,7 @@ void StationBoardService::handleReply(QNetworkReply *reply, const QString &code)
             row.causeDetailedCode = cause.value("detailedCategoryCode").toString();
         }
 
-        const QString sortIso = live.isEmpty() ? sched : live;
-        QDateTime st = QDateTime::fromString(sortIso, Qt::ISODateWithMs);
-        if (!st.isValid())
-            st = QDateTime::fromString(sortIso, Qt::ISODate);
-        row.sortTime = st;
+        row.sortTime = digitraffic::parseIso(live.isEmpty() ? sched : live);
 
         rows.push_back(std::move(row));
     }
@@ -226,14 +212,9 @@ void StationBoardService::rebuildBoard()
 {
     QVector<StationBoardRow> resolved = m_rows;
     for (StationBoardRow &row : resolved) {
-        if (row.causeCode.isEmpty()) {
-            row.causeText.clear();
-            continue;
-        }
-        const QString category = m_causeCategoryNames.value(row.causeCode);
-        const QString detail = m_detailedCauseCategoryNames.value(row.causeDetailedCode);
-        row.causeText = detail.isEmpty() ? category
-                                          : QStringLiteral("%1: %2").arg(category, detail);
+        row.causeText = digitraffic::causeText(row.causeCode, row.causeDetailedCode,
+                                               m_causeCategoryNames,
+                                               m_detailedCauseCategoryNames);
     }
     m_board->setRows(resolved);
 }

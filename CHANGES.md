@@ -8,6 +8,108 @@ Legend: ✨ feature · 🐛 bug fix · ♻️ change/refactor · ✅ verificatio
 
 ---
 
+## Shared Digitraffic formatting helpers + `qt-cpp-review` follow-ups
+
+Seven items from the `qt-cpp-review` audit's Left-open list below. One of them
+turned out not to be a real defect — see the correction.
+
+### ♻️ One definition of the formatting both timetable panels use
+- [x] New header-only `src/DigitrafficFormat.h` (`digitraffic` namespace, the
+      same idiom as `MqttCodec.h` / `Projection.h`) holding `parseIso()`,
+      `hhmm()` and `causeText()`. `StationBoardService` and
+      `TrainDetailsService` each carried a private copy of the timestamp
+      formatter, and the causeCode→causeText composition was duplicated
+      verbatim between `rebuildBoard()` and `rebuildStops()`; both services now
+      call the shared helpers and hold no formatting logic of their own.
+      `StationBoardService`'s separate ad-hoc `sortTime` parse folds into
+      `parseIso()` too. Documented in `src/doc/DigitrafficFormat.md`.
+
+### ✅ The audit's `hhmm()` divergence was a false alarm — corrected
+- [x] The audit recorded `TrainDetailsService::hhmm()` as missing
+      `StationBoardService::hhmm()`'s `Qt::ISODate` fallback, so a timestamp
+      without fractional seconds would silently blank in the detail panel while
+      still rendering on the station board. **Not reproducible.** When
+      *parsing*, `Qt::ISODateWithMs` treats the fractional part as optional and
+      accepts exactly the same strings as `Qt::ISODate` — the two enums differ
+      only in `toString()`. Verified two ways: deleting the fallback changed no
+      test outcome (mutation test), and a direct probe over eight timestamp
+      shapes had both enums accepting all eight. So the two copies had always
+      agreed and the fallback was dead code; it is not carried into the shared
+      helper. `tst_digitrafficformat` now pins the both-forms behaviour, so a
+      future change in Qt's parser fails the build instead of silently blanking
+      times in the panels.
+
+### 🐛 A truncated FMI response replaced the weather overlay with partial data
+- [x] `FmiWeatherClient::handleData()` never checked
+      `QXmlStreamReader::hasError()` after its parse loop, so a truncated or
+      malformed WFS response pushed whatever records happened to parse first
+      into the model as if it were a complete national overlay. It now bails on
+      a parse error — keeping the previous complete overlay, since the 10-minute
+      poll retries anyway — and emits a `qWarning` naming the failing line and
+      reason. That is the first diagnostic logging in `src/`; there was no
+      `qWarning`/`qDebug` anywhere in the C++ layer before this.
+
+### 🐛 MQTT packet identifiers wrapped through 0
+- [x] `m_packetId` (`quint16`, incremented at three bare `m_packetId++` call
+      sites) wrapped to 0 after 65535 SUBSCRIBE/UNSUBSCRIBEs, and 0 is not a
+      valid packet identifier in MQTT 3.1.1. All three sites now go through a
+      `nextPacketId()` helper that wraps back to 1. Reachable only after a very
+      long session of train selections, but free to fix; the helper preserves
+      the existing id sequence (first SUBSCRIBE still uses 1).
+
+### ♻️ The timetable rebuild copied the stop vector three times
+- [x] `TimetableModel::setStops()` now takes its vector **by value** and
+      `std::move()`s it into the backing container, and
+      `TrainDetailsService::rebuildStops()` moves its resolved vector in — one
+      copy per rebuild instead of three. This path runs on every live MQTT
+      update for the currently selected train. `src/doc/TimetableModel.md`
+      updated for the new signature. Left `StationBoardModel::setRows()` on the
+      const-ref signature deliberately: the board rebuilds once per fetch, not
+      per live update, so the same change there would be churn without a reason.
+
+### 🐛 A TLS failure was undiagnosable on all five network clients
+- [x] None of the four `QNetworkAccessManager` owners nor
+      `DigitrafficMqttClient`'s `QWebSocket` handled `sslErrors`, so a
+      certificate problem surfaced only as a generic "request failed" /
+      "Socket error" with no reason attached. New header-only
+      `src/NetworkDiagnostics.h` (`netdiag` namespace) wires one logging handler
+      per manager; the WebSocket's differently-shaped signal is inlined at its
+      single call site so Qt WebSockets stays out of a header that four
+      non-WebSocket translation units include. Guarded on `QT_CONFIG(ssl)` so an
+      SSL-less Qt still compiles.
+
+      Deliberately **no** `ignoreSslErrors()` anywhere: these are public,
+      credential-free endpoints, but silently accepting a bad certificate would
+      turn a diagnostics gap into a real vulnerability. The request still fails
+      exactly as before — only the reason is now recoverable.
+
+### ♻️ `TrainDetailsService` dereferenced `m_fleet` where its sibling guards
+- [x] `onStationNames()` / `onCauseCategoryNames()` dereferenced `m_fleet`
+      unconditionally while the near-identical `StationBoardService` methods
+      guard with `if (m_fleet)`. Not reachable today (both are only invoked from
+      inside `setFleet`'s own `if (m_fleet)` branch, or by a signal from a live
+      fleet), so this is drift between two sibling classes rather than a live
+      bug — but it is the kind of drift that becomes a crash the first time
+      someone adds another caller. Guarded to match.
+
+### ✅ Verification
+- [x] Clean `macos-clang` rebuild (`--clean-first`), zero compiler warnings;
+      `ctest` 4/4 — the new `digitrafficformat` target joins railgraph /
+      timetablemodel / compositionmodel. The new test's discriminating power was
+      itself checked by mutation, which is how the false alarm above surfaced.
+- [x] The TLS handler was exercised end-to-end against a known bad-certificate
+      host (`self-signed.badssl.com`) with a throwaway probe: it logged
+      *"TLS error for https://self-signed.badssl.com/: The certificate is
+      self-signed, and untrusted"* and the request still failed with
+      `QNetworkReply::SslHandshakeFailedError` — confirming the handler both
+      fires and does not suppress the failure. `QT_FEATURE_ssl` is 1 in this
+      Qt 6.11.1 build, so the guarded code is compiled in rather than stubbed.
+- [x] Not eyeballed in the running app: every remaining change is either
+      behaviour-preserving or on an error path (malformed XML, 65535-message
+      wrap, bad certificate) that normal use doesn't reach.
+
+---
+
 ## `qt-cpp-review` audit — src/ codebase scan
 
 Read-only review (lint + 6 parallel deep-analysis agents) over all of `src/`.
@@ -16,36 +118,42 @@ back clean; open items below are from API/correctness, error handling, and
 performance/quality.
 
 ### 📋 Left open
-- [ ] `StationBoardService::rebuildBoard()` and `TrainDetailsService::rebuildStops()`
+The first seven items below are now closed — see "Shared Digitraffic formatting
+helpers + `qt-cpp-review` follow-ups" above, which also records why the `hhmm()`
+one was a false alarm. The rest are still open.
+
+- [x] `StationBoardService::rebuildBoard()` and `TrainDetailsService::rebuildStops()`
       duplicate the causeCode→causeText composition logic (added by the two
       delay-cause sessions). Extract one shared helper
       `(causeCode, causeDetailedCode, categoryNames, detailedCategoryNames) -> QString`.
-- [ ] `TrainDetailsService::hhmm()` (`TrainDetailsService.cpp:25-33`) lacks the
+- [x] `TrainDetailsService::hhmm()` (`TrainDetailsService.cpp:25-33`) lacks the
       `Qt::ISODate` fallback that `StationBoardService::hhmm()`
       (`StationBoardService.cpp:21-29`) has — a timestamp missing fractional
       seconds silently blanks in the train-detail panel but still renders on
       the station board. Extract one shared timestamp-parsing helper.
-- [ ] `TimetableModel::setStops()` + `TrainDetailsService::rebuildStops()`
+      **Premise disproved:** the two parse modes are identical when parsing, so
+      the panels never disagreed. Helper extracted anyway; fallback dropped.
+- [x] `TimetableModel::setStops()` + `TrainDetailsService::rebuildStops()`
       copy the stop vector 3x per rebuild (fires on every live MQTT update for
       the selected train) instead of moving. `TimetableModel.cpp`'s
       `m_stops = rows;` should be `m_stops = std::move(rows);`, and
       `rebuildStops()` should move `resolved` into `setStops()`.
-- [ ] `FmiWeatherClient::handleData()` (`FmiWeatherClient.cpp:81-111`) never
+- [x] `FmiWeatherClient::handleData()` (`FmiWeatherClient.cpp:81-111`) never
       checks `QXmlStreamReader::hasError()` after the parse loop — a
       truncated/malformed response silently pushes partial data to the model
       with no error signal.
-- [ ] `DigitrafficMqttClient`'s `QWebSocket` connection (`DigitrafficMqttClient.cpp:24-33`)
+- [x] `m_packetId` in `DigitrafficMqttClient` (`quint16`, unguarded increment)
+      wraps to 0 after 65535 SUBSCRIBE/UNSUBSCRIBE calls, which MQTT 3.1.1
+      treats as an invalid packet id. Cheap fix: `if (++m_packetId == 0) m_packetId = 1;`.
+- [x] `DigitrafficMqttClient`'s `QWebSocket` connection (`DigitrafficMqttClient.cpp:24-33`)
       has no `sslErrors` handler (the four `QNetworkAccessManager` owners have
       the same gap — low severity, public credential-free endpoints, but no
       diagnostic detail on a cert failure today).
-- [ ] `TrainDetailsService::onStationNames()`/`onCauseCategoryNames()`
+- [x] `TrainDetailsService::onStationNames()`/`onCauseCategoryNames()`
       dereference `m_fleet` unconditionally; the near-identical
       `StationBoardService` methods guard with `if (m_fleet)`. Not currently
       exploitable, but the two sibling classes have drifted — add the guard
       for consistency.
-- [ ] `m_packetId` in `DigitrafficMqttClient` (`quint16`, unguarded increment)
-      wraps to 0 after 65535 SUBSCRIBE/UNSUBSCRIBE calls, which MQTT 3.1.1
-      treats as an invalid packet id. Cheap fix: `if (++m_packetId == 0) m_packetId = 1;`.
 - [ ] Six bare `std::min`/`std::max` calls in `TrackService.cpp:102-112` (plus
       one each in `DigitrafficClient.cpp:174` and `TrainListModel.cpp:354`)
       aren't parenthesis-protected against the Windows.h macro clash — matters

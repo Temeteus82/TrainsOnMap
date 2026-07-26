@@ -1,5 +1,7 @@
 #include "TimetableModel.h"
 
+#include <utility>
+
 // Pass a pointer to the member container so QRangeModel operates on it in place;
 // structural changes below go through the QAbstractItemModel API. NOTE: the base
 // is constructed before m_stops, so QRangeModel must not dereference the pointer
@@ -10,10 +12,8 @@ TimetableModel::TimetableModel(QObject *parent)
 {
 }
 
-void TimetableModel::setStops(const QVector<TimetableStop> &stops)
+void TimetableModel::setStops(QVector<TimetableStop> rows)
 {
-    QVector<TimetableStop> rows = stops;
-
     // Derive journey progress from the per-stop `sawActual` flag: the last point
     // that recorded an actualTime is the furthest the train has demonstrably
     // reached, so every point up to and including it is `passed`, and the first
@@ -46,7 +46,7 @@ void TimetableModel::setStops(const QVector<TimetableStop> &stops)
     // tells attached views to re-read; QRangeModel reports the live size of the
     // backing container afterwards.
     beginResetModel();
-    m_stops = rows;
+    m_stops = std::move(rows);
     endResetModel();
 
     m_passedStops = passed;

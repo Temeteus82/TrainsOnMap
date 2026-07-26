@@ -20,6 +20,8 @@ binds to.
 | [DigitrafficMqttClient](DigitrafficMqttClient.md) | Live MQTT-over-WebSocket stream of position deltas; upserts into the shared `TrainListModel` and re-emits per-train timetable messages. |
 | [MqttCodec](MqttCodec.md) | Header-only `mqttwire` namespace — minimal MQTT 3.1.1 wire encoders/decoders (CONNECT/SUBSCRIBE/PUBLISH parsing). |
 | [TrainDetailsService](TrainDetailsService.md) | On-demand detail backend — fetches a run's timetable + carriage composition, streams live updates, drives the detail panel. |
+| [DigitrafficFormat](DigitrafficFormat.md) | Header-only `digitraffic` namespace — the ISO-timestamp and delay-cause formatting shared by the station board and the train detail panel. |
+| [NetworkDiagnostics](NetworkDiagnostics.md) | Header-only `netdiag` namespace — TLS-error logging for the four `QNetworkAccessManager` owners. Logs only; never ignores a certificate error. |
 
 ## Models (QML-bound)
 

@@ -1,9 +1,10 @@
 #include "TrainDetailsService.h"
 
 #include "DigitrafficClient.h"
+#include "DigitrafficFormat.h"
 #include "DigitrafficMqttClient.h"
+#include "NetworkDiagnostics.h"
 
-#include <QDateTime>
 #include <QTime>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -16,21 +17,12 @@
 
 #include <algorithm>
 #include <chrono>
+#include <utility>
 
 namespace {
 constexpr auto kUserAgent = "TrainsOnMap/0.1 (Qt6 scaffolding)";
 // Abort a stalled request rather than leaving the panel stuck on "Loading…".
 constexpr auto kRequestTimeout = std::chrono::seconds{15};
-
-QString hhmm(const QString &iso)
-{
-    if (iso.isEmpty())
-        return {};
-    const QDateTime dt = QDateTime::fromString(iso, Qt::ISODateWithMs);
-    if (!dt.isValid())
-        return {};
-    return dt.toLocalTime().toString(QStringLiteral("HH:mm"));
-}
 
 QString estimate(const QJsonObject &row, const QString &scheduled)
 {
@@ -38,7 +30,7 @@ QString estimate(const QJsonObject &row, const QString &scheduled)
     QString iso = row.value(QStringLiteral("actualTime")).toString();
     if (iso.isEmpty())
         iso = row.value(QStringLiteral("liveEstimateTime")).toString();
-    const QString est = hhmm(iso);
+    const QString est = digitraffic::hhmm(iso);
     return est == scheduled ? QString() : est;   // only surface when it differs
 }
 
@@ -63,7 +55,7 @@ QVector<TimetableStop> buildStops(const QJsonArray &rows)
         }
 
         TimetableStop &s = stops[current];
-        const QString sched = hhmm(row.value(QStringLiteral("scheduledTime")).toString());
+        const QString sched = digitraffic::hhmm(row.value(QStringLiteral("scheduledTime")).toString());
         const bool isArrival = row.value(QStringLiteral("type")).toString() == QLatin1String("ARRIVAL");
 
         if (isArrival) {
@@ -180,6 +172,7 @@ TrainDetailsService::TrainDetailsService(QObject *parent)
     , m_composition(new CompositionModel(this))
 {
     m_net->setTransferTimeout(kRequestTimeout);
+    netdiag::logSslErrors(m_net, "TrainDetailsService");
 }
 
 QString TrainDetailsService::stationLabel(const QString &shortCode) const
@@ -189,15 +182,18 @@ QString TrainDetailsService::stationLabel(const QString &shortCode) const
 
 void TrainDetailsService::onStationNames()
 {
-    m_stationNames = m_fleet->stationNames();
+    if (m_fleet)
+        m_stationNames = m_fleet->stationNames();
     if (!m_stationNames.isEmpty() && !m_stops.isEmpty())
         rebuildStops();   // a timetable arrived before the names did
 }
 
 void TrainDetailsService::onCauseCategoryNames()
 {
-    m_causeCategoryNames = m_fleet->causeCategoryNames();
-    m_detailedCauseCategoryNames = m_fleet->detailedCauseCategoryNames();
+    if (m_fleet) {
+        m_causeCategoryNames = m_fleet->causeCategoryNames();
+        m_detailedCauseCategoryNames = m_fleet->detailedCauseCategoryNames();
+    }
     if (!m_causeCategoryNames.isEmpty() && !m_stops.isEmpty())
         rebuildStops();   // a timetable arrived before the cause map did
 }
@@ -394,16 +390,11 @@ void TrainDetailsService::rebuildStops()
     QVector<TimetableStop> resolved = m_stops;
     for (TimetableStop &s : resolved) {
         s.stationName = m_stationNames.value(s.stationShortCode, s.stationShortCode);
-        if (s.causeCode.isEmpty()) {
-            s.causeText.clear();
-        } else {
-            const QString category = m_causeCategoryNames.value(s.causeCode);
-            const QString detail = m_detailedCauseCategoryNames.value(s.causeDetailedCode);
-            s.causeText = detail.isEmpty() ? category
-                                            : QStringLiteral("%1: %2").arg(category, detail);
-        }
+        s.causeText = digitraffic::causeText(s.causeCode, s.causeDetailedCode,
+                                             m_causeCategoryNames,
+                                             m_detailedCauseCategoryNames);
     }
-    m_model->setStops(resolved);
+    m_model->setStops(std::move(resolved));
 }
 
 void TrainDetailsService::clear()

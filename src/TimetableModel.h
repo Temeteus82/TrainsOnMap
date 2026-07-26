@@ -89,7 +89,10 @@ public:
     int totalStops() const { return m_totalStops; }
     int nextStopRow() const { return m_nextStopRow; }
 
-    void setStops(const QVector<TimetableStop> &stops);
+    /// Replaces the rows and derives journey progress. Takes its argument by
+    /// value: this is rebuilt on every live MQTT update for the selected train,
+    /// so callers holding a temporary should `std::move()` into it.
+    void setStops(QVector<TimetableStop> stops);
     void clear();
 
 signals:

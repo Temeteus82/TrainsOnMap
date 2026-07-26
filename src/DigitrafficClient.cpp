@@ -1,5 +1,7 @@
 #include "DigitrafficClient.h"
 
+#include "NetworkDiagnostics.h"
+
 #include "RailGraph.h"
 
 #include <QGeoCoordinate>
@@ -50,6 +52,7 @@ DigitrafficClient::DigitrafficClient(QObject *parent)
     , m_stations(new StationListModel(this))
 {
     m_net->setTransferTimeout(kRequestTimeout);
+    netdiag::logSslErrors(m_net, "DigitrafficClient");
 
     m_timer.setInterval(kResyncIntervalMs);
     connect(&m_timer, &QTimer::timeout, this, &DigitrafficClient::refresh);
