@@ -577,7 +577,8 @@ Rectangle {
                             color: Theme.textMuted
                             font.pointSize: TypeScale.panelCaption
                             font.italic: true
-                            elide: Text.ElideRight
+                            // Same as the station board: wrap freely, never truncate.
+                            wrapMode: Text.Wrap
                             visible: text.length > 0
                         }
                     }

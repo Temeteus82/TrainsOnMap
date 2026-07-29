@@ -179,7 +179,10 @@ Rectangle {
                             color: Theme.textMuted
                             font.pointSize: TypeScale.panelCaption
                             font.italic: true
-                            elide: Text.ElideRight
+                            // A detailed reason ("Liikenteenohjaus: Yhteyden odotus") does
+                            // not fit this column on one line, and the longest ones need
+                            // more than two, so wrap without a line cap and let the row grow.
+                            wrapMode: Text.Wrap
                             visible: text.length > 0
                         }
                     }
