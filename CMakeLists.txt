@@ -1,4 +1,5 @@
-cmake_minimum_required(VERSION 3.21)
+# 3.22 for the tests' ENVIRONMENT_MODIFICATION property (see the Tests section).
+cmake_minimum_required(VERSION 3.22)
 
 project(TrainsOnMap
     VERSION 0.1.0
@@ -214,7 +215,6 @@ install(TARGETS TrainsOnMap
 # RailGraph is pure (QtCore + QtPositioning), so it's unit-tested directly with
 # QtTest — both on a synthetic fixture network and a smoke test over the real
 # baked blob. Run with: ctest --test-dir build/<preset> --output-on-failure
-# (the test exe needs the Qt kit's bin on PATH for its DLLs).
 enable_testing()
 qt_add_executable(tst_railgraph
     tests/tst_railgraph.cpp
@@ -257,3 +257,14 @@ qt_add_executable(tst_digitrafficformat
 target_include_directories(tst_digitrafficformat PRIVATE src)
 target_link_libraries(tst_digitrafficformat PRIVATE Qt6::Core Qt6::Test)
 add_test(NAME digitrafficformat COMMAND tst_digitrafficformat)
+
+# Only the app gets windeployqt'd, so on Windows the test exes have no Qt DLLs
+# beside them and ctest fails them all with 0xc0000135 unless the kit happens to
+# be on PATH. Prepend it for every registered test rather than deploying each
+# one; reading the DIRECTORY TESTS property covers tests added later too.
+if(WIN32)
+    file(TO_NATIVE_PATH "${_qt_bin_dir}" _qt_bin_dir_native)
+    get_property(_all_tests DIRECTORY PROPERTY TESTS)
+    set_tests_properties(${_all_tests} PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_qt_bin_dir_native}")
+endif()
