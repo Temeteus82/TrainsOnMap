@@ -14,13 +14,11 @@ class tst_TimetableModel : public QObject
 
 private:
     // Resolve a QML role name to its integer role id via the model's roleNames().
+    // Reverse lookup is unambiguous: role names come from Q_PROPERTY names, which
+    // are unique per metaobject.
     static int roleFor(const QAbstractItemModel &m, const QByteArray &name)
     {
-        const QHash<int, QByteArray> roles = m.roleNames();
-        for (auto it = roles.cbegin(); it != roles.cend(); ++it)
-            if (it.value() == name)
-                return it.key();
-        return -1;
+        return m.roleNames().key(name, -1);
     }
 
     static TimetableStop makeStop()
