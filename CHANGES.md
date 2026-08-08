@@ -8,6 +8,39 @@ Legend: ✨ feature · 🐛 bug fix · ♻️ change/refactor · ✅ verificatio
 
 ---
 
+## `setSourceModel` cached the filter role too late
+
+The one item the `tst_timetablefilter` PR left open, now confirmed as a real
+defect rather than a theoretical one, and fixed.
+
+### 🐛 The role was cached after the base class had already emitted
+- [x] `TimetableFilterModel::setSourceModel` delegated to
+      `QSortFilterProxyModel::setSourceModel` *first* and cached the `"stopping"`
+      role number afterwards. The base emits `modelReset` from inside its own
+      `endResetModel()`, and the proxy builds its row mapping lazily on the first
+      query after that — so a client already attached to the proxy filters
+      through `m_stoppingRole == -1`, takes the fail-open branch, and the
+      unfiltered mapping it builds is *kept*. Every passing point stayed visible
+      until something else invalidated the filter. In the app that client is the
+      timetable `ListView`, because `sourceModel` is a QML binding.
+- [x] Fix is the ordering: cache the role, then delegate. One line moved, plus a
+      comment saying why the order is load-bearing so it doesn't get "tidied"
+      back. `src/doc/TimetableFilterModel.md` updated to match — it documented
+      the old sequence.
+
+### ✅ Verification
+- [x] Confirmed as a live defect *before* the fix, not assumed: the new
+      `cachesStoppingRoleBeforeBaseReset` slot queries `rowCount()` from a
+      `Qt::DirectConnection` `modelReset` handler and failed against the old code
+      with `Actual (rowsDuringReset): 3` against `Expected: 2` — all three rows
+      unfiltered, exactly the predicted fail-open.
+- [x] Clean `windows-llvm` build, no warnings; `ctest` 5/5, `tst_timetablefilter`
+      10/10. Reverting the ordering fails the new slot again.
+- [x] No sibling callers to fix: `TimetableFilterModel` is the only
+      `QSortFilterProxyModel` in `src/`, so the root cause is fixed once.
+
+---
+
 ## `tst_timetablefilter` — the last untested model
 
 `TimetableFilterModel` was the one model in `src/` with no test. It is also the
@@ -46,14 +79,10 @@ what a regression would actually break.
       rather than untested, and was left alone.
 
 ### 📋 Left open
-- [ ] `TimetableFilterModel::setSourceModel` caches the `"stopping"` role *after*
+- [x] `TimetableFilterModel::setSourceModel` caches the `"stopping"` role *after*
       delegating to the base, whose `endResetModel()` therefore fires while the
-      role is still −1. Any client querying the proxy synchronously inside that
-      reset would get the fail-open branch and see every passing point until the
-      next invalidation; in the app the source is a QML binding with a ListView
-      attached, which is that shape. Unverified — needs a slot that queries
-      `rowCount()` from a direct `modelReset` handler to confirm before moving
-      the assignment.
+      role is still −1. **Confirmed real and fixed** — see "`setSourceModel`
+      cached the filter role too late" above.
 - [ ] `roleFor()` now exists three times across `tests/` with two different
       bodies. Harmless (role names are unique per metaobject) but it is the drift
       pattern `tst_digitrafficformat` was written to stop; needs a decision on a

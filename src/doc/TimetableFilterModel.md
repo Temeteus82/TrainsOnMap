@@ -74,10 +74,18 @@ changes, then emits `showAllChanged`.
 
 #### void setSourceModel(QAbstractItemModel *sourceModel) [override]
 
-From `QSortFilterProxyModel`. Sets the source and caches the `"stopping"` role
-number from the source's `roleNames()`, so the per-row filter test needn't rebuild
-`roleNames()` each call. A source reset (`setStops`) keeps the same schema, so the
-cached role stays valid.
+From `QSortFilterProxyModel`. Caches the `"stopping"` role number from the source's
+`roleNames()` — so the per-row filter test needn't rebuild `roleNames()` each call —
+and then delegates to the base. A source reset (`setStops`) keeps the same schema,
+so the cached role stays valid.
+
+The order matters: the base implementation emits `modelReset` from inside its own
+`endResetModel()`, and `QSortFilterProxyModel` builds its row mapping lazily on the
+first query after that. A client attached to the proxy before the source is set —
+in the app the `ListView`, since `sourceModel` is a QML binding — queries during
+that reset, and the mapping built then is kept. Caching the role after the base
+call let that pass run fail-open, leaving every passing point visible until the
+next invalidation.
 
 ## 10. Protected Virtual Methods / Event Handlers
 

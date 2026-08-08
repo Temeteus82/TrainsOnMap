@@ -19,12 +19,19 @@ void TimetableFilterModel::setShowAll(bool showAll)
 
 void TimetableFilterModel::setSourceModel(QAbstractItemModel *sourceModel)
 {
-    QSortFilterProxyModel::setSourceModel(sourceModel);
     // QRangeModel names each role after the backing gadget's Q_PROPERTY, so
     // TimetableStop::stopping is exposed as the "stopping" role. Cache its number
-    // here instead of rebuilding roleNames() on every filter test. A source reset
+    // instead of rebuilding roleNames() on every filter test. A source reset
     // (setStops) keeps the same schema, so the cached role stays valid.
+    //
+    // Cached BEFORE delegating to the base, which emits modelReset from inside its
+    // own endResetModel(): a client that queries the proxy during that reset — in
+    // the app the ListView, since sourceModel is a QML binding — makes the proxy
+    // build its row mapping there and then, and that mapping is kept. Caching
+    // afterwards let that one pass run fail-open, leaving every passing point
+    // visible until the next invalidation.
     m_stoppingRole = sourceModel ? sourceModel->roleNames().key("stopping", -1) : -1;
+    QSortFilterProxyModel::setSourceModel(sourceModel);
 }
 
 int TimetableFilterModel::proxyRowForSource(int sourceRow) const
