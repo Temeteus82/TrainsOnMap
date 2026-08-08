@@ -180,6 +180,28 @@ private slots:
         QCOMPARE(proxy.rowCount(), 0);
     }
 
+    // The base setSourceModel() emits modelReset from inside its own endResetModel(),
+    // and QSortFilterProxyModel builds its row mapping lazily on the first query
+    // after that — so a client already attached to the proxy (in the app: the
+    // ListView, since sourceModel is a QML binding) filters through whatever the
+    // cached role is AT THAT MOMENT, and the mapping it builds is kept. The role
+    // therefore has to be cached before the base call, not after.
+    void cachesStoppingRoleBeforeBaseReset()
+    {
+        TimetableModel source;
+        source.setStops(route());
+        TimetableFilterModel proxy;
+
+        int rowsDuringReset = -1;
+        connect(&proxy, &QAbstractItemModel::modelReset, &proxy,
+                [&] { rowsDuringReset = proxy.rowCount(); }, Qt::DirectConnection);
+
+        proxy.setSourceModel(&source);
+
+        QCOMPARE(rowsDuringReset, 2);   // filtered already, not the unfiltered 3
+        QCOMPARE(proxy.rowCount(), 2);
+    }
+
     // No source, or a source with no "stopping" role: show every row rather than
     // silently emptying the timetable.
     void failsOpenWithoutStoppingRole()
