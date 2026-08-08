@@ -237,6 +237,17 @@ target_include_directories(tst_timetablemodel PRIVATE src)
 target_link_libraries(tst_timetablemodel PRIVATE Qt6::Core Qt6::Qml Qt6::Test)
 add_test(NAME timetablemodel COMMAND tst_timetablemodel)
 
+# TimetableFilterModel is the proxy that makes the timetable ListView virtualise by
+# dropping passing points from the row set. Pinned against the real TimetableModel
+# so the cached "stopping" role stays tied to the QRangeModel-derived role table.
+qt_add_executable(tst_timetablefilter
+    tests/tst_timetablefilter.cpp
+    src/TimetableFilterModel.h src/TimetableFilterModel.cpp
+    src/TimetableModel.h src/TimetableModel.cpp)
+target_include_directories(tst_timetablefilter PRIVATE src)
+target_link_libraries(tst_timetablefilter PRIVATE Qt6::Core Qt6::Qml Qt6::Test)
+add_test(NAME timetablefilter COMMAND tst_timetablefilter)
+
 # CompositionModel is the same QRangeModel idiom (Qt 6.10+) for the carriage strip;
 # this pins the role table auto-derived from CompositionVehicle's Q_PROPERTYs — the
 # QStringList `amenities` role included — to the names the QML carriage delegate binds
