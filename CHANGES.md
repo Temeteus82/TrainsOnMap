@@ -8,6 +8,59 @@ Legend: ✨ feature · 🐛 bug fix · ♻️ change/refactor · ✅ verificatio
 
 ---
 
+## `tst_timetablefilter` — the last untested model
+
+`TimetableFilterModel` was the one model in `src/` with no test. It is also the
+one whose value is invisible to row-count assertions, so the test is built around
+what a regression would actually break.
+
+### ✅ New `tests/tst_timetablefilter.cpp` (ctest `timetablefilter`)
+- [x] Six slots over the real `TimetableModel` as source (not a stub — the
+      proxy's cached `"stopping"` role is tied to the QRangeModel-derived role
+      table, so a stub would test the wrong thing): passing points dropped when
+      collapsed, `showAll` reveals them, roles pass through, `proxyRowForSource`
+      maps the NEXT-stop row across the filter's row shift, re-filtering after a
+      source reset (the live-MQTT `setStops` path), and the fail-open branch when
+      the source has no `"stopping"` role at all.
+- [x] The toggle is pinned by its **signal protocol**, not just its row count:
+      `rowsInserted`/`rowsRemoved`/`modelReset` spies assert PSL enters and leaves
+      at proxy row 1 with zero resets. A reset produces the identical row set, so
+      row counts cannot see the difference — but it discards the ListView's
+      instantiated delegates and scroll position, which is the entire reason this
+      proxy exists instead of zero-height delegates.
+- [x] Role coverage names the 12 `required property` roles the
+      `TrainDetailPanel.qml` delegate declares (a missing one hard-errors at
+      runtime). Comparing `proxy.roleNames()` to `source.roleNames()` was tried
+      first and dropped: `QAbstractProxyModel` overrides `roleNames()` to forward
+      to the source, so that assertion holds for *any* implementation.
+
+### ✅ Verification
+- [x] Clean `windows-llvm` build, no warnings; `ctest` 5/5.
+- [x] Discriminating power checked by mutation, per the house rule: replacing
+      `beginFilterChange`/`endFilterChange(Rows)` with a full model reset fails
+      the test, as does gutting `filterAcceptsRow`, stubbing the cached
+      `"stopping"` role to −1, or dropping a `Q_PROPERTY` from `TimetableStop`.
+      One mutation did *not* fail — deleting the range guard in
+      `proxyRowForSource` — because `index()` on an out-of-range row already
+      returns an invalid index whose `row()` is −1. That guard is redundant
+      rather than untested, and was left alone.
+
+### 📋 Left open
+- [ ] `TimetableFilterModel::setSourceModel` caches the `"stopping"` role *after*
+      delegating to the base, whose `endResetModel()` therefore fires while the
+      role is still −1. Any client querying the proxy synchronously inside that
+      reset would get the fail-open branch and see every passing point until the
+      next invalidation; in the app the source is a QML binding with a ListView
+      attached, which is that shape. Unverified — needs a slot that queries
+      `rowCount()` from a direct `modelReset` handler to confirm before moving
+      the assignment.
+- [ ] `roleFor()` now exists three times across `tests/` with two different
+      bodies. Harmless (role names are unique per metaobject) but it is the drift
+      pattern `tst_digitrafficformat` was written to stop; needs a decision on a
+      shared test header versus keeping every target standalone.
+
+---
+
 ## Shared Digitraffic formatting helpers + `qt-cpp-review` follow-ups
 
 Seven items from the `qt-cpp-review` audit's Left-open list below. One of them
