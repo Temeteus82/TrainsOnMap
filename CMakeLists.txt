@@ -10,6 +10,16 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
+# Windows.h defines min/max as macros, which then eat any unparenthesised
+# std::min/std::max in a TU that pulls it in (directly or through a Qt private
+# header). Suppressing the macros once here covers every call site and anything
+# added later — the alternative is remembering to write (std::min)(a, b) forever.
+# WIN32_LEAN_AND_MEAN comes along for the ride: it drops winsock1, which Qt's
+# networking would otherwise clash with.
+if(WIN32)
+    add_compile_definitions(NOMINMAX WIN32_LEAN_AND_MEAN)
+endif()
+
 # Floor is 6.10, not QtLocation/QtPositioning's 6.5+: TimetableModel uses
 # QRangeModel (QtCore, since 6.10).
 find_package(Qt6 6.10 REQUIRED COMPONENTS Core Gui Qml Quick Network Positioning Location WebSockets Concurrent Test)

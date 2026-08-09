@@ -27,7 +27,14 @@ QVariant TrackListModel::data(const QModelIndex &index, int role) const
 
 QHash<int, QByteArray> TrackListModel::roleNames() const
 {
-    return { { PathRole, "path" }, { MainTrackRole, "mainTrack" } };
+    // Built once: the table is constant, and returning a copy of it is a COW
+    // refcount bump rather than a rebuild. (Function-local static init is
+    // thread-safe, and nothing ever mutates this.)
+    static const QHash<int, QByteArray> roles = {
+        { PathRole, "path" },
+        { MainTrackRole, "mainTrack" },
+    };
+    return roles;
 }
 
 void TrackListModel::setVisibleSegments(const QVector<int> &ids, const QVector<QVariantList> &paths,

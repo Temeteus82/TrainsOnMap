@@ -8,6 +8,50 @@ Legend: ✨ feature · 🐛 bug fix · ♻️ change/refactor · ✅ verificatio
 
 ---
 
+## Kill the Windows.h min/max clash at the source + build the role tables once
+
+The last two code items from the `qt-cpp-review` audit's open list. A third was
+closed by disproving its premise rather than by changing code — see the ticked
+`QHash`-by-value entry under **Known issues / follow-ups**.
+
+### ♻️ `NOMINMAX` once, instead of parenthesising eight call sites
+- [x] `Windows.h` defines `min`/`max` as macros, which eat any unparenthesised
+      `std::min`/`std::max` in a TU that pulls it in. Eight bare calls were
+      flagged (`TrackService.cpp`, `DigitrafficClient.cpp`, `TrainListModel.cpp`);
+      `RailGraph.cpp` had already been written defensively as `(std::min)(…)`.
+      Rather than edit each call and rely on remembering the idiom forever,
+      `CMakeLists.txt` now defines `NOMINMAX` (plus `WIN32_LEAN_AND_MEAN`) for
+      every target on `WIN32`. Covers the eight, and anything added later.
+- [x] The existing `(std::min)` parens in `RailGraph.cpp` are left alone — now
+      redundant, but harmless, and churning them would only widen the diff.
+
+### ♻️ Build the role tables once
+- [x] `TrainListModel::roleNames()` rebuilt a 14-entry `QHash` on every call and
+      `TrackListModel::roleNames()` a 2-entry one. Both are now function-local
+      `static const` tables, so the call is a COW refcount bump. Qt calls this
+      once per view attachment, so this is tidiness rather than a measured win —
+      it is on the list because it costs nothing and cannot alias (the table is
+      immutable and never rebuilt), which is exactly what made the sibling
+      `QHash`-by-value item *not* worth doing.
+
+### ✅ Verification
+- [x] Clean `windows-llvm` build, no warnings; `ctest` 5/5.
+- [x] `NOMINMAX` confirmed to reach the compiler (49 compile rules in
+      `build.ninja` carry `-DNOMINMAX`), and confirmed to *matter*, on the
+      toolchain that actually has the bug. llvm-mingw's `windows.h` does not
+      define the macros, so the clash does not reproduce there — under MSVC it
+      does: `#include <windows.h>` + a bare `std::min(1, 2)` fails with
+      `error C2589: '(': illegal token on right side of '::'`, and compiles clean
+      with `/DNOMINMAX`. The audit item's "matters once `windows-llvm` is built"
+      was half right: it is the `windows-msvc` preset that needed this.
+- [x] The role tables are byte-identical to before — the diff adds only the
+      `static const` wrapper and the `return`, no entry changed. Behaviour is
+      inspection-verified rather than test-covered: neither hand-written model has
+      a unit test (unlike the QRangeModel-backed ones), and a missing role would
+      hard-error in QML at view attachment.
+
+---
+
 ## Pin the role enums' underlying type
 
 One item from the `qt-cpp-review` audit's still-open list.
@@ -294,22 +338,34 @@ one was a false alarm. The rest are still open.
       `StationBoardService` methods guard with `if (m_fleet)`. Not currently
       exploitable, but the two sibling classes have drifted — add the guard
       for consistency.
-- [ ] Six bare `std::min`/`std::max` calls in `TrackService.cpp:102-112` (plus
+- [x] Six bare `std::min`/`std::max` calls in `TrackService.cpp:102-112` (plus
       one each in `DigitrafficClient.cpp:174` and `TrainListModel.cpp:354`)
       aren't parenthesis-protected against the Windows.h macro clash — matters
       once the `windows-msvc`/`windows-llvm` presets are actually built.
+      **Done** — fixed once via `NOMINMAX` rather than per call site; see
+      "Kill the Windows.h min/max clash at the source" above.
 - [x] Two unscoped enums without an explicit underlying type
       (`TrackListModel.h:26`, `TrainListModel.h:100`) risk a BiC break; add
       `: int` to both. **Done** — see "Pin the role enums' underlying type" above.
       A sweep confirmed these were the only two: `MqttCodec.h`'s `PacketType`
       already had `: quint8`.
-- [ ] `DigitrafficClient`'s `stationNames()`/`causeCategoryNames()`/
+- [x] `DigitrafficClient`'s `stationNames()`/`causeCategoryNames()`/
       `detailedCauseCategoryNames()` (`DigitrafficClient.h:69,75,82`) return
       `QHash` by value, copied on every call — likely negligible given call
       frequency, worth a `const&` pass only if profiling ever shows otherwise.
-- [ ] `TrainListModel`/`TrackListModel`'s hand-written `roleNames()` rebuild
+      **Closed as declined**, on the premise being wrong rather than the cost
+      being acceptable: `QHash` is copy-on-write, so return-by-value is an atomic
+      refcount bump, not a copy of the table. All six call sites are
+      `m_x = m_fleet->y();` — they copy into a member regardless, so `const&`
+      would save one refcount bump each, at call sites that run once per one-shot
+      metadata fetch. It would also hand out a reference into a member that
+      network replies rebuild, which is strictly worse than a COW handle. No
+      change made.
+- [x] `TrainListModel`/`TrackListModel`'s hand-written `roleNames()` rebuild
       the role hash on every call instead of caching it — likely harmless
       since Qt/QML calls it once per view attachment, but cheap to cache.
+      **Done** — function-local `static const` in both; see "Build the role
+      tables once" above.
 
 Not left open (verified non-issues during the review): the lint pass's five
 `QString::arg()` "%2 but only 1 .arg()" hits are all false positives (chained
