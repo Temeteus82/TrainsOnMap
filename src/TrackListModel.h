@@ -23,7 +23,9 @@ class TrackListModel : public QAbstractListModel
     Q_PROPERTY(int count READ count NOTIFY countChanged)
 
 public:
-    enum Role {
+    /// Explicit underlying type: the values cross the QML/meta-object boundary as
+    /// ints, and pinning it keeps adding a role from changing the enum's size.
+    enum Role : int {
         PathRole = Qt::UserRole + 1,  ///< QVariantList<QGeoCoordinate>
         MainTrackRole,                ///< bool: running line (true) vs siding (false)
     };

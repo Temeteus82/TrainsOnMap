@@ -97,7 +97,9 @@ class TrainListModel : public QAbstractListModel
     Q_PROPERTY(int count READ count NOTIFY countChanged)
 
 public:
-    enum Role {
+    /// Explicit underlying type: the values cross the QML/meta-object boundary as
+    /// ints, and pinning it keeps adding a role from changing the enum's size.
+    enum Role : int {
         TrainNumberRole = Qt::UserRole + 1,
         DepartureDateRole, ///< "YYYY-MM-DD", needed for the timetable endpoint
         CoordinateRole,   ///< QGeoCoordinate, bind directly to MapQuickItem.coordinate

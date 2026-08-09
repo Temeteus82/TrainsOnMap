@@ -8,6 +8,33 @@ Legend: ✨ feature · 🐛 bug fix · ♻️ change/refactor · ✅ verificatio
 
 ---
 
+## Pin the role enums' underlying type
+
+One item from the `qt-cpp-review` audit's still-open list.
+
+### ♻️ `: int` on the two hand-written `Role` enums
+- [x] `TrackListModel::Role` and `TrainListModel::Role` were unscoped enums with
+      no explicit underlying type, so the compiler picks one that fits the current
+      enumerators — meaning adding a role can silently change the enum's size.
+      Both now say `enum Role : int`, matching the `int` that
+      `QAbstractItemModel::data()` takes and that the values travel as across the
+      QML/meta-object boundary. Comment added on each so it doesn't get dropped.
+- [x] Swept `src/` rather than only the two the audit named: these are the only
+      unscoped enums in any header. `MqttCodec.h`'s `PacketType` already had
+      `: quint8`. The QRangeModel-backed models (`TimetableModel`,
+      `CompositionModel`, …) have no role enum at all — their roles come from
+      gadget `Q_PROPERTY`s.
+
+### ✅ Verification
+- [x] Clean `windows-llvm` build, no warnings; `ctest` 5/5.
+- [x] Confirmed the change does what it claims, rather than assuming: a throwaway
+      translation unit with `static_assert(std::is_same_v<std::underlying_type_t<
+      Role>, int>)` for both enums plus
+      `static_assert(NearestNeighborRole == Qt::UserRole + 14)` compiles clean, so
+      the underlying type is pinned *and* no role value shifted.
+
+---
+
 ## One spelling of `roleFor()` across the tests
 
 The last item the `tst_timetablefilter` PR left open. Resolved by collapsing the
@@ -271,9 +298,11 @@ one was a false alarm. The rest are still open.
       one each in `DigitrafficClient.cpp:174` and `TrainListModel.cpp:354`)
       aren't parenthesis-protected against the Windows.h macro clash — matters
       once the `windows-msvc`/`windows-llvm` presets are actually built.
-- [ ] Two unscoped enums without an explicit underlying type
+- [x] Two unscoped enums without an explicit underlying type
       (`TrackListModel.h:26`, `TrainListModel.h:100`) risk a BiC break; add
-      `: int` to both.
+      `: int` to both. **Done** — see "Pin the role enums' underlying type" above.
+      A sweep confirmed these were the only two: `MqttCodec.h`'s `PacketType`
+      already had `: quint8`.
 - [ ] `DigitrafficClient`'s `stationNames()`/`causeCategoryNames()`/
       `detailedCauseCategoryNames()` (`DigitrafficClient.h:69,75,82`) return
       `QHash` by value, copied on every call — likely negligible given call
