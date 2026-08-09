@@ -94,7 +94,10 @@ QVariant TrainListModel::data(const QModelIndex &index, int role) const
 
 QHash<int, QByteArray> TrainListModel::roleNames() const
 {
-    return {
+    // Built once: the table is constant, and returning a copy of it is a COW
+    // refcount bump rather than a rebuild of 14 entries. (Function-local static
+    // init is thread-safe, and nothing ever mutates this.)
+    static const QHash<int, QByteArray> roles = {
         { TrainNumberRole, "trainNumber" },
         { DepartureDateRole, "departureDate" },
         { CoordinateRole,  "coordinate" },
@@ -110,6 +113,7 @@ QHash<int, QByteArray> TrainListModel::roleNames() const
         { TrackOffsetRole, "trackOffsetMeters" },
         { NearestNeighborRole, "nearestNeighborMeters" },
     };
+    return roles;
 }
 
 double TrainListModel::bearingFor(const TrainKey &key, const QGeoCoordinate &coordinate)
