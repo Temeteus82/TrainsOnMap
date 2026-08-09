@@ -8,6 +8,35 @@ Legend: ✨ feature · 🐛 bug fix · ♻️ change/refactor · ✅ verificatio
 
 ---
 
+## One spelling of `roleFor()` across the tests
+
+The last item the `tst_timetablefilter` PR left open. Resolved by collapsing the
+duplicates rather than sharing them: every test target here deliberately lists
+only the sources it pins, and a common header would have been the first thing to
+break that shape for a three-line helper.
+
+### ♻️ The two older loops become the one-liner
+- [x] `tst_timetablemodel.cpp` and `tst_compositionmodel.cpp` each iterated
+      `roleNames()` to reverse-map a role name to its id; `tst_timetablefilter.cpp`
+      already used `roleNames().key(name, -1)`, which is the same lookup and the
+      same spelling production `TimetableFilterModel` uses. All three now read
+      identically, so there is nothing left to drift.
+- [x] Comment records *why* the reverse lookup is unambiguous — role names come
+      from `Q_PROPERTY` names, which are unique per metaobject — since that is the
+      only thing that makes `QHash::key()` safe here.
+- [x] Dropped the now-unused `#include <QHash>` from `tst_compositionmodel.cpp`.
+      `tst_timetablemodel.cpp` keeps its copy: it still names `QHash` directly in
+      `exposesExpectedRoleNames`.
+
+### ✅ Verification
+- [x] Clean `windows-llvm` build, no warnings; `ctest` 5/5.
+- [x] The collapse doesn't weaken what the helper caught: renaming
+      `CompositionVehicle`'s `vehicleType` `Q_PROPERTY` still fails
+      `tst_compositionmodel`, so the one-liner discriminates exactly as the loop
+      did.
+
+---
+
 ## `setSourceModel` cached the filter role too late
 
 The one item the `tst_timetablefilter` PR left open, now confirmed as a real
@@ -83,10 +112,12 @@ what a regression would actually break.
       delegating to the base, whose `endResetModel()` therefore fires while the
       role is still −1. **Confirmed real and fixed** — see "`setSourceModel`
       cached the filter role too late" above.
-- [ ] `roleFor()` now exists three times across `tests/` with two different
+- [x] `roleFor()` now exists three times across `tests/` with two different
       bodies. Harmless (role names are unique per metaobject) but it is the drift
-      pattern `tst_digitrafficformat` was written to stop; needs a decision on a
-      shared test header versus keeping every target standalone.
+      pattern `tst_digitrafficformat` was written to stop. **Resolved by
+      collapsing, not by sharing** — see "One spelling of `roleFor()` across the
+      tests" above: every test target stays standalone, which is this repo's
+      established shape, and the three copies are now the same one line.
 
 ---
 
