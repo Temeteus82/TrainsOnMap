@@ -33,7 +33,7 @@
     {
       "name": "windows-msvc",
       "displayName": "Windows (MSVC 2022)",
-      "description": "MSVC 2022 (v143) via the Visual Studio generator. Set CMAKE_PREFIX_PATH to your Qt kit (e.g. C:/Qt/6.11.1/msvc2022_64).",
+      "description": "MSVC 2022 (v143) via the Visual Studio generator. Set CMAKE_PREFIX_PATH to your Qt kit (e.g. D:/Qt/6.11.2/msvc2022_64). Only VS Build Tools is installed here, not the full IDE -- the Visual Studio generator drives Build Tools fine, so no extra setup is needed.",
       "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" },
       "generator": "Visual Studio 17 2022",
       "architecture": "x64",
@@ -45,7 +45,7 @@
     {
       "name": "windows-llvm",
       "displayName": "Windows (LLVM/Clang, llvm-mingw)",
-      "description": "Clang + lld + Ninja using Qt's bundled llvm-mingw toolchain. Put the llvm-mingw bin (e.g. C:/Qt/Tools/llvm-mingw1706_64/bin) on PATH and set CMAKE_PREFIX_PATH to the ABI-matching kit (e.g. C:/Qt/6.11.1/llvm-mingw_64) -- NOT the msvc kit.",
+      "description": "Clang + lld + Ninja using Qt's bundled llvm-mingw toolchain. Put the llvm-mingw bin (D:/Qt/Tools/llvm-mingw1706_64/bin) and Ninja (D:/Qt/Tools/Ninja) on PATH -- neither is on PATH by default -- and set CMAKE_PREFIX_PATH to the ABI-matching kit (e.g. D:/Qt/6.11.2/llvm-mingw_64) -- NOT the msvc kit. Use the pinned windows-llvm-qt611 / windows-llvm-qt612 presets to skip the env var. Note 6.11.1 has an llvm-mingw kit but it lacks Positioning/Location/WebSockets; 6.11.2 is the stable kit to use.",
       "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" },
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/windows-llvm",
@@ -56,13 +56,23 @@
       }
     },
     {
+      "name": "windows-llvm-qt611",
+      "displayName": "Windows (LLVM/Clang) -- Qt 6.11 stable",
+      "description": "Same llvm-mingw toolchain as windows-llvm, pinned to the stable Qt 6.11.2 kit (D:/Qt/6.11.2/llvm-mingw_64) with its own build dir. This is the default Windows build. Needs the llvm-mingw bin (D:/Qt/Tools/llvm-mingw1706_64/bin) and Ninja (D:/Qt/Tools/Ninja) on PATH. 6.11.2, not 6.11.1 -- the 6.11.1 llvm-mingw kit lacks Positioning/Location/WebSockets.",
+      "inherits": "windows-llvm",
+      "binaryDir": "${sourceDir}/build/windows-llvm-qt611",
+      "cacheVariables": {
+        "CMAKE_PREFIX_PATH": "D:/Qt/6.11.2/llvm-mingw_64"
+      }
+    },
+    {
       "name": "windows-llvm-qt612",
       "displayName": "Windows (LLVM/Clang) -- Qt 6.12 beta [EXPERIMENTAL]",
-      "description": "Same llvm-mingw toolchain as windows-llvm, but pinned to the locally installed Qt 6.12 beta kit (C:/Qt/6.12.0/llvm-mingw_64) with an isolated build dir so beta artifacts never mix with the stable build. Still needs the llvm-mingw bin (C:/Qt/Tools/llvm-mingw1706_64/bin) on PATH. The kit path is pinned here; edit it if the beta version changes.",
+      "description": "Same llvm-mingw toolchain as windows-llvm, but pinned to the locally installed Qt 6.12 beta kit (D:/Qt/6.12.0/llvm-mingw_64) with an isolated build dir so beta artifacts never mix with the stable build. For day-to-day work prefer windows-llvm-qt611 (stable); use this one to check the app against the beta. Still needs the llvm-mingw bin (D:/Qt/Tools/llvm-mingw1706_64/bin) and Ninja (D:/Qt/Tools/Ninja) on PATH. The kit path is pinned here; edit it if the beta version changes.",
       "inherits": "windows-llvm",
       "binaryDir": "${sourceDir}/build/windows-llvm-qt612",
       "cacheVariables": {
-        "CMAKE_PREFIX_PATH": "C:/Qt/6.12.0/llvm-mingw_64"
+        "CMAKE_PREFIX_PATH": "D:/Qt/6.12.0/llvm-mingw_64"
       }
     }
   ],
@@ -71,6 +81,7 @@
     { "name": "macos-clang",       "configurePreset": "macos-clang" },
     { "name": "windows-msvc",      "configurePreset": "windows-msvc", "configuration": "Release" },
     { "name": "windows-llvm",      "configurePreset": "windows-llvm" },
+    { "name": "windows-llvm-qt611", "configurePreset": "windows-llvm-qt611" },
     { "name": "windows-llvm-qt612", "configurePreset": "windows-llvm-qt612" }
   ]
 }
