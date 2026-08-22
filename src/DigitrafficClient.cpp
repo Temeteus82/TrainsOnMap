@@ -12,6 +12,8 @@
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
+#include "DigitrafficFormat.h"
+
 #include <QUrl>
 #include <QUrlQuery>
 
@@ -31,8 +33,6 @@ constexpr auto kCauseCategoriesUrl = "https://rata.digitraffic.fi/api/v1/metadat
 // category alone (e.g. "Sähkörata") is too coarse to be a useful delay reason.
 constexpr auto kDetailedCauseCategoriesUrl
     = "https://rata.digitraffic.fi/api/v1/metadata/detailed-cause-category-codes";
-// Digitraffic asks every client to identify itself. Replace with your own app id.
-constexpr auto kUserAgent = "TrainsOnMap/0.1 (Qt6 scaffolding)";
 // REST is the bootstrap + prune path; MQTT carries live deltas in between, so
 // the snapshot only needs to run slowly. Matches the Swift app's 60 s resync.
 constexpr int kResyncIntervalMs = 60 * 1000;
@@ -101,7 +101,7 @@ void DigitrafficClient::setPollIntervalMs(int ms)
 void DigitrafficClient::refresh()
 {
     QNetworkRequest req{QUrl(QString::fromLatin1(kLatestUrl))};
-    req.setRawHeader("Digitraffic-User", kUserAgent);
+    req.setRawHeader("Digitraffic-User", digitraffic::kUserAgent);
     // Don't set Accept-Encoding by hand: Qt 6 advertises it and inflates gzip
     // transparently. Setting it ourselves disables that, so readAll() would
     // return raw compressed bytes and JSON parsing would fail.
@@ -134,7 +134,7 @@ void DigitrafficClient::refreshCategories()
     }
 
     QNetworkRequest req{url};
-    req.setRawHeader("Digitraffic-User", kUserAgent);
+    req.setRawHeader("Digitraffic-User", digitraffic::kUserAgent);
 
     QNetworkReply *reply = m_net->get(req);
     adjustPending(+1);
@@ -236,7 +236,7 @@ void DigitrafficClient::handleCategories(QNetworkReply *reply, bool full)
 void DigitrafficClient::fetchStations()
 {
     QNetworkRequest req{QUrl(QString::fromLatin1(kStationsUrl))};
-    req.setRawHeader("Digitraffic-User", kUserAgent);
+    req.setRawHeader("Digitraffic-User", digitraffic::kUserAgent);
     QNetworkReply *reply = m_net->get(req);
     connect(reply, &QNetworkReply::finished, this, [this, reply] { handleStations(reply); });
 }
@@ -280,7 +280,7 @@ void DigitrafficClient::handleStations(QNetworkReply *reply)
 void DigitrafficClient::fetchCauseCategories()
 {
     QNetworkRequest req{QUrl(QString::fromLatin1(kCauseCategoriesUrl))};
-    req.setRawHeader("Digitraffic-User", kUserAgent);
+    req.setRawHeader("Digitraffic-User", digitraffic::kUserAgent);
     QNetworkReply *reply = m_net->get(req);
     connect(reply, &QNetworkReply::finished, this, [this, reply] { handleCauseCategories(reply); });
 }
@@ -310,7 +310,7 @@ void DigitrafficClient::handleCauseCategories(QNetworkReply *reply)
 void DigitrafficClient::fetchDetailedCauseCategories()
 {
     QNetworkRequest req{QUrl(QString::fromLatin1(kDetailedCauseCategoriesUrl))};
-    req.setRawHeader("Digitraffic-User", kUserAgent);
+    req.setRawHeader("Digitraffic-User", digitraffic::kUserAgent);
     QNetworkReply *reply = m_net->get(req);
     connect(reply, &QNetworkReply::finished, this,
             [this, reply] { handleDetailedCauseCategories(reply); });

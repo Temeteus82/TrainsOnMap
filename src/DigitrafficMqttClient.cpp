@@ -1,5 +1,6 @@
 #include "DigitrafficMqttClient.h"
 
+#include "DigitrafficFormat.h"
 #include "MqttCodec.h"
 
 #include <QDebug>
@@ -101,6 +102,9 @@ void DigitrafficMqttClient::openConnection()
     setStatus(QStringLiteral("Connecting…"));
     QNetworkRequest request{QUrl(QString::fromLatin1(kBrokerUrl))};
     request.setRawHeader("Origin", "https://www.digitraffic.fi");
+    // Identify on the handshake too: the REST calls do, and a broker connection
+    // that identifies differently is still the same client to Digitraffic.
+    request.setRawHeader("Digitraffic-User", digitraffic::kUserAgent);
 
     // MQTT-over-WebSocket requires the "mqtt" subprotocol in the handshake.
     QWebSocketHandshakeOptions options;

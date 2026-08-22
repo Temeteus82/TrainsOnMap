@@ -20,7 +20,6 @@
 #include <utility>
 
 namespace {
-constexpr auto kUserAgent = "TrainsOnMap/0.1 (Qt6 scaffolding)";
 // Abort a stalled request rather than leaving the panel stuck on "Loading…".
 constexpr auto kRequestTimeout = std::chrono::seconds{15};
 
@@ -222,7 +221,7 @@ void TrainDetailsService::show(int trainNumber, const QString &departureDate)
                        .arg(departureDate)
                        .arg(trainNumber));
     QNetworkRequest req{url};
-    req.setRawHeader("Digitraffic-User", kUserAgent);
+    req.setRawHeader("Digitraffic-User", digitraffic::kUserAgent);
     QNetworkReply *reply = m_net->get(req);
     connect(reply, &QNetworkReply::finished, this, [this, reply] { handleTrain(reply); });
 
@@ -290,7 +289,7 @@ void TrainDetailsService::fetchComposition(int trainNumber, const QString &depar
                        .arg(departureDate)
                        .arg(trainNumber));
     QNetworkRequest req{url};
-    req.setRawHeader("Digitraffic-User", kUserAgent);
+    req.setRawHeader("Digitraffic-User", digitraffic::kUserAgent);
     QNetworkReply *reply = m_net->get(req);
     // Tag the reply with the run it was issued for: a slow composition reply for a
     // previously-selected train must not overwrite the consist now on screen.

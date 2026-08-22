@@ -11,6 +11,14 @@
 /// both panels at once.
 namespace digitraffic {
 
+/// Digitraffic's terms ask every client to identify itself on each request, via
+/// the `Digitraffic-User` header (REST) and on the WebSocket handshake (MQTT).
+/// All four callers had grown their own copy of this literal, which is how you
+/// end up identifying as several different apps; keep the one string here.
+///
+/// Keep the version in step with `project(... VERSION)` in CMakeLists.txt.
+constexpr auto kUserAgent = "TrainsOnMap/0.1 (+https://github.com/Temeteus82/TrainsOnMap)";
+
 /// Parse a Digitraffic ISO8601 timestamp. The API emits fractional seconds on
 /// most fields ("2026-07-26T09:12:00.000Z") but not all; one call covers both,
 /// because when *parsing*, Qt::ISODateWithMs treats the fractional part as

@@ -15,7 +15,6 @@
 #include "NetworkDiagnostics.h"
 
 namespace {
-constexpr const char *kUserAgent = "TrainsOnMap/0.1 (Qt6 scaffolding)";
 }   // namespace
 
 StationBoardService::StationBoardService(QObject *parent)
@@ -92,7 +91,7 @@ void StationBoardService::show(const QString &code, const QString &name)
         "https://rata.digitraffic.fi/api/v1/live-trains/station/%1"
         "?arriving_trains=8&departing_trains=8&include_nonstopping=false").arg(code);
     QNetworkRequest req{QUrl(url)};
-    req.setRawHeader("Digitraffic-User", kUserAgent);
+    req.setRawHeader("Digitraffic-User", digitraffic::kUserAgent);
     req.setTransferTimeout(15000);
     QNetworkReply *reply = m_net->get(req);
     connect(reply, &QNetworkReply::finished, this, [this, reply, code] { handleReply(reply, code); });
