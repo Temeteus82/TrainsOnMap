@@ -161,7 +161,7 @@ Rectangle {
                 text: root.streamConnected ? qsTr("LIVE") : root.streamStatus
                 font.pointSize: TypeScale.panelCaption
                 font.bold: true
-                color: root.streamConnected ? Theme.liveOn : Theme.textMuted
+                color: root.streamConnected ? Theme.liveOnText : Theme.textMuted
             }
         }
 
@@ -326,7 +326,7 @@ Rectangle {
             Layout.preferredHeight: 32   // toward the 44 px desktop hit-target guideline
             radius: 8
             color: Theme.subtleHover
-            border.color: Theme.hairline
+            border.color: Theme.controlOutline
             border.width: 1
 
             Row {

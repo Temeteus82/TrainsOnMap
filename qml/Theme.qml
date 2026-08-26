@@ -32,6 +32,15 @@ QtObject {
     readonly property color cardBg:    isDark ? Qt.rgba(0.11, 0.12, 0.14, 0.97)
                                               : Qt.rgba(1, 1, 1, 0.96)
     readonly property color hairline:  isDark ? "#34373d" : "#e6e8ec"
+    // Boundary of an *interactive* control (unchecked checkbox, segmented-control
+    // frame). Deliberately not `hairline`: that's a divider, and at 1.2:1 (light)
+    // / 1.4:1 (dark) against the card it left an unchecked control with no
+    // perceptible edge — the affordance appeared only once the control was
+    // already on. WCAG 1.4.11 wants >= 3:1, and a control boundary has to clear
+    // it against whatever sits on *both* sides: these do, against the card
+    // (3.7 / 4.0) and against `subtleHover`, which fills the segmented control
+    // (3.4 / 3.5).
+    readonly property color controlOutline: isDark ? "#767d88" : "#7e858f"
     readonly property color shadow:    isDark ? Qt.rgba(0, 0, 0, 0.45) : Qt.rgba(0, 0, 0, 0.06)
 
     // ---- Text -------------------------------------------------------------
@@ -51,8 +60,17 @@ QtObject {
     readonly property color subtlePress: isDark ? "#30353c" : "#e4e7ec"
 
     // ---- Live indicator ---------------------------------------------------
-    readonly property color liveOn:  "#18a957"
-    readonly property color liveOff: isDark ? "#5c636c" : "#b0b6be"
+    // `liveOn` tints the 10 px connected dot, which only has to clear the 3:1
+    // WCAG 1.4.11 asks of a graphical object. The same green as *text* measured
+    // 3.04:1 on the light card — under 1.4.3's 4.5:1 — so the "LIVE" label reads
+    // from `liveOnText` instead: same hue, darkened to 5.4:1. Dark mode never
+    // failed (5.4:1), so it keeps one green for both roles.
+    readonly property color liveOn:     "#18a957"
+    readonly property color liveOnText: isDark ? "#18a957" : "#0f7a3d"
+    // Disconnected dot. The old greys (#b0b6be / #5c636c) sat at 2.0:1 / 2.7:1 on
+    // the card, under 1.4.11's 3:1 for a state-carrying graphic; these clear it
+    // in both themes.
+    readonly property color liveOff:    isDark ? "#767d88" : "#868d97"
 
     // ---- Delay semantics --------------------------------------------------
     readonly property color delayLate:   isDark ? "#ef6b6b" : "#c62828"

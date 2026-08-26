@@ -1,7 +1,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
-import QtQuick.Controls
+import QtQuick.Controls.Basic
 import QtQuick.Layouts
 
 import TrainsOnMap
@@ -402,7 +402,7 @@ Rectangle {
                     radius: 4
                     color: allToggle.checked ? Theme.accent : "transparent"
                     border.color: allToggle.activeFocus ? Theme.focusRing
-                                  : (allToggle.checked ? Theme.accent : Theme.hairline)
+                                  : (allToggle.checked ? Theme.accent : Theme.controlOutline)
                     border.width: allToggle.activeFocus ? 2 : 1.5
                     AppIcon {
                         anchors.centerIn: parent
@@ -480,10 +480,11 @@ Rectangle {
                 height: rowLayout.implicitHeight + 12
                 clip: true
 
-                // The native Controls style paints ItemDelegate's background from
-                // the light system palette (white), which hid the theme-coloured
-                // (near-white) row text in dark mode. Drive it from the app theme
-                // instead so the dark card shows through and text stays legible.
+                // ItemDelegate's stock background is painted from the *system*
+                // palette, not the app theme, so in dark mode it put a light fill
+                // behind near-white row text. Drive it from Theme instead — and
+                // since we're replacing it anyway, it also carries the hover fill
+                // and the next-stop accent stripe below.
                 background: Rectangle {
                     color: stopRow.isNext ? Theme.subtleHover
                                           : (stopRow.hovered ? Theme.subtleHover : "transparent")

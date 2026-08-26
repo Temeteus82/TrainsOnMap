@@ -42,7 +42,7 @@ Item {
             Layout.preferredHeight: 16
             radius: 3
             color: root.checked ? Theme.accent : "transparent"
-            border.color: root.checked ? Theme.accent : Theme.hairline
+            border.color: root.checked ? Theme.accent : Theme.controlOutline
             border.width: 1.5
 
             AppIcon {
