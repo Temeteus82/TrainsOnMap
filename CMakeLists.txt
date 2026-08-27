@@ -220,6 +220,24 @@ if(APPLE)
                     -no-strip
             COMMENT "macdeployqt: bundling Qt frameworks and QML/geoservices/TLS plugins into the .app"
             VERBATIM)
+
+        # macdeployqt rewrites dependency references into the bundle but leaves
+        # the linker's absolute rpath for the build-machine Qt (e.g.
+        # /opt/homebrew/lib) on the executable. Several Qt frameworks still name
+        # their siblings as bare @rpath/QtCore.framework/..., and dyld consults
+        # the main executable's rpaths to resolve those -- so that leftover entry
+        # is a live route out of the bundle, and a second copy of QtCore/QtGui
+        # gets loaded from the build machine's Qt ("Class ... is implemented in
+        # both ... This may cause spurious casting failures and mysterious
+        # crashes"). It only reproduces where that Qt is still installed, so it
+        # passes local testing and fails elsewhere. Strip those rpaths and
+        # re-sign, strictly after macdeployqt -- it needs them while resolving
+        # what to copy.
+        add_custom_command(TARGET TrainsOnMap POST_BUILD
+            COMMAND "${CMAKE_SOURCE_DIR}/scripts/seal_bundle_rpaths.sh"
+                    "$<TARGET_BUNDLE_DIR:TrainsOnMap>"
+            COMMENT "seal_bundle_rpaths: removing rpaths that escape the .app, then re-signing"
+            VERBATIM)
     else()
         message(WARNING "macdeployqt not found near ${_qt_bin_dir}; "
                         "the built .app will need a Qt install to run.")

@@ -194,10 +194,31 @@ open ./build/macos-clang/bin/TrainsOnMap.app
 > # -> build/macos-clang/bin/TrainsOnMap-0.1.0.dmg
 > ```
 >
-> macdeployqt ad-hoc signs the bundle. For distribution to other Macs, sign with a
-> Developer ID and notarize (`-codesign=<id>` on the macdeployqt call, then
-> `xcrun notarytool`); a Homebrew Qt may also need `-codesign` to satisfy strict
-> Gatekeeper checks.
+> After macdeployqt, [`scripts/seal_bundle_rpaths.sh`](scripts/seal_bundle_rpaths.sh)
+> strips any **absolute rpath** left on the bundled binaries and re-signs them.
+> macdeployqt rewrites dependency references into the bundle but leaves the
+> linker's rpath for the build machine's Qt (e.g. `/opt/homebrew/lib`) in place.
+> Several Qt frameworks still name their siblings as bare
+> `@rpath/QtCore.framework/…`, and dyld consults the *main executable's* rpaths to
+> resolve those — so that leftover entry is a live route out of the bundle, and a
+> second copy of QtCore/QtGui is loaded from the build machine's Qt:
+>
+> ```
+> objc[…]: Class QT_ROOT_LEVEL_POOL__… is implemented in both
+>   …/TrainsOnMap.app/Contents/Frameworks/QtCore.framework/…/QtCore and
+>   /opt/homebrew/Cellar/qtbase/6.11.1/lib/QtCore.framework/…/QtCore.
+>   This may cause spurious casting failures and mysterious crashes.
+> ```
+>
+> This only reproduces on a machine that still has that Qt installed, which is
+> what makes it easy to ship. The step must run **after** macdeployqt, which uses
+> those same rpaths while resolving what to copy.
+>
+> macdeployqt ad-hoc signs the bundle, and the sealing step re-signs what it
+> rewrites. For distribution to other Macs, sign with a Developer ID and notarize
+> (`-codesign=<id>` on the macdeployqt call, then `xcrun notarytool`) — re-sign
+> with the real identity *after* the sealing step; a Homebrew Qt may also need
+> `-codesign` to satisfy strict Gatekeeper checks.
 
 ### Windows (MSVC 2022, PowerShell)
 
