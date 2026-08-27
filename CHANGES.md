@@ -8,6 +8,38 @@ Legend: ✨ feature · 🐛 bug fix · ♻️ change/refactor · ✅ verificatio
 
 ---
 
+## macOS deploy: strip AppleDouble sidecars before macdeployqt signs
+
+### 🐛 The deployed .app could not be codesigned
+- [x] Every macOS build ended with ~40 `ERROR` lines out of `macdeployqt` —
+      `._QtQuickParticles: code object is not signed at all` per framework,
+      `._libqtquickscene3dplugin.dylib: is not an object file` per plugin —
+      and left a bundle that failed `codesign --verify --deep --strict` with
+      "a sealed resource is missing or invalid". The build still exited 0, so
+      this had been passing silently: the binary runs unsigned locally, but
+      ad-hoc signing the bundle (and therefore the `dmg` target's output) was
+      broken.
+- [x] Cause was 180 stale AppleDouble sidecars (`._Foo`) sitting in
+      `build/macos-clang/bin/TrainsOnMap.app`, all dated 10–12 Aug — left from
+      copying the tree across a filesystem without native xattrs. Nothing in the
+      current pipeline generates them (the Homebrew Qt kit has none, and a fresh
+      rebuild produced none), but they survive incremental builds, and
+      `codesign --deep` walks into them.
+- [x] New `dot_clean -m` POST_BUILD step on `TrainsOnMap`, registered **before**
+      the `macdeployqt` command so it runs first: macdeployqt signs each
+      framework as it copies it, so cleaning afterwards would leave the broken
+      signatures in place. `-m` deletes the sidecars rather than merging their
+      stale attributes onto the freshly built binaries. Guarded by
+      `find_program`, silently skipped if absent.
+
+### ✅ Verified on a forced relink
+- [x] Build exits 0 with **0 `ERROR` lines** (was ~40); step order in the log is
+      `Linking … → dot_clean → macdeployqt`; 0 `._` files left in the bundle
+      (was 180); `codesign --verify --deep --strict` now passes.
+- [x] All 6 ctest targets still pass.
+
+---
+
 ## UI audit round 2 — both Criticals + the four one-liners
 
 Closes 8 more findings from `docs/ui-audit-round2.md` (now 11 of 20 done).
