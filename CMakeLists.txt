@@ -43,6 +43,7 @@ qt_add_executable(TrainsOnMap
     src/TrainDetailsService.h   src/TrainDetailsService.cpp
     src/TimetableModel.h        src/TimetableModel.cpp
     src/TimetableFilterModel.h  src/TimetableFilterModel.cpp
+    src/TrainFilterModel.h      src/TrainFilterModel.cpp
     src/CompositionModel.h      src/CompositionModel.cpp
     src/DigitrafficMqttClient.h src/DigitrafficMqttClient.cpp
     src/StationListModel.h      src/StationListModel.cpp
@@ -70,6 +71,7 @@ qt_add_qml_module(TrainsOnMap
         qml/InfoPanel.qml
         qml/TrainDetailPanel.qml
         qml/StationBoardPanel.qml
+        qml/TrainListPanel.qml
         qml/ToggleRow.qml
         qml/Theme.qml
         qml/TypeScale.qml
@@ -257,6 +259,24 @@ qt_add_executable(tst_timetablefilter
 target_include_directories(tst_timetablefilter PRIVATE src)
 target_link_libraries(tst_timetablefilter PRIVATE Qt6::Core Qt6::Qml Qt6::Test)
 add_test(NAME timetablefilter COMMAND tst_timetablefilter)
+
+# TrainFilterModel backs the sidebar train list — the keyboard/assistive path to
+# selecting a train (UI audit U2-C1). Pinned against the real TrainListModel: the
+# proxy resolves its role numbers from the source's roleNames(), so a stub with a
+# different role table would exercise the wrong code. TrainListModel pulls in
+# TrackService (the matcher) and thus RailGraph, even though the filter never
+# matches a fix.
+qt_add_executable(tst_trainfilter
+    tests/tst_trainfilter.cpp
+    src/TrainFilterModel.h src/TrainFilterModel.cpp
+    src/TrainListModel.h src/TrainListModel.cpp
+    src/TrackService.h src/TrackService.cpp
+    src/TrackListModel.h src/TrackListModel.cpp
+    src/RailGraph.h src/RailGraph.cpp)
+target_include_directories(tst_trainfilter PRIVATE src)
+target_link_libraries(tst_trainfilter PRIVATE
+    Qt6::Core Qt6::Qml Qt6::Positioning Qt6::Concurrent Qt6::Test)
+add_test(NAME trainfilter COMMAND tst_trainfilter)
 
 # CompositionModel is the same QRangeModel idiom (Qt 6.10+) for the carriage strip;
 # this pins the role table auto-derived from CompositionVehicle's Q_PROPERTYs — the

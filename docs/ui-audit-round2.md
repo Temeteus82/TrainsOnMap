@@ -1,7 +1,13 @@
 # UI audit — round 2 (2026-08-26)
 
-> **Status:** U2-W1, U2-C2, and U2-C3 were fixed on 2026-08-26 and are
-> marked *Fixed* below. Everything else is open.
+> **Status (2026-08-27):** 11 of 20 findings are fixed and marked *Fixed*
+> below — U2-W1, U2-C2, U2-C3 on 2026-08-26; U2-W5, U2-W7, U2-O3, U2-O5 and
+> then both Criticals (U2-C1 with U2-O1, and U2-C4 with U2-W8) on 2026-08-27.
+>
+> **Still open:** U2-W2 (type scale), U2-W3 (focus scrolling), U2-W4 (Escape /
+> focus into panels), U2-W6 (localisation), U2-W9 (first-run zoom), U2-W10
+> (sidebar density), U2-O2 (map empty/error state), U2-O4 (panel-open
+> announcement).
 
 Scope: the nine files in `qml/`, audited against WCAG 2.2 AA, the Laws of UX
 set, and the qt-ui-design checklist (typography, motion, keyboard/multi-input,
@@ -22,7 +28,7 @@ dark) and against the CARTO basemaps (`#f7f7f5` Positron, `#1b1b1b` Dark Matter)
 
 ## Critical
 
-### U2-C1 — The app's primary action has no keyboard or assistive path
+### U2-C1 — The app's primary action has no keyboard or assistive path — **Fixed**
 
 Selecting a train (`TrainMarker.qml:333`) and opening a station board
 (`Main.qml:380`) are the two things this application exists to do, and both are
@@ -47,6 +53,35 @@ it. If markers must carry the interaction themselves, they need
 built from the badge label + speed + delay, and `Keys.onPressed` for
 Space/Enter — plus a defined tab order across a set that changes every few
 seconds, which is the reason the list is the better answer.
+
+**Fixed** with the list, so this closes **U2-O1** too. New `TrainListPanel.qml`
+in the left column under the sidebar, backed by a new `TrainFilterModel`
+(`QSortFilterProxyModel` over `TrainListModel`, following `TimetableFilterModel`'s
+shape).
+
+- **Keyboard:** Tab reaches the search field, Down steps into the list, arrows
+  move the current row, Enter/Space opens it — the same `show()` a marker click
+  calls. Selecting also recentres the map, since the list is usable at zoom
+  levels where the markers are unlabelled dots.
+- **Assistive tech:** the list is `Accessible.List`; each row is an
+  `Accessible.Button` whose name carries everything the marker conveys visually
+  — "IC 967, 120 km/h, 5 minutes late" — with `Accessible.onPressAction` wired.
+- **Findability (U2-O1):** the search field matches train number, type and
+  commuter-line letter — the same three fields the map badge shows, so what the
+  user reads off a marker is what they can type.
+- The filter is in the proxy rather than on `visible`, so the `ListView` still
+  virtualises over a fleet of several hundred, and the category toggles are
+  shared with the map so both always show the same trains.
+
+Pinned by `tests/tst_trainfilter.cpp` (ctest `trainfilter`, 10 slots). Two are
+mutation-checked: caching the role numbers *after* delegating to the base
+`setSourceModel` fails `cachesRolesBeforeBaseReset` (the fail-open ordering bug
+`TimetableFilterModel` shipped with once), and swapping the rows-only filter
+change for a full reset fails `refilterDoesNotResetTheModel`.
+
+The markers themselves are deliberately still pointer-only: the audit's own
+reasoning above is that a tab order over a set that turns over every few seconds
+is the worse answer, and the list now provides the required path.
 
 ### U2-C2 — The "LIVE" indicator text fails contrast in light mode — **Fixed**
 
@@ -103,7 +138,7 @@ control is filled with `Theme.subtleHover`, not the card — against which
 `#8e959f` measured only 2.72:1. Final: **`#7e858f` light** (3.69:1 vs card,
 3.35:1 vs `subtleHover`) and **`#767d88` dark** (3.98:1 / 3.47:1).
 
-### U2-C4 — Map-layer colours fail non-text contrast, worst in dark mode
+### U2-C4 — Map-layer colours fail non-text contrast, worst in dark mode — **Fixed**
 
 `TrainMarker.colorFor()` is a single hardcoded light-mode palette (the
 juliadata.fi parity set) with no dark variant, painted over a basemap that does
@@ -134,6 +169,37 @@ enough to be worth nudging.
 for it, per U2-W8) rather than in `TrainMarker`. A per-colour minimum-luminance
 lift is enough: `#000077` → about `#5b5be0` (3.30:1) on dark. The stale grey
 needs the opposite treatment in light mode.
+
+**Fixed** as `Theme.trainColorFor(type, category, speed)`, which closes **U2-W8**
+alongside it — there are now zero hardcoded colours anywhere outside `Theme.qml`.
+`TrainMarker.colorFor()` is a one-line delegation, and the rings, weather-chip
+borders, amenity dots, suspect ring and stale grey all became named tokens
+(`ringLate`, `weatherCold`, `amenityCatering`, …) with light *and* dark values.
+
+One correction to the fix as proposed: **a per-colour luminance lift is not
+enough.** Raising each hue independently to the 3:1 floor collapses `S` onto
+`HL`, `T` onto `PYO` and `VET` onto `VEV` — same-hue pairs the light palette
+separates by lightness — which would destroy the type-coding the palette exists
+for. The shipped dark branch is hand-tuned so each pair stays ≥ 1.4:1 from its
+sibling while both clear 3:1. Cargo went to `#4A6BFF` (3.97:1) rather than the
+suggested `#5b5be0`, to keep it apart from night-train blue at `#8A8AFF`.
+
+The light branch is untouched — juliadata.fi parity is a deliberate project
+value — except for the two things that genuinely failed *light* mode: the stale
+grey (2.46:1 → `#848B92`, 3.22:1) and the running-line rail colour
+(2.83:1 → `#87909c`, 3.01:1).
+
+The audit measured marker fills only; sizing the change surfaced three more
+light-mode failures of the same kind, all fixed here:
+
+| Also failing on Positron | Was | Now |
+|---|---|---|
+| Amber delay ring `#F2A900` | **1.87:1** | `#A87200` (3.86:1) |
+| Weather chip borders | 2.64 / 2.49:1 | `#2E77D8` (4.12) / `#B36A22` (4.20) |
+| Amenity dots on the light card | 2.40–2.81:1 | 3.92–4.41:1 |
+
+Sidings were left recessive by choice (they have a legend entry and are meant to
+sit back), as the audit allows.
 
 ---
 
@@ -232,7 +298,7 @@ and §1.3 asks for a keyboard-accessible exit from any overlay.
 **Fix.** `Shortcut { sequence: StandardKey.Cancel }` on each panel calling
 `clear()`; `forceActiveFocus()` on the panel when it becomes visible.
 
-### U2-W5 — `Theme.reducedMotion` cannot be turned on from the UI
+### U2-W5 — `Theme.reducedMotion` cannot be turned on from the UI — **Fixed**
 
 The flag is honoured in six places (marker glide, selection scale, arrow orbit,
 live-dot pulse, both panel fades) and persisted through `QSettings` — and there
@@ -245,6 +311,9 @@ hard part and it is already done.
 
 **Fix.** One `ToggleRow` in the Appearance group:
 `ToggleRow { label: qsTr("Reduce motion"); checked: Theme.reducedMotion; onToggled: Theme.reducedMotion = !Theme.reducedMotion }`.
+
+**Fixed** exactly as written, at the foot of the Appearance group in
+`InfoPanel.qml`. The plumbing was indeed the hard part and was already done.
 
 ### U2-W6 — Localisation is scaffolded but not wired, and will clip when it is
 
@@ -270,18 +339,20 @@ categories arrive from Digitraffic in Finnish (`"Onnettomuus"`) regardless of UI
 language, so a translated build is bilingual by construction. That may be
 perfectly acceptable — it is worth saying so deliberately.
 
-### U2-W7 — Station-dot hit target is 22×22
+### U2-W7 — Station-dot hit target is 22×22 — **Fixed**
 
 `Main.qml:376` draws a 10 px dot; `Main.qml:382` enlarges the `MouseArea` by
 6 px per side, giving 22×22. WCAG 2.2 2.5.8 Target Size (Minimum), Level AA,
 requires 24×24. Two pixels short, one character to fix (`margins: -7`).
+
+**Fixed** — `Main.qml`, `anchors.margins: -6` → `-7`.
 
 Everything else clears 2.5.8: the 32 px toggles and close buttons, and the
 Appearance segments at roughly 74×26. They sit below the 44 px comfort target
 the source comments aim at, but that is a recommendation, not the AA line, and
 the sidebar density argument for 32 is reasonable.
 
-### U2-W8 — Colours defined outside the token system
+### U2-W8 — Colours defined outside the token system — **Fixed**
 
 `Theme` is a well-built token set, and then a meaningful amount of colour is
 declared outside it with no dark-mode branch:
@@ -301,6 +372,11 @@ that a dark-mode pass is a single-file edit; today it is a grep.
 **Fix.** Move them into `Theme` as named roles (`amenityCatering`, `ringLate`,
 `ringVeryLate`, `weatherCold`/`weatherWarm`, the train palette as a function).
 U2-C4's dark-mode lift then has somewhere to live.
+
+**Fixed** with exactly those names, plus `ringSuspect`, `ringReady`,
+`amenityAccessible`/`Family`/`Pet` and `trainStale`. `grep '"#......"' qml/`
+outside `Theme.qml` now returns nothing, so a future theme pass really is a
+one-file edit.
 
 ### U2-W9 — The first-run view hides most of the application
 
@@ -340,7 +416,7 @@ disclosure row. The card already flicks, so the mechanism is half-built.
 
 ## Opportunities
 
-### U2-O1 — A train list would close the keyboard gap and the findability gap at once
+### U2-O1 — A train list would close the keyboard gap and the findability gap at once — **Fixed**
 
 There is currently no way to find a specific train. To locate IC 967 you scan
 the map visually — Recognition over Recall inverted. A searchable, filterable
@@ -350,6 +426,8 @@ filters a visible consequence, and give the map a textual counterpart for the
 zoom levels where labels are hidden (U2-W9). Highest value-per-line item in this
 audit.
 
+**Fixed** — built as part of U2-C1 above; see there for what shipped.
+
 ### U2-O2 — No empty or error state for the map
 
 If the fleet is empty, the network is down, or MQTT never connects, the map is
@@ -357,7 +435,7 @@ blank tiles and the only signal is a muted status line inside the sidebar card.
 An overlay on the map itself — where the user is looking — would do better, and
 "Graceful Failure" wants a stated fallback, not silence.
 
-### U2-O3 — The arrow animations exceed the motion budget
+### U2-O3 — The arrow animations exceed the motion budget — **Fixed**
 
 `TrainMarker.qml` animates the direction arrow's `x`, `y`, and `rotation` at
 600 ms. §1.1 caps UI motion at 400 ms for full-screen transitions and treats
@@ -367,17 +445,25 @@ anything past 500 ms as reading broken; a small element's budget is 100–150 ms
 The 1000 ms `CoordinateAnimation` is a different case and is fine as-is: it
 represents real-world motion paced to the data cadence, not a UI transition.
 
+**Fixed** — all three arrow `Behavior`s are now 300 ms. The
+`CoordinateAnimation` was left at 1000 ms for the stated reason, with a comment
+so it isn't "tidied" to match.
+
 ### U2-O4 — Panel opening is not announced
 
 A panel fading in on the right is a silent event for a screen-reader user, and
 there is no `Accessible` live-region equivalent. Pairs naturally with the
 focus-management fix in U2-W4.
 
-### U2-O5 — ScrollBar fade Behaviors are not gated on reduced motion
+### U2-O5 — ScrollBar fade Behaviors are not gated on reduced motion — **Fixed**
 
 Three files animate the scrollbar handle's opacity for 120 ms without checking
 `Theme.reducedMotion`, unlike every other animation in the app. Trivial, but the
 gating is otherwise complete enough that the exception stands out.
+
+**Fixed** in all three (`InfoPanel`, `TrainDetailPanel`, `StationBoardPanel`) —
+one pattern, so fixing only the file you happened to open would have left the
+siblings inconsistent. The new `TrainListPanel` uses the gated form too.
 
 ---
 
@@ -411,11 +497,17 @@ Recorded so a later pass doesn't re-derive it:
 
 1. ~~**U2-W1** (single style)~~ — done.
 2. ~~**U2-C2, U2-C3**~~ — done.
-3. **U2-C4 + U2-W8** — move the stray colours into `Theme`, then give the marker
-   palette its dark branch. Same edit, done once.
-4. **U2-W5, U2-W7, U2-O5** — one-liners.
-5. **U2-C1 / U2-O1** — the train list. The largest item, and the one that closes
-   the Level A failure.
-6. **U2-W3, U2-W4** — focus management, best done alongside the list.
+3. ~~**U2-C4 + U2-W8**~~ — done. The order held up: moving the colours into
+   `Theme` first is what gave the dark branch somewhere to live.
+4. ~~**U2-W5, U2-W7, U2-O5**~~ (and **U2-O3**) — done, all one-liners as billed.
+5. ~~**U2-C1 / U2-O1**~~ — done. The train list; the Level A failure is closed.
+6. **U2-W3, U2-W4** — focus management. Now the *next* thing to do, and cheaper
+   than when this was written: the list gives the sidebar a real focus chain, so
+   W3's scroll-into-view and W4's Escape/focus-entry have somewhere to hook.
 7. **U2-W2** (type scale), **U2-W6** (localisation), **U2-W9/W10** (sidebar) —
    each is a deliberate design decision to make rather than a bug to fix.
+   **U2-W10 got worse**, not better: the left column now carries the sidebar
+   *and* a train list, which strengthens the case for collapsing Legend /
+   Overlays / Appearance behind a disclosure row.
+8. **U2-O2** (map empty/error state), **U2-O4** (panel-open announcement) — the
+   remaining Opportunities.

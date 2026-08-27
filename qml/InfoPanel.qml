@@ -74,7 +74,9 @@ Rectangle {
                 radius: width / 2
                 color: Theme.textMuted
                 opacity: vbar.pressed ? 0.7 : (vbar.hovered ? 0.5 : 0.3)
-                Behavior on opacity { NumberAnimation { duration: 120 } }
+                // U2-O5: gated like every other animation in the app.
+                Behavior on opacity { enabled: !Theme.reducedMotion
+                    NumberAnimation { duration: 120 } }
             }
         }
 
@@ -387,6 +389,16 @@ Rectangle {
                     }
                 }
             }
+        }
+
+        // U2-W5: the reduced-motion flag gates six animations and persists via
+        // QSettings, but had no control — turning it on meant editing the
+        // registry by hand. Qt has no prefers-reduced-motion to inherit, so the
+        // project-level setting has to be exposed here.
+        ToggleRow {
+            label: qsTr("Reduce motion")
+            checked: Theme.reducedMotion
+            onToggled: Theme.reducedMotion = !Theme.reducedMotion
         }
 
         Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.hairline }

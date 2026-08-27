@@ -109,7 +109,9 @@ Rectangle {
                     radius: width / 2
                     color: Theme.textMuted
                     opacity: vbar.pressed ? 0.75 : (vbar.hovered ? 0.55 : 0.35)
-                    Behavior on opacity { NumberAnimation { duration: 120 } }
+                    // U2-O5: gated like every other animation in the app.
+                    Behavior on opacity { enabled: !Theme.reducedMotion
+                        NumberAnimation { duration: 120 } }
                 }
             }
 

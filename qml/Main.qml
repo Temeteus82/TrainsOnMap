@@ -348,7 +348,7 @@ ApplicationWindow {
                         radius: 3
                         color: Theme.cardBg
                         border.width: 1
-                        border.color: model.tempC < 0 ? "#5b9bf3" : "#e08a3c"
+                        border.color: model.tempC < 0 ? Theme.weatherCold : Theme.weatherWarm
                         implicitWidth: chipText.implicitWidth + 8
                         implicitHeight: chipText.implicitHeight + 3
                         Text {
@@ -379,7 +379,9 @@ ApplicationWindow {
                         border.width: 2
                         MouseArea {
                             anchors.fill: parent
-                            anchors.margins: -6   // enlarge the hit target
+                            // U2-W7: 10 px dot + 7 px per side = 24×24, the
+                            // minimum WCAG 2.2 2.5.8 (AA) asks of a target.
+                            anchors.margins: -7
                             cursorShape: Qt.PointingHandCursor
                             onClicked: {
                                 stationBoard.show(model.code, model.name)
@@ -486,6 +488,40 @@ ApplicationWindow {
         statusText: trackService.status.length > 0 ? trackService.status : trainClient.status
 
         onRefreshRequested: trainClient.refresh()
+    }
+
+    // Keyboard/assistive path to the app's primary action, and the only way to
+    // *find* a named train (U2-C1 / U2-O1). Shares the sidebar's category
+    // toggles so the list and the map always show the same fleet.
+    TrainFilterModel {
+        id: fleetFilter
+        sourceModel: trainClient.model
+        showCommuter: panel.showCommuter
+        showLongDistance: panel.showLongDistance
+        showCargo: panel.showCargo
+    }
+
+    TrainListPanel {
+        id: trainListPanel
+        anchors.left: parent.left
+        anchors.top: panel.bottom
+        anchors.bottom: parent.bottom
+        anchors.leftMargin: 12
+        anchors.topMargin: 10
+        anchors.bottomMargin: 12
+
+        model: fleetFilter
+        totalCount: trainClient.model.count
+
+        onTrainActivated: (trainNumber, departureDate, coordinate) => {
+            trainDetails.show(trainNumber, departureDate)
+            stationBoard.clear()          // the right slot shows one thing
+            // Selecting a train you can't see is disorienting, so bring it into
+            // view — the list is usable at any zoom, including the ones where
+            // markers are unlabelled dots.
+            if (mapLoader.item && coordinate && coordinate.isValid)
+                mapLoader.item.center = coordinate
+        }
     }
 
     // Timetable detail panel — only built once a train is picked (still true:
