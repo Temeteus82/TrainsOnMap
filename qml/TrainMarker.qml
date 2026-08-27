@@ -28,28 +28,10 @@ MapQuickItem {
 
     signal clicked(int trainNumber, string departureDate)
 
-    // trainType -> juliadata fill colour; unmatched types fall to category/speed.
+    // trainType -> fill colour. The palette (and its dark-mode branch) lives in
+    // Theme so a theme pass is one file; see Theme.trainColorFor.
     function colorFor(type, category, speed) {
-        switch (type) {
-        case "IC":  case "IC2":               return "#FF0000";   // InterCity — red
-        case "S":                             return "#007700";   // Pendolino — green
-        case "PYO": case "P":                 return "#0000FF";   // night / local — blue
-        case "H":   case "HDM": case "HSM":   return "#770000";   // express / diesel — dark red
-        case "HL":                            return "#004400";   // Helsinki commuter — dark green
-        case "HV":  case "MV":                return "#FF006E";   // museum / shunting — pink
-        case "PAI":                           return "#007070";   // teal
-        case "SAA": case "VLI":               return "#009090";   // cyan-teal
-        case "W":                             return "#00B0B0";   // light cyan
-        case "T":                             return "#000077";   // cargo — navy
-        case "TYO":                           return "#7F6A00";   // work / maintenance — olive
-        case "VET":                           return "#660066";   // locomotive haul — purple
-        case "VEV":                           return "#9E009E";   // magenta
-        }
-        switch (category) {        // unmatched type: fall back to the broad class
-        case "Cargo":    return "#000077";   // navy
-        case "Commuter": return "#30B0C7";   // teal
-        }
-        return speed > 0 ? "#FF9500" : "#8E8E93";   // moving = orange, stopped = grey
+        return Theme.trainColorFor(type, category, speed);
     }
 
     // Badge text: a commuter line letter if any, else "TYPE NUMBER", else number.
@@ -90,13 +72,13 @@ MapQuickItem {
     readonly property bool late: model.ringState === "amber" || model.ringState === "red"
     readonly property color ringColor: {
         switch (model.ringState) {
-        case "amber": return "#F2A900";
-        case "red":   return "#E03131";
+        case "amber": return Theme.ringLate;
+        case "red":   return Theme.ringVeryLate;
         default:      return "transparent";
         }
     }
     // Greyed when stale, else the type colour. Drives the capsule fill + arrow.
-    readonly property color dotColor: stale ? "#9AA0A6" : trainColor
+    readonly property color dotColor: stale ? Theme.trainStale : trainColor
     // Contrast-correct ink for the capsule labels (computed once per fill change).
     readonly property color labelInk: inkFor(dotColor)
 
@@ -223,7 +205,7 @@ MapQuickItem {
             radius: height / 2
             color: "transparent"
             border.width: 1.5
-            border.color: Theme.isDark ? "#b9bec6" : "#5f6368"
+            border.color: Theme.ringSuspect
             opacity: 0.85
             visible: marker.suspect
         }
@@ -310,12 +292,17 @@ MapQuickItem {
             rotation: marker.model.bearing
             transformOrigin: Item.Center
 
+            // U2-O3: 300 ms, not 600. A small element's motion budget is
+            // 100–150 ms and anything past 500 ms reads as broken; 300 still
+            // glides the arrow around the capsule rather than snapping it.
+            // (The 1000 ms CoordinateAnimation above is a different case — it
+            // paces real-world movement to the data cadence, not a UI transition.)
             Behavior on x { enabled: !Theme.reducedMotion
-                NumberAnimation { duration: 600; easing.type: Easing.InOutQuad } }
+                NumberAnimation { duration: 300; easing.type: Easing.InOutQuad } }
             Behavior on y { enabled: !Theme.reducedMotion
-                NumberAnimation { duration: 600; easing.type: Easing.InOutQuad } }
+                NumberAnimation { duration: 300; easing.type: Easing.InOutQuad } }
             Behavior on rotation { enabled: !Theme.reducedMotion
-                RotationAnimation { duration: 600; direction: RotationAnimation.Shortest
+                RotationAnimation { duration: 300; direction: RotationAnimation.Shortest
                     easing.type: Easing.InOutQuad } }
 
             ShapePath {

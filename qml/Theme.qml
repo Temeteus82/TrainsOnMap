@@ -79,8 +79,102 @@ QtObject {
 
     // ---- Map --------------------------------------------------------------
     readonly property string basemapStyle: isDark ? "dark_all" : "light_all"
-    readonly property color railColor: isDark ? "#5a6470" : "#8c95a0"        // running lines
+    readonly property color railColor: isDark ? "#5a6470" : "#87909c"        // running lines
     readonly property color railSidingColor: isDark ? "#3d444e" : "#bcc3cb"  // yards / sidings
+
+    // ---- Map overlay semantics (U2-W8) ------------------------------------
+    // Everything below used to be a hex literal sitting in TrainMarker.qml,
+    // Main.qml or TrainDetailPanel.qml with no dark-mode branch — which made a
+    // theme pass a grep instead of a one-file edit, and is how the marker
+    // palette ended up light-only over a basemap that flips (U2-C4).
+    //
+    // Ratios quoted are against the basemap the thing is drawn on (CARTO
+    // Positron #f7f7f5 / Dark Matter #1b1b1b) or, for the amenity badges, the
+    // card. WCAG 1.4.11 wants >= 3:1 for a graphic that carries state.
+
+    // Delay rings. Amber measured 1.87:1 on Positron — it is paired with a
+    // "+N min" text badge so colour was never the sole carrier, but the ring
+    // itself still has to clear 3:1, hence the darkened light-mode value.
+    readonly property color ringLate:     isDark ? "#F2A900" : "#A87200"  // 8.6 / 3.9
+    readonly property color ringVeryLate: isDark ? "#F25555" : "#E03131"  // 5.1 / 4.2
+    readonly property color ringReady:    liveOn
+    // A fix the matcher could not place on the network: a neutral outline.
+    readonly property color ringSuspect:  isDark ? "#b9bec6" : "#5f6368"
+
+    // Weather chip borders (FMI overlay). Light mode was using dark mode's
+    // accent (#5b9bf3) at 2.6:1 on Positron.
+    readonly property color weatherCold: isDark ? "#5b9bf3" : "#2E77D8"   // 6.1 / 4.1
+    readonly property color weatherWarm: isDark ? "#e08a3c" : "#B36A22"   // 6.5 / 4.2
+
+    // Carriage amenity badges, drawn on the card. Each also carries its own
+    // initial (C/A/F/P), so these are reinforcement, not the sole signal.
+    readonly property color amenityCatering:   isDark ? "#e08a3c" : "#B36A22"  // 6.2 / 4.2
+    readonly property color amenityAccessible: accent
+    readonly property color amenityFamily:     isDark ? "#3fae6b" : "#2F8850"  // 5.9 / 4.4
+    readonly property color amenityPet:        isDark ? "#caa23a" : "#9E7C1E"  // 6.9 / 3.9
+
+    // ---- Train marker palette (U2-C4) -------------------------------------
+    // The light branch is the juliadata.fi legend verbatim — matching that map
+    // is a deliberate project value, so it is not touched.
+    //
+    // The dark branch exists because those hues were authored for a light
+    // basemap: cargo navy #000077 measures 1.04:1 on Dark Matter, i.e.
+    // invisible, and below zoom 8 the capsule collapses to a bare dot where the
+    // fill is the only signal. Every dark value clears 3:1 there.
+    //
+    // The lift is hand-tuned rather than a mechanical luminance raise: raising
+    // each colour to the 3:1 floor independently collapses S onto HL, T onto
+    // PYO and VET onto VEV — same-hue pairs that the light palette separates by
+    // lightness. Each pair is kept >= 1.4:1 apart from its sibling so the
+    // type-coding survives the theme.
+    function trainColorFor(type, category, speed) {
+        if (isDark) {
+            switch (type) {
+            case "IC":  case "IC2":               return "#FF3B3B"   // InterCity — red
+            case "S":                             return "#00B050"   // Pendolino — green
+            case "PYO": case "P":                 return "#8A8AFF"   // night / local — blue
+            case "H":   case "HDM": case "HSM":   return "#C25450"   // express / diesel — brick
+            case "HL":                            return "#5FD16B"   // Helsinki commuter — light green
+            case "HV":  case "MV":                return "#FF006E"   // museum / shunting — pink
+            case "PAI":                           return "#00A0A0"   // teal
+            case "SAA": case "VLI":               return "#00C4C4"   // cyan-teal
+            case "W":                             return "#5FE0E0"   // light cyan
+            case "T":                             return "#4A6BFF"   // cargo — blue
+            case "TYO":                           return "#B99A18"   // work / maintenance — olive
+            case "VET":                           return "#A64DE0"   // locomotive haul — violet
+            case "VEV":                           return "#E86AE8"   // magenta
+            }
+            switch (category) {
+            case "Cargo":    return "#4A6BFF"
+            case "Commuter": return "#30B0C7"
+            }
+            return speed > 0 ? "#FF9500" : "#8E8E93"
+        }
+        switch (type) {
+        case "IC":  case "IC2":               return "#FF0000"   // InterCity — red
+        case "S":                             return "#007700"   // Pendolino — green
+        case "PYO": case "P":                 return "#0000FF"   // night / local — blue
+        case "H":   case "HDM": case "HSM":   return "#770000"   // express / diesel — dark red
+        case "HL":                            return "#004400"   // Helsinki commuter — dark green
+        case "HV":  case "MV":                return "#FF006E"   // museum / shunting — pink
+        case "PAI":                           return "#007070"   // teal
+        case "SAA": case "VLI":               return "#009090"   // cyan-teal
+        case "W":                             return "#00B0B0"   // light cyan
+        case "T":                             return "#000077"   // cargo — navy
+        case "TYO":                           return "#7F6A00"   // work / maintenance — olive
+        case "VET":                           return "#660066"   // locomotive haul — purple
+        case "VEV":                           return "#9E009E"   // magenta
+        }
+        switch (category) {        // unmatched type: fall back to the broad class
+        case "Cargo":    return "#000077"
+        case "Commuter": return "#30B0C7"
+        }
+        return speed > 0 ? "#FF9500" : "#8E8E93"   // moving = orange, stopped = grey
+    }
+
+    // A stale train greys out entirely (juliadata's "harmaa" marker). #9AA0A6
+    // measured 2.46:1 on Positron, so light mode gets a darkened grey.
+    readonly property color trainStale: isDark ? "#9AA0A6" : "#848B92"   // 6.5 / 3.2
 
     // Pick black or white ink for text/glyphs on a data-driven background colour,
     // whichever gives the most contrast (WCAG 2 relative luminance). Shared by any

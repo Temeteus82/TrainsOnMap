@@ -67,12 +67,20 @@ main.cpp                    Bootstraps the QML engine, loads TrainsOnMap/Main.qm
 │   │                        then applies live trainMessage updates for that train
 │   └─ TimetableModel  (C++) QAbstractListModel of merged stops (arr/dep, delay, track)
 │
+├─ TrainFilterModel    (C++) QSortFilterProxyModel over TrainListModel: category
+│                            toggles + free-text search, sorted by train number.
+│                            Backs the train list (the keyboard/AT path to selection)
+│
 └─ qml/
     ├─ Main.qml             Map + MapItemView layers + InfoPanel + TrainDetailPanel
     ├─ TrainMarker.qml      Clickable MapQuickItem delegate for one train
     ├─ InfoPanel.qml        Floating status/controls card (incl. Appearance toggle)
+    ├─ TrainListPanel.qml   Searchable, keyboard-operable list of the live fleet
     ├─ TrainDetailPanel.qml Slide-in timetable for the selected train
-    ├─ Theme.qml            Singleton: light/dark/auto palette + map basemap style
+    ├─ StationBoardPanel.qml Departure board for a clicked station
+    ├─ ToggleRow.qml        Shared labelled checkbox, focusable with a focus ring
+    ├─ Theme.qml            Singleton: light/dark/auto palette (incl. the train
+    │                       marker palette + its dark branch) + map basemap style
     ├─ TypeScale.qml        Singleton: modular type scale (caption/body/subhead/title)
     └─ AppIcon.qml          Canvas line-art icons (train / close / check), theme-tinted
 ```
@@ -92,9 +100,16 @@ so `DigitrafficClient` and `TrackService` are instantiated declaratively in QML.
 | Station names | `GET https://rata.digitraffic.fi/api/v1/metadata/stations` | Maps `stationShortCode` → `stationName`; fetched once and cached. |
 | Track geometry (baked) | `GET https://rata.digitraffic.fi/infra-api/latest/raiteet.geojson?bbox=…` — **build time only** | GeoJSON FeatureCollection of LineString/MultiLineString in **EPSG:3067**. The full network is 10+ MB, so `scripts/bake_rails.py` tiles the national extent in EPSG:3067, merges/de-dupes features by `tunniste`, and commits the compressed `rails.geojson.qz` blob the app embeds. **Not fetched at runtime** — loaded once at startup and culled to the viewport by `loadForBounds()`. |
 
-All requests send a `Digitraffic-User` header (set it to your own app id in
-`DigitrafficClient.cpp` / `TrackService.cpp`) and `Accept-Encoding: gzip` as
-[recommended by Digitraffic](https://www.digitraffic.fi/ohjeet/).
+Every REST request — and the MQTT WebSocket handshake — sends a `Digitraffic-User`
+header identifying this client, as
+[Digitraffic asks](https://www.digitraffic.fi/ohjeet/). It comes from one shared
+constant, `digitraffic::kUserAgent` in [`src/DigitrafficFormat.h`](src/DigitrafficFormat.h);
+change it there to your own app id.
+
+Digitraffic also asks for gzip, but **don't set `Accept-Encoding` by hand** — Qt 6
+advertises it and inflates the response transparently, and a manual header turns
+that off, so every reply then parses as raw gzip and fails silently. (That was a
+real bug here: marker metadata never applied. See `CHANGES.md`.)
 
 ### Coordinate reference system
 
@@ -257,16 +272,40 @@ matching compiler, and Run.
 
 ## Ideas for next steps
 
-No open feature ideas right now — favourite/pinned trains and "nearest trains
-to me" were both considered and declined (see `CHANGES.md`). The one
-remaining deferred item is a `/trains/{date}` summary cache, held back only
-because `/live-trains` already covers the same need.
+The open work is **UI/accessibility**, not features. The round-2 audit
+([`docs/ui-audit-round2.md`](docs/ui-audit-round2.md)) is the source of truth and
+carries the measured contrast ratios, the WCAG references, and a suggested order.
+**Both Criticals are now closed**, along with 9 of the other findings:
 
-Recently shipped: a **station departure board** (click a station dot),
+- **U2-C1 / U2-O1** — the train list. Selecting a train is what this app is
+  *for*, and on the map it is pointer-only: an unlabelled `MapQuickItem` is
+  nothing at all to a screen reader (WCAG 2.1.1 / 4.1.2, Level A). The sidebar
+  now carries a searchable, keyboard-operable list of the live fleet — Tab to
+  the search box, arrows through the rows, Enter to open — with each row exposed
+  as a button named like the marker reads ("IC 967, 120 km/h, 5 minutes late").
+  Search matches number, type or line letter, so what you read off a marker is
+  what you can type.
+- **U2-C4 / U2-W8** — the marker palette got a dark-mode branch, and every
+  hardcoded colour moved into `Theme`. Cargo navy measured **1.04:1** on CARTO
+  Dark Matter — invisible at the zoom levels where the capsule is a bare dot.
+  The dark values are hand-tuned rather than luminance-lifted, because lifting
+  each hue independently collapses `S` onto `HL` and `T` onto `PYO`; the light
+  branch keeps juliadata.fi parity untouched.
+
+**Still open:** U2-W3/W4 (focus management — now the cheapest next step, since
+the list gives the sidebar a real focus chain), U2-W2 (type scale), U2-W6
+(localisation), U2-W9/W10 (first-run view and sidebar density — W10 got *worse*
+with the list added), and U2-O2/O4.
+
+**Features** are a different story — nothing is queued. Favourite/pinned trains
+and "nearest trains to me" were both considered and declined; a `/trains/{date}`
+summary cache is deferred only because `/live-trains` already covers the same
+need. Recently shipped: a **station departure board** (click a station dot),
 **punctuality stats** (on-time % per category, aggregated from `/live-trains`),
-an optional **weather overlay** (FMI open-data observations), and a round of
-UI polish — OS-scalable panel text, density-aware marker-label declutter near
-busy termini, keyboard map panning, and fade transitions on the side panels.
+an optional **weather overlay** (FMI open-data observations), and a round of UI
+polish — OS-scalable panel text, density-aware marker-label declutter near busy
+termini, keyboard map panning, and fade transitions on the side panels.
 
-See `CHANGES.md`'s **Known issues / follow-ups** for the full rationale on
-why the remaining item is deferred rather than done.
+`CHANGES.md`'s **Known issues / follow-ups** has the rationale for the declined
+and deferred items; `docs/track-accuracy-tier2-plan.md` step 5 still wants a
+human pass over parallel-track/junction/platform matching on the live map.

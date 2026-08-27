@@ -24,10 +24,10 @@ Rectangle {
     // Distinct dot colour per carriage amenity (see CompositionVehicle.amenities).
     function amenityColor(a) {
         switch (a) {
-        case "Catering":   return "#e08a3c"   // café/restaurant car
-        case "Accessible": return Theme.accent
-        case "Family":     return "#3fae6b"   // play area
-        case "Pet":        return "#caa23a"
+        case "Catering":   return Theme.amenityCatering   // café/restaurant car
+        case "Accessible": return Theme.amenityAccessible
+        case "Family":     return Theme.amenityFamily     // play area
+        case "Pet":        return Theme.amenityPet
         }
         return Theme.textMuted
     }
@@ -450,7 +450,9 @@ Rectangle {
                     radius: width / 2
                     color: Theme.textMuted
                     opacity: vbar.pressed ? 0.75 : (vbar.hovered ? 0.55 : 0.35)
-                    Behavior on opacity { NumberAnimation { duration: 120 } }
+                    // U2-O5: gated like every other animation in the app.
+                    Behavior on opacity { enabled: !Theme.reducedMotion
+                        NumberAnimation { duration: 120 } }
                 }
             }
 

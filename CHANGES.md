@@ -8,6 +8,92 @@ Legend: ✨ feature · 🐛 bug fix · ♻️ change/refactor · ✅ verificatio
 
 ---
 
+## UI audit round 2 — both Criticals + the four one-liners
+
+Closes 8 more findings from `docs/ui-audit-round2.md` (now 11 of 20 done).
+
+### ✨ U2-C1 / U2-O1 — a searchable, keyboard-operable train list
+- [x] Selecting a train is the app's primary action and was reachable only by
+      pointer — a WCAG 2.1.1 / 4.1.2 **Level A** failure, with the whole live
+      fleet invisible to a screen reader as unlabelled `MapQuickItem` geometry.
+      New `TrainListPanel.qml` in the left column: Tab reaches the search field,
+      Down steps into the list, arrows move the row, Enter/Space opens it (the
+      same `show()` a marker click calls) and recentres the map. Each row is an
+      `Accessible.Button` named like the marker reads — "IC 967, 120 km/h,
+      5 minutes late".
+- [x] New `TrainFilterModel` (`QSortFilterProxyModel` over `TrainListModel`,
+      following `TimetableFilterModel`'s shape): the sidebar's category toggles
+      plus a free-text search over number / type / commuter line — the same three
+      fields the map badge shows, so what the user reads off a marker is what
+      they can type. Sorted by train number so the list doesn't reshuffle as the
+      fleet turns over. Filtering in the proxy (not `visible: false` delegates)
+      keeps the `ListView` virtualising over a several-hundred-train fleet.
+- [x] Markers stay pointer-only **deliberately**: a tab order across a set that
+      changes every few seconds reshuffles under the user's fingers, which is why
+      the audit called the list the better answer.
+
+### ✨ U2-C4 / U2-W8 — the marker palette gets a dark branch, in `Theme`
+- [x] `TrainMarker.colorFor()` was a light-mode-only palette painted over a
+      basemap that flips: cargo navy `#000077` measured **1.04:1** on CARTO Dark
+      Matter — invisible, and below zoom 8 the capsule is a bare dot where the
+      fill is the only signal. The palette moved to
+      `Theme.trainColorFor(type, category, speed)` with a hand-tuned dark branch;
+      every value clears 3:1 there.
+- [x] Hand-tuned, **not** a per-colour luminance lift as the audit proposed:
+      raising each hue independently to the 3:1 floor collapses `S` onto `HL`,
+      `T` onto `PYO` and `VET` onto `VEV` — same-hue pairs the light palette
+      separates by lightness — which would destroy the type-coding. Each pair is
+      kept ≥ 1.4:1 from its sibling. The light branch keeps juliadata.fi parity.
+- [x] **U2-W8 closed alongside**: the rings, weather-chip borders, amenity dots,
+      suspect ring and stale grey all became named `Theme` tokens with both
+      branches. `grep '"#......"' qml/` outside `Theme.qml` now returns nothing.
+- [x] Sizing the change surfaced three light-mode failures the audit hadn't
+      measured (it only checked marker fills): the amber delay ring at
+      **1.87:1** on Positron, the weather chips at 2.6/2.5:1, and the amenity
+      dots at 2.4–2.8:1 on the light card. All fixed; the stale grey (2.46:1)
+      and the running-line rail colour (2.83:1) were nudged too.
+
+### 🐛 The four one-liners (U2-W5, U2-W7, U2-O3, U2-O5)
+- [x] **U2-W5** — `Theme.reducedMotion` gated six animations and persisted via
+      `QSettings`, but nothing in the UI set it: turning motion off meant editing
+      the registry. One `ToggleRow` in the Appearance group.
+- [x] **U2-W7** — station-dot hit target was 22×22 against WCAG 2.2 2.5.8's
+      24×24 (AA). `anchors.margins: -6` → `-7`.
+- [x] **U2-O3** — the direction arrow's `x`/`y`/`rotation` animated at 600 ms
+      against a 100–150 ms budget for a small element; now 300 ms. The 1000 ms
+      `CoordinateAnimation` was deliberately left alone (it paces real-world
+      motion to the data cadence, not a UI transition) with a comment saying so.
+- [x] **U2-O5** — three files animated the scrollbar handle's opacity without
+      checking `reducedMotion`, unlike every other animation. Fixed in all three
+      rather than only the one that prompted it; the new panel uses the gated form.
+
+### ✅ Verification
+- [x] Clean `linux-release` build, no warnings; `ctest` **6/6** — the new
+      `trainfilter` target joins railgraph / timetablemodel / timetablefilter /
+      compositionmodel / digitrafficformat.
+- [x] `tests/tst_trainfilter.cpp` (10 slots) runs the proxy against the **real**
+      `TrainListModel`, not a stub: the proxy resolves its role numbers from the
+      source's `roleNames()`, so a stub with a different role table would
+      exercise the wrong code.
+- [x] Discriminating power checked by mutation, per the house rule. Caching the
+      role numbers *after* delegating to the base `setSourceModel` fails
+      `cachesRolesBeforeBaseReset` — that is the exact fail-open ordering bug
+      `TimetableFilterModel` shipped with once, so the test exists to stop it
+      recurring in a second proxy. Swapping the rows-only filter change for a
+      full model reset fails `refilterDoesNotResetTheModel` (row counts can't
+      see the difference; a reset discards the ListView's delegates and scroll
+      position, which is why this is a proxy at all).
+- [x] Contrast figures computed with the WCAG 2 relative-luminance formula
+      against the actual basemaps (`#f7f7f5` Positron / `#1b1b1b` Dark Matter),
+      not eyeballed.
+- [x] App launched against live data (persistent, not a smoke-timeout) with an
+      empty log — no QML warnings.
+- [ ] 📋 Not yet eyeballed by a human: the dark-mode marker palette on the live
+      map, and a screen-reader pass over the list (the `Accessible` wiring is
+      inspection-verified only).
+
+---
+
 ## Kill the Windows.h min/max clash at the source + build the role tables once
 
 The last two code items from the `qt-cpp-review` audit's open list. A third was
