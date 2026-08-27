@@ -183,6 +183,22 @@ endif()
 if(APPLE)
     get_target_property(_qmake_exe Qt6::qmake IMPORTED_LOCATION)
     get_filename_component(_qt_bin_dir "${_qmake_exe}" DIRECTORY)
+
+    # AppleDouble sidecars (._Foo, left behind when the tree is copied across a
+    # filesystem without native xattrs) survive incremental builds and break
+    # macdeployqt's codesign pass -- "._QtFoo: code object is not signed at all"
+    # per framework, then "a sealed resource is missing or invalid" for the whole
+    # .app. Strip them before macdeployqt runs, not after: it signs each framework
+    # as it copies it. -m deletes the sidecars outright rather than merging their
+    # stale attributes back onto the freshly built binaries.
+    find_program(DOT_CLEAN_EXECUTABLE dot_clean HINTS /usr/sbin)
+    if(DOT_CLEAN_EXECUTABLE)
+        add_custom_command(TARGET TrainsOnMap POST_BUILD
+            COMMAND "${DOT_CLEAN_EXECUTABLE}" -m "$<TARGET_BUNDLE_DIR:TrainsOnMap>"
+            COMMENT "dot_clean: stripping AppleDouble sidecars that break codesign"
+            VERBATIM)
+    endif()
+
     find_program(MACDEPLOYQT_EXECUTABLE macdeployqt HINTS "${_qt_bin_dir}")
     if(MACDEPLOYQT_EXECUTABLE)
         add_custom_command(TARGET TrainsOnMap POST_BUILD
