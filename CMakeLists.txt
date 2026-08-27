@@ -86,6 +86,18 @@ qt_add_resources(TrainsOnMap "raildata"
     BASE "${CMAKE_CURRENT_SOURCE_DIR}/resources"
     FILES resources/rails.geojson.qz)
 
+# Basemap provider manifests for Qt's OSM plugin, embedded so the tile source is
+# described entirely in-process (osm.mapping.providersrepository.address accepts
+# a qrc: URL, so no file is written at runtime and no repository is fetched over
+# the network). One "street" manifest per theme; Qt only asks for the map types
+# it can find, so the other six (satellite, cycle, ...) are deliberately absent.
+qt_add_resources(TrainsOnMap "basemap"
+    PREFIX "/basemap"
+    BASE "${CMAKE_CURRENT_SOURCE_DIR}/resources/basemap"
+    FILES
+        resources/basemap/light/street
+        resources/basemap/dark/street)
+
 # Application icon, embedded for the runtime window/taskbar icon (set via
 # QGuiApplication::setWindowIcon in main.cpp -> ":/appicon.png"). Regenerate the
 # raster assets from the SVG master with scripts/make_icons.sh.
@@ -207,6 +219,24 @@ if(APPLE)
                     "-qmldir=${CMAKE_SOURCE_DIR}/qml"
                     -no-strip
             COMMENT "macdeployqt: bundling Qt frameworks and QML/geoservices/TLS plugins into the .app"
+            VERBATIM)
+
+        # macdeployqt rewrites dependency references into the bundle but leaves
+        # the linker's absolute rpath for the build-machine Qt (e.g.
+        # /opt/homebrew/lib) on the executable. Several Qt frameworks still name
+        # their siblings as bare @rpath/QtCore.framework/..., and dyld consults
+        # the main executable's rpaths to resolve those -- so that leftover entry
+        # is a live route out of the bundle, and a second copy of QtCore/QtGui
+        # gets loaded from the build machine's Qt ("Class ... is implemented in
+        # both ... This may cause spurious casting failures and mysterious
+        # crashes"). It only reproduces where that Qt is still installed, so it
+        # passes local testing and fails elsewhere. Strip those rpaths and
+        # re-sign, strictly after macdeployqt -- it needs them while resolving
+        # what to copy.
+        add_custom_command(TARGET TrainsOnMap POST_BUILD
+            COMMAND "${CMAKE_SOURCE_DIR}/scripts/seal_bundle_rpaths.sh"
+                    "$<TARGET_BUNDLE_DIR:TrainsOnMap>"
+            COMMENT "seal_bundle_rpaths: removing rpaths that escape the .app, then re-signing"
             VERBATIM)
     else()
         message(WARNING "macdeployqt not found near ${_qt_bin_dir}; "

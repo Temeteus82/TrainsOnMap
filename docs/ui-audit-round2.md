@@ -24,6 +24,15 @@ Contrast ratios below were computed with the WCAG 2 relative-luminance formula
 against `Theme.cardBg` resolved over its backdrop (`#fefefe` light, `#1c1f24`
 dark) and against the CARTO basemaps (`#f7f7f5` Positron, `#1b1b1b` Dark Matter).
 
+> **Superseded ground (2026-08-27).** The basemap has since moved to Esri Gray
+> Canvas (`#efefef` light, `#474749` dark) after CARTO began watermarking
+> keyless raster tiles. The card-based ratios are unaffected, but every
+> *map-drawn* dark-mode ratio in this document was measured against `#1b1b1b`
+> and is roughly **2× optimistic** for the current ground. The tokens were
+> re-checked at the time of the switch and `ringVeryLate` was lifted
+> `#F25555` → `#F36868` to stay above 3:1; the figures below are kept as the
+> historical record of the audit, not as current measurements.
+
 ---
 
 ## Critical

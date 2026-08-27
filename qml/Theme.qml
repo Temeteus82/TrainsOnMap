@@ -78,9 +78,26 @@ QtObject {
     readonly property color cancelledBg: isDark ? "#b53030" : "#c62828"
 
     // ---- Map --------------------------------------------------------------
-    readonly property string basemapStyle: isDark ? "dark_all" : "light_all"
-    readonly property color railColor: isDark ? "#5a6470" : "#87909c"        // running lines
-    readonly property color railSidingColor: isDark ? "#3d444e" : "#bcc3cb"  // yards / sidings
+    // Esri Gray Canvas, described by a provider manifest embedded in resources
+    // (see CMakeLists.txt "basemap"). basemapStyle only names the disk cache
+    // directory now — it deliberately no longer matches the old CARTO
+    // "light_all"/"dark_all" ids, so a stale cache of watermarked CARTO tiles is
+    // never served to a build that has moved on.
+    readonly property string basemapStyle: isDark ? "esri-dark-gray" : "esri-light-gray"
+    readonly property url basemapRepo: isDark ? "qrc:/basemap/dark/" : "qrc:/basemap/light/"
+    // Track strands. Both were well under 1.4.11's 3:1 on the Esri ground
+    // (running 1.54 / siding 1.06 dark, 2.81 / 1.55 light) and were lifted to
+    // clear it. On the dark ground they had to go *lighter*: #474749 is midtone
+    // enough that even pure black only reaches 2.27:1, so darkening a siding to
+    // make it recede is not available there.
+    //
+    // The pair also has to stay told apart from each other. On the map that is
+    // reinforced by width (2.2 px running vs 1.3 px siding, Main.qml), but the
+    // sidebar legend draws both as identical 3 px swatches, so colour carries it
+    // alone there — hence the >= 1.4:1 sibling separation the marker palette
+    // uses, which puts the running line at ~4.2:1 and the siding at ~3.0:1.
+    readonly property color railColor: isDark ? "#A8B0B9" : "#69727F"        // running lines  4.2 / 4.2
+    readonly property color railSidingColor: isDark ? "#8994A3" : "#7E8B9B"  // yards / sidings 3.0 / 3.0
 
     // ---- Map overlay semantics (U2-W8) ------------------------------------
     // Everything below used to be a hex literal sitting in TrainMarker.qml,
@@ -88,15 +105,23 @@ QtObject {
     // theme pass a grep instead of a one-file edit, and is how the marker
     // palette ended up light-only over a basemap that flips (U2-C4).
     //
-    // Ratios quoted are against the basemap the thing is drawn on (CARTO
-    // Positron #f7f7f5 / Dark Matter #1b1b1b) or, for the amenity badges, the
-    // card. WCAG 1.4.11 wants >= 3:1 for a graphic that carries state.
+    // Ratios quoted are against the basemap the thing is drawn on (Esri Light
+    // Gray #efefef / Dark Gray #474749) or, for the amenity badges, the card.
+    // WCAG 1.4.11 wants >= 3:1 for a graphic that carries state.
+    //
+    // NB the dark ground got much lighter when the basemap moved off CARTO
+    // (#1b1b1b -> #474749), so every dark-branch ratio below is roughly halved
+    // from what it measured on Dark Matter. The map-drawn tokens were re-checked
+    // against the new ground; the on-card badges are unaffected.
 
     // Delay rings. Amber measured 1.87:1 on Positron — it is paired with a
     // "+N min" text badge so colour was never the sole carrier, but the ring
     // itself still has to clear 3:1, hence the darkened light-mode value.
     readonly property color ringLate:     isDark ? "#F2A900" : "#A87200"  // 8.6 / 3.9
-    readonly property color ringVeryLate: isDark ? "#F25555" : "#E03131"  // 5.1 / 4.2
+    // Dark value lifted #F25555 -> #F36868 when the basemap moved to Esri Dark
+    // Gray (#474749): the old red measured 3.1:1 on CARTO Dark Matter's #1b1b1b
+    // but only 2.74:1 on the lighter Esri ground, under 1.4.11's 3:1.
+    readonly property color ringVeryLate: isDark ? "#F36868" : "#E03131"  // 3.1 / 4.2
     readonly property color ringReady:    liveOn
     // A fix the matcher could not place on the network: a neutral outline.
     readonly property color ringSuspect:  isDark ? "#b9bec6" : "#5f6368"

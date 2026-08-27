@@ -1,0 +1,11 @@
+{
+    "Enabled" : true,
+    "UrlTemplate" : "https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/%z/%y/%x",
+    "ImageFormat" : "png",
+    "MapCopyRight" : "Esri, HERE, Garmin, © OpenStreetMap contributors, and the GIS user community",
+    "DataCopyRight" : "",
+    "StyleCopyRight" : "",
+    "MinimumZoomLevel" : 0,
+    "MaximumZoomLevel" : 20,
+    "Timestamp" : "2026-08-27"
+}
