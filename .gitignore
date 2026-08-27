@@ -34,9 +34,6 @@ compile_commands.json
 /profiler/.last-*
 parse.err
 
-# Port-reference docs (not part of the build)
-/trainspotter-qt-docs/
-
 # Python (scripts/bake_rails.py)
 __pycache__/
 *.pyc
