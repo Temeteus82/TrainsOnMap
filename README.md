@@ -10,9 +10,10 @@ and a QML map front-end, plus clearly marked extension points.
 
 ## Features
 
-- **OpenStreetMap base layer with light/dark theming** — CARTO *Positron*
-  (`light_all`) / *Dark Matter* (`dark_all`) tiles via the Qt Location `osm`
-  plugin's custom-host mechanism, so the coloured trains and rails stay the focus.
+- **Muted base layer with light/dark theming** — Esri *Light Gray Canvas* /
+  *Dark Gray Canvas* tiles via the Qt Location `osm` plugin, pointed at an
+  embedded single-provider repository, so the coloured trains and rails stay the
+  focus. No API key or account is needed.
   An **Appearance** toggle (Auto / Light / Dark) reskins the whole app — basemap,
   overlays, and markers — through the `Theme` singleton; *Auto* follows the
   desktop colour scheme.
@@ -247,9 +248,18 @@ matching compiler, and Run.
 - **Live stream:** `DigitrafficMqttClient { active: true }` in `Main.qml` — set
   `false` to disable MQTT and rely on the REST seed (or wire up polling).
 - **Appearance & basemap:** the **Auto / Light / Dark** toggle in the sidebar sets
-  `Theme.mode`, which resolves `Theme.isDark`. `Theme.basemapStyle`
-  (`light_all` / `dark_all`) and every overlay colour follow it — all defined in
-  `Theme.qml`; edit the CARTO style strings or palette tokens there.
+  `Theme.mode`, which resolves `Theme.isDark`. `Theme.basemapRepo` (the embedded
+  provider manifest) and every overlay colour follow it — all defined in
+  `Theme.qml`. To change tile source, edit the `UrlTemplate` in
+  `resources/basemap/{light,dark}/street`; for colours, edit the palette tokens.
+
+  > The `osm` plugin's simpler `osm.mapping.custom.host` is deliberately **not**
+  > used: Qt builds tile URLs by concatenating `%z/%x/%y.png` onto the host
+  > string, which cannot express Esri's `z/y/x` order, its extensionless paths,
+  > or any trailing query string (a `?key=` would land mid-path). The providers
+  > repository takes a full `UrlTemplate` and has none of those limits. Its
+  > manifest is embedded via `qrc:`, so no file is written at runtime and no
+  > repository is fetched over the network.
 - **Reduced motion:** `Theme.reducedMotion` (persisted via `QtCore.Settings`,
   category `Appearance`) — when `true`, non-essential animation (the LIVE pulse)
   is skipped. Type scale lives in `TypeScale.qml`: the plain roles
@@ -286,8 +296,9 @@ carries the measured contrast ratios, the WCAG references, and a suggested order
   Search matches number, type or line letter, so what you read off a marker is
   what you can type.
 - **U2-C4 / U2-W8** — the marker palette got a dark-mode branch, and every
-  hardcoded colour moved into `Theme`. Cargo navy measured **1.04:1** on CARTO
-  Dark Matter — invisible at the zoom levels where the capsule is a bare dot.
+  hardcoded colour moved into `Theme`. Cargo navy measured **1.04:1** on the
+  then-current dark basemap — invisible at the zoom levels where the capsule is
+  a bare dot.
   The dark values are hand-tuned rather than luminance-lifted, because lifting
   each hue independently collapses `S` onto `HL` and `T` onto `PYO`; the light
   branch keeps juliadata.fi parity untouched.

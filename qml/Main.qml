@@ -17,9 +17,10 @@ ApplicationWindow {
     color: Theme.windowBg
 
     // Per-style basemap tile-cache directory. Qt's OSM disk cache keys tiles by
-    // map-type id only (both light_all and dark_all are the one CustomMap type),
-    // not by host — so without separate directories the two styles share a cache
-    // and serve each other's tiles after a theme flip (patchy dark/light map).
+    // map-type id only (the light and dark providers are both the one StreetMap
+    // type), not by URL — so without separate directories the two styles share a
+    // cache and serve each other's tiles after a theme flip (patchy dark/light
+    // map).
     // Give each style its own directory to keep them isolated.
     function cacheDirFor(style) {
         // writableLocation() returns a file:// url; the OSM plugin wants a plain
@@ -120,10 +121,10 @@ ApplicationWindow {
     }
 
     // ---- Map ---------------------------------------------------------------
-    // The CARTO basemap (light_all / dark_all) is chosen by Theme. The osm
-    // plugin only reads its tile host at construction, so a theme flip rebuilds
-    // the Plugin + Map via this Loader; the view (centre/zoom) is preserved in
-    // the loader's saved* properties across the reload.
+    // The Esri Gray Canvas basemap (light / dark) is chosen by Theme. The osm
+    // plugin only resolves its providers at construction, so a theme flip
+    // rebuilds the Plugin + Map via this Loader; the view (centre/zoom) is
+    // preserved in the loader's saved* properties across the reload.
     Loader {
         id: mapLoader
         anchors.fill: parent
@@ -134,7 +135,7 @@ ApplicationWindow {
         property real savedZoom: 7.0
 
         // Rebuild the map when the resolved light/dark state changes so the
-        // tiles re-fetch from the matching CARTO host.
+        // tiles re-fetch from the matching Esri service.
         Connections {
             target: Theme
             function onIsDarkChanged() {
@@ -151,22 +152,28 @@ ApplicationWindow {
             id: map
             plugin: Plugin {
                 name: "osm"
-                // Use only our custom tile host, not the bundled provider list.
-                PluginParameter { name: "osm.mapping.providersrepository.disabled"; value: true }
+                // Point the OSM plugin at our own single-provider repository
+                // rather than osm.mapping.custom.host. custom.host cannot express
+                // this tile source: Qt builds the URL by naive concatenation,
+                // appending "%z/%x/%y.png" to whatever the host string is, so
+                // there is no way to get Esri's z/y/x order, its extensionless
+                // path, or a trailing query string (a "?key=" would land in the
+                // middle of the path). A repository manifest carries a full
+                // UrlTemplate with %z/%y/%x placeholders and has none of those
+                // limits. The manifest is embedded (qrc:), so nothing is fetched
+                // over the network to resolve the provider.
                 PluginParameter {
-                    name: "osm.mapping.custom.host"   // Qt appends "%z/%x/%y.png"
-                    value: "https://a.basemaps.cartocdn.com/" + Theme.basemapStyle + "/"
+                    name: "osm.mapping.providersrepository.address"
+                    value: Theme.basemapRepo
                 }
                 PluginParameter {
                     // Isolate the disk cache per basemap style — see cacheDirFor().
                     name: "osm.mapping.cache.directory"
                     value: win.cacheDirFor(Theme.basemapStyle)
                 }
-                PluginParameter {
-                    name: "osm.mapping.custom.mapcopyright"
-                    value: "© OpenStreetMap contributors, © CARTO"
-                }
-                PluginParameter { name: "osm.mapping.highdpi_tiles"; value: true }
+                // Note: no osm.mapping.highdpi_tiles here. With it enabled Qt
+                // looks for a "street-hires" manifest instead of "street", and
+                // Esri's MapServer has no @2x endpoint to point one at.
                 PluginParameter { name: "osm.useragent"; value: "TrainsOnMap/0.1 (Qt6 scaffolding)" }
             }
 
@@ -199,10 +206,12 @@ ApplicationWindow {
                 return 156543.03392 * Math.cos(lat * Math.PI / 180) / Math.pow(2, zoomLevel)
             }
 
-            // The CARTO tiles arrive as the plugin's "custom" map type; activate it.
+            // The repository's "street" provider registers as StreetMap (not
+            // CustomMap, which is what osm.mapping.custom.host used to produce);
+            // activate it.
             function selectBasemap() {
                 for (let i = 0; i < supportedMapTypes.length; ++i) {
-                    if (supportedMapTypes[i].style === MapType.CustomMap) {
+                    if (supportedMapTypes[i].style === MapType.StreetMap) {
                         activeMapType = supportedMapTypes[i];
                         return;
                     }

@@ -86,6 +86,18 @@ qt_add_resources(TrainsOnMap "raildata"
     BASE "${CMAKE_CURRENT_SOURCE_DIR}/resources"
     FILES resources/rails.geojson.qz)
 
+# Basemap provider manifests for Qt's OSM plugin, embedded so the tile source is
+# described entirely in-process (osm.mapping.providersrepository.address accepts
+# a qrc: URL, so no file is written at runtime and no repository is fetched over
+# the network). One "street" manifest per theme; Qt only asks for the map types
+# it can find, so the other six (satellite, cycle, ...) are deliberately absent.
+qt_add_resources(TrainsOnMap "basemap"
+    PREFIX "/basemap"
+    BASE "${CMAKE_CURRENT_SOURCE_DIR}/resources/basemap"
+    FILES
+        resources/basemap/light/street
+        resources/basemap/dark/street)
+
 # Application icon, embedded for the runtime window/taskbar icon (set via
 # QGuiApplication::setWindowIcon in main.cpp -> ":/appicon.png"). Regenerate the
 # raster assets from the SVG master with scripts/make_icons.sh.

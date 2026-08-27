@@ -405,7 +405,7 @@ Rectangle {
 
         Label {
             Layout.fillWidth: true
-            text: qsTr("Data © Fintraffic / Digitraffic (CC BY 4.0)\nMap © OpenStreetMap contributors, © CARTO")
+            text: qsTr("Data © Fintraffic / Digitraffic (CC BY 4.0)\nMap © Esri, HERE, Garmin, © OpenStreetMap contributors")
             color: Theme.textMuted   // ≥ 4.5:1 on the card
             font.pointSize: TypeScale.panelCaption
             wrapMode: Text.WordWrap
