@@ -223,7 +223,18 @@ void TrainDetailsService::show(int trainNumber, const QString &departureDate)
     QNetworkRequest req{url};
     req.setRawHeader("Digitraffic-User", digitraffic::kUserAgent);
     QNetworkReply *reply = m_net->get(req);
-    connect(reply, &QNetworkReply::finished, this, [this, reply] { handleTrain(reply); });
+    // Tag the reply with the run it was issued for, exactly as fetchComposition
+    // does below: two GETs on one manager can finish out of order, so a slow
+    // timetable reply for a previously-selected train must not overwrite the
+    // panel now on screen — nor clear the spinner for the request still in
+    // flight (C1).
+    connect(reply, &QNetworkReply::finished, this,
+            [this, reply, trainNumber, departureDate] {
+                if (trainNumber == m_trainNumber && departureDate == m_departureDate)
+                    handleTrain(reply);
+                else
+                    reply->deleteLater();   // stale selection — drop it
+            });
 
     // Carriage order is static per run — fetch it once alongside the timetable.
     clearComposition();
@@ -259,17 +270,33 @@ void TrainDetailsService::applyTrainObject(const QJsonObject &train, bool live)
     // Header: prefer a commuter line label (e.g. "U"), else "<type> <number>".
     const QString line = train.value(QStringLiteral("commuterLineID")).toString();
     const QString type = train.value(QStringLiteral("trainType")).toString();
-    m_title = line.isEmpty() ? QStringLiteral("%1 %2").arg(type).arg(m_trainNumber)
-                             : QStringLiteral("%1 (%2)").arg(line).arg(m_trainNumber);
+    const QString title = line.isEmpty() ? QStringLiteral("%1 %2").arg(type).arg(m_trainNumber)
+                                         : QStringLiteral("%1 (%2)").arg(line).arg(m_trainNumber);
     const QString category = train.value(QStringLiteral("trainCategory")).toString();
     const QString op = train.value(QStringLiteral("operatorShortCode")).toString().toUpper();
-    m_subtitle = QStringLiteral("%1 · %2").arg(category, op);
-    m_cancelled = train.value(QStringLiteral("cancelled")).toBool();
-    emit selectionChanged();
+    const QString subtitle = QStringLiteral("%1 · %2").arg(category, op);
+    const bool cancelled = train.value(QStringLiteral("cancelled")).toBool();
+
+    // Only announce a *selection* change when the header actually changed. A live
+    // MQTT refresh re-applies the same header every few seconds, and QML treats
+    // selectionChanged as "a different train is now shown": Main.qml resets the
+    // breadcrumb trail on it, so emitting unconditionally meant the trail could
+    // never fill for the one train the user is watching (C2).
+    if (title != m_title || subtitle != m_subtitle || cancelled != m_cancelled) {
+        m_title = title;
+        m_subtitle = subtitle;
+        m_cancelled = cancelled;
+        emit selectionChanged();
+    }
 
     const QJsonArray rows = train.value(QStringLiteral("timeTableRows")).toArray();
+    // Likewise for the route: it is fixed for the run, but routeStationsChanged
+    // re-pins it and rebuilds the whole overlay polyline (boxing every vertex
+    // into a QVariantList), so compare the canonicalised codes before emitting.
+    const QStringList previousRoute = routeStations();
     m_stops = buildStops(rows);
-    emit routeStationsChanged();
+    if (routeStations() != previousRoute)
+        emit routeStationsChanged();
 
     int stopCount = 0;
     for (const TimetableStop &s : m_stops)
@@ -409,6 +436,10 @@ void TrainDetailsService::clear()
     m_stops.clear();
     m_model->clear();
     clearComposition();
+    // An in-flight timetable request is now stale and its reply will be dropped
+    // (C1), so nothing else will lower this — do it here rather than leaving the
+    // panel's BusyIndicator spinning until the next selection.
+    setLoading(false);
     setStatus({});
     emit selectionChanged();
     emit routeStationsChanged();
