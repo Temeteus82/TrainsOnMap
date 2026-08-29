@@ -30,6 +30,13 @@ static bool sameVisible(const TimetableStop &a, const TimetableStop &b)
 TimetableModel::TimetableModel(QObject *parent)
     : QRangeModel(&m_stops, parent)
 {
+    // Drive `count` off the model's own structural signals rather than only off the
+    // hand-written setters below: a row change through the inherited QRangeModel
+    // write API would otherwise move rowCount() without notifying, leaving QML
+    // `count` bindings stale (review CPP-O3). Same wiring as TrainFilterModel.
+    connect(this, &QAbstractItemModel::rowsInserted, this, &TimetableModel::countChanged);
+    connect(this, &QAbstractItemModel::rowsRemoved, this, &TimetableModel::countChanged);
+    connect(this, &QAbstractItemModel::modelReset, this, &TimetableModel::countChanged);
 }
 
 void TimetableModel::setStops(QVector<TimetableStop> rows)
@@ -90,7 +97,6 @@ void TimetableModel::setStops(QVector<TimetableStop> rows)
         beginResetModel();
         m_stops = std::move(rows);
         endResetModel();
-        emit countChanged();
     }
 
     const bool progressMoved =
@@ -112,6 +118,5 @@ void TimetableModel::clear()
     m_passedStops = 0;
     m_totalStops = 0;
     m_nextStopRow = -1;
-    emit countChanged();
     emit progressChanged();
 }

@@ -34,7 +34,7 @@ constexpr auto kDetailedCauseCategoriesUrl
     = "https://rata.digitraffic.fi/api/v1/metadata/detailed-cause-category-codes";
 // REST is the bootstrap + prune path; MQTT carries live deltas in between, so
 // the snapshot only needs to run slowly. Matches the Swift app's 60 s resync.
-constexpr int kResyncIntervalMs = 60 * 1000;
+constexpr auto kResyncInterval = std::chrono::seconds{60};
 // /live-trains is polled with ?version= deltas in between, but a full snapshot is
 // re-pulled at least this often to GC accumulated state and let the route cache
 // evict trains that quietly left the fleet (a finished train may never appear in
@@ -55,9 +55,9 @@ DigitrafficClient::DigitrafficClient(QObject *parent)
     m_net->setTransferTimeout(digitraffic::kRequestTimeout);
     netdiag::logSslErrors(m_net, "DigitrafficClient");
 
-    m_timer.setInterval(kResyncIntervalMs);
+    m_timer.setInterval(kResyncInterval);
     connect(&m_timer, &QTimer::timeout, this, &DigitrafficClient::refresh);
-    // Categories piggyback on refresh() (every kResyncIntervalMs while active),
+    // Categories piggyback on refresh() (every kResyncInterval while active),
     // so they need no separate poll — and stay quiet when polling is stopped.
 
     // First attempt now; refresh() re-issues any that fail (see retryMetadata()).
@@ -411,6 +411,10 @@ void DigitrafficClient::handleReply(QNetworkReply *reply)
 
     if (reply->error() != QNetworkReply::NoError) {
         setStatus(QStringLiteral("Network error: %1").arg(reply->errorString()));
+        // A failed poll is exactly when the markers most need re-evaluating: the
+        // status ring ages with the clock, and on this path nothing else touches
+        // the model, so the rings would keep claiming freshness (I2).
+        m_model->refreshRingStates();
         return;
     }
 

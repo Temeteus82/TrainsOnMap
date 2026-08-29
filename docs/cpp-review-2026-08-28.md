@@ -47,6 +47,14 @@ Suggested fix-order: **CPP-C1, CPP-C2** first (user-visible bugs), then
 > both `show()` slots, and the MQTT topic filter; live payloads now match on
 > `departureDate` as well. Pinned by four new test slots.
 >
+> **CPP-O3, CPP-O4, CPP-I2, CPP-I5 settled** (2026-08-29, model-freshness pass):
+> the status ring is re-derived and re-emitted when the clock moves it — closing
+> a regression **CPP-W9 introduced** by removing the whole-model burst that had
+> been masking it — abandoned rows can no longer accumulate on an MQTT-only
+> session, `count` is driven off the models' own structural signals, and the
+> surviving lint is resolved or explicitly declined. This closes every finding in
+> this document.
+>
 > **CPP-W10, CPP-W14, CPP-I1, CPP-I7 fixed** (2026-08-29, performance pass): the
 > hot matcher queries the spatial grid that already existed, the national network
 > is no longer eagerly boxed into `QVariantList`s, the viewport diff splices runs
@@ -697,7 +705,7 @@ and a named constant saying why it differs.
 
 ---
 
-### CPP-O3 — `QRangeModel` rows are reported as editable
+### CPP-O3 — `QRangeModel` rows are reported as editable — **Fixed**
 `src/TimetableModel.cpp:11`, `CompositionModel.cpp:8`, `StationBoardModel.cpp:7`,
 `StationListModel.cpp:8`, `WeatherStationModel.cpp:7`
 
@@ -725,9 +733,20 @@ cannot go stale regardless of which API changed the rows. Handing `QRangeModel` 
 const view would additionally strip `ItemIsEditable` — check it against the
 in-place assignment pattern the `set*` methods rely on before adopting it.
 
+**Fixed (2026-08-29)**, the durable half: all five constructors wire `countChanged`
+to the three structural signals, and the hand-written `emit countChanged()` calls
+are gone — every one of them sat directly after an `endResetModel()`, so the
+emissions are unchanged (the existing `tst_timetablemodel` /
+`tst_compositionmodel` count assertions still pass, which is the check).
+
+**Not done, and now ruled out:** the const view. `TimetableModel::setStops()`
+assigns its rows in place on a live refresh since **CPP-W3** — that is the whole
+point of that fix — so the container cannot be handed over const. `ItemIsEditable`
+stays; it is inert for a QML `ListView` and nothing calls the write API.
+
 ---
 
-### CPP-O4 — Surviving lint hits
+### CPP-O4 — Surviving lint hits — **Fixed**
 25 of 53, all style/hygiene:
 
 | Rule | Count | Where | Note |
@@ -736,6 +755,20 @@ in-place assignment pattern the `set*` methods rely on before adopting it.
 | `HDR-3` | 8 | `TrackService.cpp:102-105,111-112`, `DigitrafficClient.cpp:177`, `TrainListModel.cpp:358` | Unparenthesised `std::min`/`std::max`. Only bites on MSVC without `NOMINMAX`; harmless on this macOS-only build. |
 | `TMO-1` | 4 | `DigitrafficClient.h:30,53`, `.cpp:38,43` | Poll interval as bare `int` ms. The file already uses `std::chrono` for `kRequestTimeout`. Moot if `CPP-I9` resolves to "delete". |
 | `DEP-7` | 1 | `DigitrafficClient.cpp:94` | `qMax` → `std::max`. Also moot under `CPP-I9`. |
+
+**Settled (2026-08-29).**
+
+- `HDR-3` (8) — **already handled project-wide**, which the lint pass could not
+  see: `CMakeLists.txt:19` defines `NOMINMAX` for every Windows build precisely so
+  unparenthesised `std::min`/`std::max` are safe, and says so. No change.
+- `TMO-1` (4) — two retired with `CPP-I9`; the remaining `kResyncIntervalMs` is
+  now `constexpr auto kResyncInterval = std::chrono::seconds{60}`, matching the
+  other durations in the file.
+- `DEP-7` (1) — retired with `CPP-I9`; the `qMax` was inside the deleted setter.
+- `VAR-3` (12) — **deliberately not changed.** Direct brace init on
+  `QNetworkRequest` is a Qt-framework convention with little force in app code,
+  the rule's own note says as much, and touching twelve call sites to satisfy a
+  style preference is churn with no reader benefit.
 
 ---
 
@@ -766,7 +799,7 @@ Pinned by a new `tst_tracklistmodel` target: three viewport transitions under
 `QAbstractItemModelTester`, plus the no-op and mid-run-insert cases. Confirmed
 non-vacuous by mutating the fill index and watching it fail.
 
-### CPP-I2 — `ringState` ages with wall-clock time but emits no `dataChanged` (72)
+### CPP-I2 — `ringState` ages with wall-clock time but emits no `dataChanged` (72) — **Fixed**
 `src/TrainListModel.cpp:467`, consumed at `:86` — `ringStateFor()` compares
 against `kStalePositionSecs` (300 s) using the current time, so a row's ring state
 changes with time alone. `TrainMarker.qml:69-74` binds it once and only
@@ -779,6 +812,27 @@ early return, `setActive(false)`) are not reachable from the shipped QML.
 transitioning to the stale presentation after 300 s. Or call
 `data(index(0), RingStateRole)` twice >300 s apart with no intervening
 `dataChanged` and compare.
+
+**Fixed (2026-08-29) — and it had stopped being masked.** The 60 s poll used to
+hide this because `setTrainStatuses()` emitted a whole-model `dataChanged` every
+cycle, repainting every ring whether or not anything changed. **CPP-W9 removed
+exactly that**, so by the time this was reached the ring genuinely never
+refreshed for a train that stopped reporting — a regression introduced by the
+earlier fix in this same series.
+
+The ring is now cached on the row and re-derived by `refreshRingStates()`, which
+emits only for rows whose ring actually moved. It is called from `updateTrains()`
+(the snapshot path), from both metadata/status setters, and — the case nothing
+else covers — from `DigitrafficClient::handleReply`'s **error** branch, so the
+markers stop claiming freshness during precisely the outage that made them
+stale. `data()` is a plain member read, which also finishes `CPP-W11`'s two clock
+reads per call.
+
+Pinned by `tst_trainlistmodel::ringStateFollowsTheClockNotJustTheStatus`: two rows
+with identical status and category, separated only by fix age, resolve to
+different rings, and a re-derive with nothing changed emits nothing. The clock
+crossing itself is not simulated — that would need an injectable clock — but it
+follows from those two properties plus `restampRing()` being a compare.
 
 ### CPP-I3 — The resync clock is consumed on issue, not on success (72) — **Fixed**
 `src/DigitrafficClient.cpp:129` — `m_lastFullCategories = now` is assigned when
@@ -817,7 +871,7 @@ Digitraffic's own field values and four files compare against them, but a shared
 enum would have to survive the QML boundary too — worth its own decision, not a
 drive-by.
 
-### CPP-I5 — Row pruning happens only on the REST path (68)
+### CPP-I5 — Row pruning happens only on the REST path (68) — **Fixed**
 `src/TrainListModel.cpp:175` — pruning and bearing-history GC live only in
 `updateTrains()`, reachable only from REST success (`DigitrafficClient.cpp:369`,
 behind the error early-return at `:346`). The MQTT path (`upsertTrain` →
@@ -831,6 +885,16 @@ read-only.
 **Verify:** point the REST base URL at an unroutable host, leave
 `wss://rata.digitraffic.fi` reachable, run across a date boundary and watch
 `trainClient.model.count` — it should plateau near fleet size.
+
+**Fixed (2026-08-29)** with a backstop rather than a second pruning policy.
+Snapshot-driven pruning cannot work without a snapshot, and lowering the bar to
+"no fix recently" would delete legitimately parked trains during the very outage
+this is about. Instead `pruneAbandonedRows()` drops rows with no fix for **six
+hours** — far beyond the 120 s grace, so it never competes with the REST prune —
+and runs at most once a minute from `upsertTrain()`, GC-ing `m_previous` with the
+rows. That bounds the growth this describes without changing what the map shows
+in any healthy state. Not covered by a test: it needs a six-hour-old fix and a
+REST-down/MQTT-up split.
 
 ### CPP-I6 — Board sort key may be an invalid `QDateTime` (68) — **Fixed**
 `src/StationBoardService.cpp:196` — `row.sortTime = digitraffic::parseIso(...)` is
@@ -1011,7 +1075,9 @@ Verified against the source; do not re-file these.
    remote data at the parse boundary".
 7. ~~**CPP-W3, CPP-W9, CPP-W11**~~ — **done** as one pass — all three are "stop
    invalidating the whole model when a few fields changed".
-8. The rest as convenient.
+8. ~~The rest~~ — **done.** W4, W10, W12, W13, W14, O2, O3, O4 and every
+   investigation target I1–I10 are closed above, each with what shipped and what
+   was deliberately declined.
 
 Findings below confidence 60 were suppressed entirely. No source files were
 modified by the review.

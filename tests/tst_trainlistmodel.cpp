@@ -152,6 +152,52 @@ private slots:
         QCOMPARE(dataSpy.at(0).at(0).toModelIndex().row(), 0);
         QCOMPARE(dataSpy.at(0).at(1).toModelIndex().row(), 0);
     }
+
+    /// The status ring is partly a function of wall-clock time: two rows with the
+    /// same status and category resolve differently once one of them ages past
+    /// kStalePositionSecs. QML binds the role once and re-reads only on a
+    /// dataChanged naming it, so the model has to notice that drift itself
+    /// (CPP-I2) — which it can only do if the value is cached per row and
+    /// re-derived, which is what refreshRingStates() does.
+    void ringStateFollowsTheClockNotJustTheStatus()
+    {
+        const QDateTime now = QDateTime::currentDateTimeUtc();
+        auto trainAt = [&now](int number, qint64 ageSecs) {
+            TrainPosition p;
+            p.trainNumber = number;
+            p.departureDate = QStringLiteral("2026-08-29");
+            p.coordinate = QGeoCoordinate(60.0 + number * 0.01, 24.9);
+            p.speed = 10.0;                      // moving, so only age separates them
+            p.timestamp = now.addSecs(-ageSecs);
+            return p;
+        };
+
+        TrainListModel m;
+        m.updateTrains({ trainAt(100, 0), trainAt(101, 400) });   // 400 s > kStalePositionSecs
+
+        TrainStatus st;                          // known, not flagged running
+        st.known = true;
+        const TrainKey fresh{QStringLiteral("2026-08-29"), 100};
+        const TrainKey aged{QStringLiteral("2026-08-29"), 101};
+        m.setTrainMetadata({}, { { fresh, QStringLiteral("Commuter") },
+                                 { aged, QStringLiteral("Commuter") } }, {});
+        m.setTrainStatuses({ { fresh, st }, { aged, st } });
+
+        auto ringOf = [&m](int row) {
+            return m.data(m.index(row, 0), TrainListModel::RingStateRole).toString();
+        };
+        // A recent fix that is actually moving is treated as proof the train runs,
+        // even while /live-trains still says otherwise; once the fix ages out, that
+        // proof expires and the marker greys.
+        QCOMPARE(ringOf(0), QStringLiteral("none"));
+        QCOMPARE(ringOf(1), QStringLiteral("stale"));
+
+        // And the cache is stable: re-deriving with nothing changed emits nothing,
+        // so the delta-only emission from CPP-W9 is not undone by this.
+        QSignalSpy dataSpy(&m, &QAbstractItemModel::dataChanged);
+        m.refreshRingStates();
+        QCOMPARE(dataSpy.count(), 0);
+    }
 };
 
 QTEST_MAIN(TestTrainListModel)
