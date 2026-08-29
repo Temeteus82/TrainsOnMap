@@ -1,5 +1,7 @@
 #pragma once
 
+#include "DigitrafficFormat.h"
+
 #include <QAbstractListModel>
 #include <QDateTime>
 #include <QGeoCoordinate>
@@ -72,9 +74,16 @@ inline TrainPosition parseTrainLocation(const QJsonObject &o)
     tp.departureDate = o.value(QStringLiteral("departureDate")).toString();
     const QJsonArray c = o.value(QStringLiteral("location")).toObject()
                              .value(QStringLiteral("coordinates")).toArray();
-    if (c.size() >= 2) {
+    if (c.size() >= 2 && c.at(0).isDouble() && c.at(1).isDouble()) {
         // GeoJSON order is [longitude, latitude]; QGeoCoordinate takes (lat, lon).
-        tp.coordinate = QGeoCoordinate(c.at(1).toDouble(), c.at(0).toDouble());
+        // A null/string/bool element converts to 0.0 and (0,0) is *valid* — a
+        // marker 7000 km off the network that poisons the neighbour scan — so
+        // type-check and bbox-reject here; on failure the coordinate stays
+        // invalid and both call sites already gate on isValid().
+        const double lat = c.at(1).toDouble();
+        const double lon = c.at(0).toDouble();
+        if (digitraffic::inFinlandBox(lat, lon))
+            tp.coordinate = QGeoCoordinate(lat, lon);
     }
     tp.speed = o.value(QStringLiteral("speed")).toDouble();
     tp.timestamp = QDateTime::fromString(o.value(QStringLiteral("timestamp")).toString(),

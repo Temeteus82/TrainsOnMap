@@ -83,6 +83,33 @@ private slots:
         // once it lands, so an empty string here is expected, not a hole.
         QVERIFY(digitraffic::causeText(QStringLiteral("A"), QString(), {}, {}).isEmpty());
     }
+
+    void inFinlandBoxRejectsTheParseFailureSentinel()
+    {
+        QVERIFY(digitraffic::inFinlandBox(60.17, 24.94));    // Helsinki
+        QVERIFY(!digitraffic::inFinlandBox(0.0, 0.0));       // toDouble() failure value
+        QVERIFY(!digitraffic::inFinlandBox(59.33, 18.07));   // Stockholm — outside
+    }
+
+    void stationShortCodeRejectsStructuralCharacters()
+    {
+        QVERIFY(digitraffic::isStationShortCode(QStringLiteral("HKI")));
+        QVERIFY(digitraffic::isStationShortCode(QStringLiteral("ÄS")));   // codes carry Ä/Ö/Å
+        QVERIFY(!digitraffic::isStationShortCode(QString()));
+        QVERIFY(!digitraffic::isStationShortCode(QStringLiteral("HKI/..")));
+        QVERIFY(!digitraffic::isStationShortCode(QStringLiteral("HKI?x=1")));
+        QVERIFY(!digitraffic::isStationShortCode(QStringLiteral("AVERYLONGCODE")));
+    }
+
+    void departureDateIsStrictIsoOnly()
+    {
+        QVERIFY(digitraffic::isDepartureDate(QStringLiteral("2026-08-29")));
+        QVERIFY(!digitraffic::isDepartureDate(QString()));
+        QVERIFY(!digitraffic::isDepartureDate(QStringLiteral("+")));           // MQTT wildcard
+        QVERIFY(!digitraffic::isDepartureDate(QStringLiteral("#")));           // MQTT wildcard
+        QVERIFY(!digitraffic::isDepartureDate(QStringLiteral("2026-13-01")));  // no such month
+        QVERIFY(!digitraffic::isDepartureDate(QStringLiteral("2026-8-9")));    // not zero-padded
+    }
 };
 
 QTEST_MAIN(tst_DigitrafficFormat)

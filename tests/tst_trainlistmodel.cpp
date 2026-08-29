@@ -2,6 +2,8 @@
 
 #include <QDateTime>
 #include <QGeoCoordinate>
+#include <QJsonArray>
+#include <QJsonObject>
 #include <QTest>
 
 /// Pins TrainListModel::recomputeNearestNeighbors(), which feeds the
@@ -89,6 +91,26 @@ private slots:
         m.updateTrains(fleetAt({60.0}));
         QCOMPARE(m.rowCount(), 1);
         QCOMPARE(neighborOf(m, 100), -1.0);
+    }
+
+    /// parseTrainLocation must leave the coordinate *invalid* on a malformed
+    /// pair: a null/string element converts to 0.0 and (0,0) is a valid
+    /// QGeoCoordinate in the Gulf of Guinea, which the isValid() gates at both
+    /// call sites would wave through (CPP-W7).
+    void malformedCoordinatesStayInvalid()
+    {
+        auto locationOf = [](const QJsonArray &coords) {
+            return parseTrainLocation(QJsonObject{
+                {QStringLiteral("trainNumber"), 1},
+                {QStringLiteral("departureDate"), QStringLiteral("2026-08-29")},
+                {QStringLiteral("location"),
+                 QJsonObject{{QStringLiteral("coordinates"), coords}}}});
+        };
+        QVERIFY(locationOf({24.94, 60.17}).coordinate.isValid());          // Helsinki, [lon, lat]
+        QVERIFY(!locationOf({QJsonValue::Null, 60.17}).coordinate.isValid());
+        QVERIFY(!locationOf({QStringLiteral("24.94"), 60.17}).coordinate.isValid());
+        QVERIFY(!locationOf({0.0, 0.0}).coordinate.isValid());             // outside Finland
+        QVERIFY(!locationOf({}).coordinate.isValid());                     // absent field
     }
 };
 

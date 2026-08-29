@@ -40,6 +40,12 @@ Suggested fix-order: **CPP-C1, CPP-C2** first (user-visible bugs), then
 > Builds clean, all **7** ctest targets pass. The two criticals and CPP-W2 are
 > **not covered by a regression test** — see the note under CPP-C1, which
 > applies to `DigitrafficClient` for the same reason.
+>
+> **CPP-W6, CPP-W7, CPP-W8 fixed** (2026-08-29, parse-boundary pass): shared
+> validators `inFinlandBox` / `isStationShortCode` / `isDepartureDate` in
+> `DigitrafficFormat.h`, applied at the FMI `<pos>` parse, `parseTrainLocation`,
+> both `show()` slots, and the MQTT topic filter; live payloads now match on
+> `departureDate` as well. Pinned by four new test slots.
 
 ---
 
@@ -286,7 +292,7 @@ beats a blank), and delete all three local copies.
 
 ---
 
-### CPP-W6 — FMI coordinates parsed without checking the conversion succeeded
+### CPP-W6 — FMI coordinates parsed without checking the conversion succeeded — **Fixed**
 `src/FmiWeatherClient.cpp:97`
 
 ```cpp
@@ -306,9 +312,14 @@ The `parts.size() >= 2` guard protects against out-of-bounds, not wrong content.
 either fails, matching the pattern already used immediately below. Since the query
 pins `bbox=19,59,32,71`, also reject coordinates outside it.
 
+**Fixed (2026-08-29)** exactly as written: both `ok` flags checked, plus a bbox
+reject via the new shared `digitraffic::inFinlandBox()` — the same box the query
+pins, and the same helper CPP-W7 uses. Pinned by
+`tst_digitrafficformat::inFinlandBoxRejectsTheParseFailureSentinel`.
+
 ---
 
-### CPP-W7 — Train coordinates accepted without an element type check
+### CPP-W7 — Train coordinates accepted without an element type check — **Fixed**
 `src/TrainListModel.h:78`
 
 Same class of bug as `CPP-W6`, on the train path.
@@ -332,9 +343,14 @@ itself to. Returning an invalid `QGeoCoordinate` makes both existing call-site
 gates (`DigitrafficClient.cpp:365`, `DigitrafficMqttClient.cpp:248`) do the right
 thing with no further change.
 
+**Fixed (2026-08-29)** exactly as written: `isDouble()` on both elements and the
+shared `inFinlandBox()` reject; on failure the coordinate stays invalid and the
+existing call-site gates do the rest. Pinned by
+`tst_trainlistmodel::malformedCoordinatesStayInvalid`.
+
 ---
 
-### CPP-W8 — Remote strings spliced unvalidated into URL paths and an MQTT topic
+### CPP-W8 — Remote strings spliced unvalidated into URL paths and an MQTT topic — **Fixed**
 `src/StationBoardService.cpp:91`, `src/TrainDetailsService.cpp:220` and `:288`,
 `src/DigitrafficMqttClient.cpp:120`
 
@@ -361,6 +377,14 @@ a short alphanumeric token and `departureDate` is a fixed `yyyy-MM-dd`. That kil
 the whole class at once and is the only option that protects the MQTT topic, where
 escaping is not available. Also match live payloads on `departureDate` as well as
 `trainNumber`.
+
+**Fixed (2026-08-29)** with two validators in `DigitrafficFormat.h` —
+`isStationShortCode()` (1–8 letters/digits, so `/ ? # &` and the MQTT wildcards
+can never enter) and `isDepartureDate()` (strict `yyyy-MM-dd`) — applied at
+`StationBoardService::show`, `TrainDetailsService::show`, and, because it is
+public API in its own right, `DigitrafficMqttClient::subscribeTrain`.
+`onStreamTrainMessage` now matches live payloads on `departureDate` too. Pinned
+by the two new validator tests in `tst_digitrafficformat`.
 
 ---
 
@@ -799,8 +823,8 @@ Verified against the source; do not re-file these.
    class of "why are the station names missing" reports.
 5. **CPP-W5** + **CPP-O1** together — centralise `stationLabel` while extracting
    the shared service plumbing it lives in.
-6. **CPP-W6, CPP-W7, CPP-W8** as one pass — all three are "validate remote data at
-   the parse boundary".
+6. ~~**CPP-W6, CPP-W7, CPP-W8**~~ — **done** as one pass — all three are "validate
+   remote data at the parse boundary".
 7. **CPP-W3, CPP-W9, CPP-W11** as one pass — all three are "stop invalidating the
    whole model when a few fields changed".
 8. The rest as convenient.

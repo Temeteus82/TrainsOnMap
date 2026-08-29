@@ -199,7 +199,9 @@ void TrainDetailsService::onCauseCategoryNames()
 
 void TrainDetailsService::show(int trainNumber, const QString &departureDate)
 {
-    if (departureDate.isEmpty()) {
+    // Remote-sourced, spliced into two URL paths and the MQTT topic filter
+    // below — only a strict yyyy-MM-dd may pass (W8).
+    if (!digitraffic::isDepartureDate(departureDate)) {
         setStatus(QStringLiteral("No departure date for train %1").arg(trainNumber));
         return;
     }
@@ -406,8 +408,9 @@ void TrainDetailsService::onStreamTrainMessage(const QByteArray &payload)
     const QJsonDocument doc = QJsonDocument::fromJson(payload);
     // MQTT publishes a single object; tolerate an array just in case.
     const QJsonObject train = doc.isArray() ? doc.array().first().toObject() : doc.object();
-    if (train.value(QStringLiteral("trainNumber")).toInt() != m_trainNumber)
-        return;   // not the train currently shown
+    if (train.value(QStringLiteral("trainNumber")).toInt() != m_trainNumber
+        || train.value(QStringLiteral("departureDate")).toString() != m_departureDate)
+        return;   // not the run currently shown
     applyTrainObject(train, /*live=*/true);
 }
 

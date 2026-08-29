@@ -1,5 +1,6 @@
 #include "FmiWeatherClient.h"
 
+#include "DigitrafficFormat.h"
 #include "NetworkDiagnostics.h"
 
 #include <QDateTime>
@@ -93,8 +94,17 @@ void FmiWeatherClient::handleData(QNetworkReply *reply)
         } else if (name == QLatin1String("pos")) {
             // "lat lon" (EPSG:4258)
             const QStringList parts = xml.readElementText().simplified().split(QLatin1Char(' '));
-            if (parts.size() >= 2)
-                coord = QGeoCoordinate(parts.at(0).toDouble(), parts.at(1).toDouble());
+            if (parts.size() >= 2) {
+                // toDouble() yields 0.0 on failure and (0,0) is a valid
+                // coordinate, so check the ok flags — like the ParameterValue
+                // parse below — and reject anything outside the bbox the query
+                // pins, or every malformed record collapses onto one "0,0" key.
+                bool okLat = false, okLon = false;
+                const double lat = parts.at(0).toDouble(&okLat);
+                const double lon = parts.at(1).toDouble(&okLon);
+                if (okLat && okLon && digitraffic::inFinlandBox(lat, lon))
+                    coord = QGeoCoordinate(lat, lon);
+            }
         } else if (name == QLatin1String("Time")) {
             time = QDateTime::fromString(xml.readElementText(), Qt::ISODate);
         } else if (name == QLatin1String("ParameterValue")) {

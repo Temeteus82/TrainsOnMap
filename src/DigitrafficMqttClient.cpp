@@ -114,7 +114,9 @@ void DigitrafficMqttClient::openConnection()
 
 void DigitrafficMqttClient::subscribeTrain(const QString &departureDate, int trainNumber)
 {
-    if (departureDate.isEmpty())
+    // In a topic filter `+` and `#` are wildcards and there is no escaping —
+    // a `+` date would subscribe to every run of this train number (W8).
+    if (!digitraffic::isDepartureDate(departureDate))
         return;
     // "#" matches the train-specific topic regardless of its category/operator tail.
     const QString topic = QStringLiteral("trains/%1/%2/#").arg(departureDate).arg(trainNumber);

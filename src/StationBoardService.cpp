@@ -75,7 +75,9 @@ QString StationBoardService::stationLabel(const QString &code) const
 
 void StationBoardService::show(const QString &code, const QString &name)
 {
-    if (code.isEmpty())
+    // The code comes from remote JSON (and QML can pass any string); it is
+    // spliced into the URL path below, so reject structural characters (W8).
+    if (!digitraffic::isStationShortCode(code))
         return;
     m_stationCode = code;
     m_stationName = m_stationNames.value(code, name.isEmpty() ? code : name);

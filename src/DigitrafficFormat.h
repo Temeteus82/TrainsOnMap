@@ -19,6 +19,37 @@ namespace digitraffic {
 /// Keep the version in step with `project(... VERSION)` in CMakeLists.txt.
 constexpr auto kUserAgent = "TrainsOnMap/0.1 (+https://github.com/Temeteus82/TrainsOnMap)";
 
+/// Coarse Finland bounding box (lat 59–71, lon 19–32) — the same box the FMI
+/// weather query pins (`bbox=19,59,32,71`). Needed because a malformed remote
+/// coordinate parses to 0.0 and QGeoCoordinate(0, 0) is *valid*, so isValid()
+/// gates alone let a Gulf-of-Guinea point through (review CPP-W6/W7).
+inline bool inFinlandBox(double lat, double lon)
+{
+    return lat >= 59.0 && lat <= 71.0 && lon >= 19.0 && lon <= 32.0;
+}
+
+/// True for a plausible Digitraffic station short code: 1–8 letters/digits
+/// (Finnish codes may carry Ä/Ö/Å, so letters, not [A-Z]). These strings come
+/// from remote JSON and are spliced into URL paths, so anything structural
+/// (`/ ? # &`) must be rejected before it can restructure a request (CPP-W8).
+inline bool isStationShortCode(const QString &code)
+{
+    if (code.isEmpty() || code.size() > 8)
+        return false;
+    for (const QChar ch : code)
+        if (!ch.isLetterOrNumber())
+            return false;
+    return true;
+}
+
+/// True for a strict "yyyy-MM-dd" departure date. Remote-sourced dates end up
+/// in URL paths *and* in an MQTT topic filter, where `+` and `#` are wildcards
+/// and no escaping exists — so only an exact date may pass (CPP-W8).
+inline bool isDepartureDate(const QString &s)
+{
+    return s.size() == 10 && QDate::fromString(s, Qt::ISODate).isValid();
+}
+
 /// Parse a Digitraffic ISO8601 timestamp. The API emits fractional seconds on
 /// most fields ("2026-07-26T09:12:00.000Z") but not all; one call covers both,
 /// because when *parsing*, Qt::ISODateWithMs treats the fractional part as
