@@ -2,6 +2,26 @@
 
 #include <utility>
 
+/// Role-visible equality for one stop — everything a delegate renders. The
+/// build-time accumulators are deliberately excluded: they are not roles, and
+/// `sawActual` feeds `passed`/`isNext`, which *are* compared.
+static bool sameVisible(const TimetableStop &a, const TimetableStop &b)
+{
+    return a.stationShortCode == b.stationShortCode
+        && a.stationName == b.stationName
+        && a.scheduledArrival == b.scheduledArrival
+        && a.estimatedArrival == b.estimatedArrival
+        && a.scheduledDeparture == b.scheduledDeparture
+        && a.estimatedDeparture == b.estimatedDeparture
+        && a.delayMinutes == b.delayMinutes
+        && a.track == b.track
+        && a.cancelled == b.cancelled
+        && a.stopping == b.stopping
+        && a.passed == b.passed
+        && a.isNext == b.isNext
+        && a.causeText == b.causeText;
+}
+
 // Pass a pointer to the member container so QRangeModel operates on it in place;
 // structural changes below go through the QAbstractItemModel API. NOTE: the base
 // is constructed before m_stops, so QRangeModel must not dereference the pointer
@@ -42,18 +62,44 @@ void TimetableModel::setStops(QVector<TimetableStop> rows)
         }
     }
 
-    // Full replace (timetables are small and arrive wholesale). beginResetModel
-    // tells attached views to re-read; QRangeModel reports the live size of the
-    // backing container afterwards.
-    beginResetModel();
-    m_stops = std::move(rows);
-    endResetModel();
+    // A reset destroys every instantiated delegate and drops the scroll
+    // position — and this is called on *every* live MQTT update, where the stop
+    // list is structurally identical and only a few estimate/delay/progress
+    // fields moved (CPP-W3). So when the station sequence is unchanged, assign
+    // in place and emit one dataChanged over the span that actually changed;
+    // the reset is kept for a genuinely new selection.
+    bool sameStructure = rows.size() == m_stops.size();
+    for (int i = 0; sameStructure && i < rows.size(); ++i)
+        sameStructure = rows.at(i).stationShortCode == m_stops.at(i).stationShortCode;
 
+    if (sameStructure) {
+        int first = -1, last = -1;
+        for (int i = 0; i < rows.size(); ++i) {
+            if (sameVisible(rows.at(i), m_stops.at(i)))
+                continue;
+            if (first < 0)
+                first = i;
+            last = i;
+        }
+        m_stops = std::move(rows);
+        if (first >= 0)
+            emit dataChanged(index(first, 0), index(last, 0));
+    } else {
+        // Full replace. beginResetModel tells attached views to re-read;
+        // QRangeModel reports the live size of the backing container afterwards.
+        beginResetModel();
+        m_stops = std::move(rows);
+        endResetModel();
+        emit countChanged();
+    }
+
+    const bool progressMoved =
+        passed != m_passedStops || total != m_totalStops || next != m_nextStopRow;
     m_passedStops = passed;
     m_totalStops = total;
     m_nextStopRow = next;
-    emit countChanged();
-    emit progressChanged();
+    if (progressMoved || !sameStructure)
+        emit progressChanged();
 }
 
 void TimetableModel::clear()

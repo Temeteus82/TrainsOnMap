@@ -21,6 +21,13 @@ struct TrainStatus {
     bool cancelled = false;
     bool running = false;   ///< runningCurrently
     bool known = false;     ///< false until /live-trains has reported this train
+
+    // Needed to detect which rows a status refresh actually changed (CPP-W9).
+    friend bool operator==(const TrainStatus &a, const TrainStatus &b)
+    {
+        return a.delayMinutes == b.delayMinutes && a.cancelled == b.cancelled
+            && a.running == b.running && a.known == b.known;
+    }
 };
 
 /// A single decoded train position from the Digitraffic train-locations feed.
@@ -188,6 +195,15 @@ private:
         double chainage = -1.0;           ///< 1-D route position carried across fixes
         bool onRoute = false;             ///< last fix matched the scheduled route
         int outlierStreak = 0;            ///< consecutive rejected teleport fixes
+
+        // Denormalised from the side tables at write time (setTrainMetadata /
+        // setTrainStatuses / insert), so data() is a plain member read instead
+        // of ~7 TrainKey hashes per delegate repaint (CPP-W11), and so a
+        // refresh knows which rows actually changed (CPP-W9).
+        QString category;                 ///< "Commuter" / "Long-distance" / ...
+        QString trainType;                ///< "IC" / "S" / "HL" / ...
+        QString commuterLine;             ///< commuter line letter, "" if none
+        TrainStatus status;               ///< live running status
     };
 
     /// The single upsert funnel for every position update, REST or MQTT. Drops
@@ -197,6 +213,11 @@ private:
 
     /// Rebuild trainNumber -> row index after rows are removed.
     void reindex();
+
+    /// Emit dataChanged for `roles` over each contiguous run of rows flagged in
+    /// `changed` — the delta-only replacement for the whole-model bursts the
+    /// metadata/status setters used to fire (CPP-W9).
+    void emitChangedRuns(const QVector<bool> &changed, const QList<int> &roles);
 
     /// Recompute nearestNeighborMeters for every row (O(n^2) over the live
     /// fleet). Only called once per REST snapshot in updateTrains() — cheap at

@@ -46,6 +46,13 @@ Suggested fix-order: **CPP-C1, CPP-C2** first (user-visible bugs), then
 > `DigitrafficFormat.h`, applied at the FMI `<pos>` parse, `parseTrainLocation`,
 > both `show()` slots, and the MQTT topic filter; live payloads now match on
 > `departureDate` as well. Pinned by four new test slots.
+>
+> **CPP-W3, CPP-W9, CPP-W11 fixed** (2026-08-29, invalidation pass): the
+> timetable refresh updates in place instead of resetting when the station
+> sequence is unchanged; the metadata/status values are denormalised onto
+> `TrainListModel::Row` at write time, so `data()` stops hashing side tables
+> and the setters emit only over the rows that actually changed. Pinned by two
+> new test slots.
 
 ---
 
@@ -213,7 +220,7 @@ rendering bug. Route the three through `adjustPending()`.
 
 ---
 
-### CPP-W3 — The timetable model resets on every live update
+### CPP-W3 — The timetable model resets on every live update — **Fixed**
 `src/TimetableModel.cpp:48`
 
 `setStops()` wraps its replacement in `beginResetModel`/`endResetModel` and is
@@ -234,6 +241,12 @@ unchanged, assign the changed fields in place and emit one `dataChanged` over th
 affected range. `TrackListModel::setVisibleSegments()` in this codebase is the
 model for how to do incremental structural updates — the timetable case is easier,
 since the structure is usually unchanged.
+
+**Fixed (2026-08-29)** exactly as written: when the station sequence is
+unchanged, `setStops()` assigns in place and emits one `dataChanged` over the
+first..last rows whose role-visible fields moved (none at all on an identical
+refresh); the reset survives only for a genuinely new selection. Pinned by
+`tst_timetablemodel::liveRefreshUpdatesInPlaceWithoutReset`.
 
 ---
 
@@ -388,7 +401,7 @@ by the two new validator tests in `tst_digitrafficformat`.
 
 ---
 
-### CPP-W9 — Whole-model `dataChanged` on delta-only updates
+### CPP-W9 — Whole-model `dataChanged` on delta-only updates — **Fixed**
 `src/TrainListModel.cpp:455` and `:463`
 
 `setTrainMetadata()` and `setTrainStatuses()` each emit `dataChanged` spanning the
@@ -406,6 +419,13 @@ repaint every marker in the `MapItemView` even when nothing about them moved.
 over the contiguous runs only — which is what `applyOne` already does correctly
 per row. Better still, have `DigitrafficClient` pass down only the delta keys it
 merged rather than the full accumulated maps.
+
+**Fixed (2026-08-29)** by the first option, folded with CPP-W11: the setters
+stamp the new values onto each `Row`, which both provides the previous value to
+diff against and lets `data()` skip the side tables. `emitChangedRuns()` then
+emits one `dataChanged` per contiguous run of rows that actually changed —
+nothing at all when a delta poll changed nothing. Pinned by
+`tst_trainlistmodel::statusRefreshTouchesOnlyChangedRows`.
 
 ---
 
@@ -435,7 +455,7 @@ empty-grid fallback, exactly as `loadForBounds()` does.
 
 ---
 
-### CPP-W11 — `data()` re-hashes side tables once per role
+### CPP-W11 — `data()` re-hashes side tables once per role — **Fixed**
 `src/TrainListModel.cpp:83`
 
 Five roles (`CategoryRole`, `TrainTypeRole`, `CommuterLineRole`,
@@ -453,6 +473,12 @@ visible marker on every repaint and after each whole-model burst from `CPP-W9`.
 `setTrainMetadata`/`setTrainStatuses` already walk the whole model to emit
 `dataChanged` — stamp the values in that same pass and let `data()` become a plain
 member read. Hoist the single `currentDateTimeUtc()` into a local regardless.
+
+**Fixed (2026-08-29)** exactly as written: `Row` carries
+`category`/`trainType`/`commuterLine`/`status`, stamped by the setters and on
+insert, so `data()` and `ringStateFor()` are plain member reads;
+`currentDateTimeUtc()` is read once per ring resolution. The side tables remain
+only to stamp rows inserted after the metadata landed.
 
 ---
 
@@ -825,8 +851,8 @@ Verified against the source; do not re-file these.
    the shared service plumbing it lives in.
 6. ~~**CPP-W6, CPP-W7, CPP-W8**~~ — **done** as one pass — all three are "validate
    remote data at the parse boundary".
-7. **CPP-W3, CPP-W9, CPP-W11** as one pass — all three are "stop invalidating the
-   whole model when a few fields changed".
+7. ~~**CPP-W3, CPP-W9, CPP-W11**~~ — **done** as one pass — all three are "stop
+   invalidating the whole model when a few fields changed".
 8. The rest as convenient.
 
 Findings below confidence 60 were suppressed entirely. No source files were
