@@ -130,9 +130,22 @@ ApplicationWindow {
         anchors.fill: parent
         sourceComponent: mapComponent
 
-        property real savedCenterLat: 61.00   // southern Finland on first launch
-        property real savedCenterLon: 24.50
-        property real savedZoom: 7.0
+        // The opening view, and separately the live one. They have to be separate
+        // properties: QtLocation's Map emits zoomLevelChanged/centerChanged during
+        // its own construction, which ran *before* Component.onCompleted read the
+        // saved values back — so a single set of properties was overwritten with
+        // the map's defaults and the intended first-run view never happened (the
+        // app opened at ~zoom 11 on a bare Helsinki suburb instead of the country).
+        // `everBuilt` is what tells a cold start from the theme-driven rebuild the
+        // saved values exist for.
+        readonly property real initialCenterLat: 61.00   // southern Finland on first launch
+        readonly property real initialCenterLon: 24.50
+        readonly property real initialZoom: 7.0
+        property bool everBuilt: false
+
+        property real savedCenterLat: initialCenterLat
+        property real savedCenterLon: initialCenterLon
+        property real savedZoom: initialZoom
 
         // Rebuild the map when the resolved light/dark state changes so the
         // tiles re-fetch from the matching Esri service.
@@ -221,9 +234,12 @@ ApplicationWindow {
             Component.onCompleted: {
                 // Imperative (non-binding) restore of the saved view, so panning
                 // isn't fought by a center/zoomLevel binding.
-                center = QtPositioning.coordinate(mapLoader.savedCenterLat,
-                                                  mapLoader.savedCenterLon)
-                zoomLevel = mapLoader.savedZoom
+                const restore = mapLoader.everBuilt   // a rebuild, not a cold start
+                center = QtPositioning.coordinate(
+                    restore ? mapLoader.savedCenterLat : mapLoader.initialCenterLat,
+                    restore ? mapLoader.savedCenterLon : mapLoader.initialCenterLon)
+                zoomLevel = restore ? mapLoader.savedZoom : mapLoader.initialZoom
+                mapLoader.everBuilt = true
                 selectBasemap()
             }
 
@@ -482,6 +498,62 @@ ApplicationWindow {
     }
 
     // ---- Overlay UI --------------------------------------------------------
+
+    // U2-O2: with an empty fleet, a dead network or an MQTT that never connected,
+    // the map is blank tiles and the only signal was a muted line inside the
+    // sidebar card. "Graceful Failure" wants the fallback stated where the user is
+    // actually looking. The body reuses the client's own status string rather than
+    // inventing a second error vocabulary that could disagree with the sidebar.
+    Rectangle {
+        id: emptyState
+        // Only once a fetch has settled: `loading` covers the first poll, so this
+        // never flashes over a map that is simply still filling.
+        visible: trainClient.model.count === 0 && !trainClient.loading
+        anchors.centerIn: parent
+        width: Math.min(320, parent.width - 24)
+        implicitHeight: emptyStateText.implicitHeight + 32
+        height: implicitHeight
+        radius: 12
+        color: Theme.cardBg
+        border.color: Theme.hairline
+        border.width: 1
+
+        Accessible.role: Accessible.AlertMessage
+        Accessible.name: emptyStateTitle.text
+        Accessible.description: emptyStateBody.text
+
+        // Column, not ColumnLayout: this file has no QtQuick.Layouts import and two
+        // stacked labels do not need one.
+        Column {
+            id: emptyStateText
+            anchors.centerIn: parent
+            width: parent.width - 32
+            spacing: 6
+
+            Label {
+                id: emptyStateTitle
+                width: parent.width
+                text: qsTr("No trains to show")
+                font.pointSize: TypeScale.subhead
+                font.bold: true
+                color: Theme.textStrong
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.WordWrap
+            }
+            Label {
+                id: emptyStateBody
+                width: parent.width
+                text: trainClient.status.length > 0
+                      ? trainClient.status
+                      : qsTr("Nothing is running right now. Use Refresh in the sidebar to try again.")
+                font.pointSize: TypeScale.caption
+                color: Theme.textMuted
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.WordWrap
+            }
+        }
+    }
+
     InfoPanel {
         id: panel
         anchors.left: parent.left
@@ -495,6 +567,7 @@ ApplicationWindow {
         streamStatus: trainStream.status
         punctuality: trainClient.punctuality
         statusText: trackService.status.length > 0 ? trackService.status : trainClient.status
+        mapZoom: mapLoader.savedZoom   // tracks the live zoom via onZoomLevelChanged
 
         onRefreshRequested: trainClient.refresh()
     }

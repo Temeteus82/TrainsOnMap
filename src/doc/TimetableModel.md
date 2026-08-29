@@ -54,10 +54,10 @@ On the `TimetableStop` gadget — each becomes a QML **role** of the same name
 |-----------------|------|-------------|
 | `stationName` | `QString` | Resolved station name; falls back to the short code. |
 | `stationShortCode` | `QString` | Station short code. |
-| `scheduledArrival` | `QString` | Local "HH:mm"; empty for the origin. |
-| `estimatedArrival` | `QString` | Local "HH:mm"; empty when same as scheduled / unknown. |
-| `scheduledDeparture` | `QString` | Local "HH:mm"; empty for the destination. |
-| `estimatedDeparture` | `QString` | Local "HH:mm". |
+| `scheduledArrival` | `QString` | Local clock time (system locale short form); empty for the origin. |
+| `estimatedArrival` | `QString` | Local clock time; empty when same as scheduled / unknown. |
+| `scheduledDeparture` | `QString` | Local clock time; empty for the destination. |
+| `estimatedDeparture` | `QString` | Local clock time. |
 | `delayMinutes` | `int` | Latest known difference (departure preferred). |
 | `track` | `QString` | Commercial track; may be empty. |
 | `cancelled` | `bool` | Stop cancelled. |
