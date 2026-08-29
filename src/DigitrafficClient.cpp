@@ -43,6 +43,10 @@ constexpr int kResyncIntervalMs = 60 * 1000;
 constexpr qint64 kFullCategoriesIntervalMs = 5 * 60 * 1000;
 // Abort a stalled request rather than leaving the status stuck on "Fetching…".
 constexpr auto kRequestTimeout = std::chrono::seconds{15};
+// Ceiling on the metadata retry backoff, in resync cycles. At the 60 s resync
+// that is one attempt per 8 min during a long outage — quiet enough not to
+// hammer a dead network, soon enough that recovery is not noticeable.
+constexpr int kMetadataBackoffMax = 8;
 }
 
 DigitrafficClient::DigitrafficClient(QObject *parent)
@@ -59,9 +63,10 @@ DigitrafficClient::DigitrafficClient(QObject *parent)
     // Categories piggyback on refresh() (every kResyncIntervalMs while active),
     // so they need no separate poll — and stay quiet when polling is stopped.
 
-    fetchStations();   // one-shot: station coordinates for parked-train pinning
-    fetchCauseCategories();   // one-shot: delay-cause code -> name
-    fetchDetailedCauseCategories();   // one-shot: detailed delay-cause code -> name
+    // First attempt now; refresh() re-issues any that fail (see retryMetadata()).
+    fetchStations();          // station coordinates for parked-train pinning
+    fetchCauseCategories();   // delay-cause code -> name
+    fetchDetailedCauseCategories();   // detailed delay-cause code -> name
 }
 
 void DigitrafficClient::setActive(bool active)
@@ -112,6 +117,7 @@ void DigitrafficClient::refresh()
     setStatus(QStringLiteral("Fetching train positions…"));
 
     refreshCategories();   // seed marker colours alongside the position snapshot
+    retryMetadata();       // re-issue any startup metadata that never landed
 }
 
 void DigitrafficClient::refreshCategories()
@@ -235,17 +241,23 @@ void DigitrafficClient::handleCategories(QNetworkReply *reply, bool full)
 
 void DigitrafficClient::fetchStations()
 {
+    if (!m_stationsFetch.needsRequest())
+        return;
     QNetworkRequest req{QUrl(QString::fromLatin1(kStationsUrl))};
     req.setRawHeader("Digitraffic-User", digitraffic::kUserAgent);
     QNetworkReply *reply = m_net->get(req);
+    m_stationsFetch.inFlight = true;
+    adjustPending(+1);
     connect(reply, &QNetworkReply::finished, this, [this, reply] { handleStations(reply); });
 }
 
 void DigitrafficClient::handleStations(QNetworkReply *reply)
 {
     reply->deleteLater();
+    m_stationsFetch.inFlight = false;
+    adjustPending(-1);
     if (reply->error() != QNetworkReply::NoError)
-        return;   // parked-train station snapping just stays disabled
+        return;   // station snapping stays disabled until a retry lands
 
     const QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
     if (!doc.isArray())
@@ -274,22 +286,29 @@ void DigitrafficClient::handleStations(QNetworkReply *reply)
     }
     m_model->setStationCoords(coords);
     m_stations->setStations(passengerStations);
+    m_stationsFetch.loaded = true;
     emit stationNamesChanged();
 }
 
 void DigitrafficClient::fetchCauseCategories()
 {
+    if (!m_causeFetch.needsRequest())
+        return;
     QNetworkRequest req{QUrl(QString::fromLatin1(kCauseCategoriesUrl))};
     req.setRawHeader("Digitraffic-User", digitraffic::kUserAgent);
     QNetworkReply *reply = m_net->get(req);
+    m_causeFetch.inFlight = true;
+    adjustPending(+1);
     connect(reply, &QNetworkReply::finished, this, [this, reply] { handleCauseCategories(reply); });
 }
 
 void DigitrafficClient::handleCauseCategories(QNetworkReply *reply)
 {
     reply->deleteLater();
+    m_causeFetch.inFlight = false;
+    adjustPending(-1);
     if (reply->error() != QNetworkReply::NoError)
-        return;   // the delay-cause line just stays blank
+        return;   // the delay-cause line stays blank until a retry lands
 
     const QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
     if (!doc.isArray())
@@ -304,14 +323,19 @@ void DigitrafficClient::handleCauseCategories(QNetworkReply *reply)
         if (!code.isEmpty())
             m_causeCategoryNames.insert(code, o.value("categoryName").toString());
     }
+    m_causeFetch.loaded = true;
     emit causeCategoryNamesChanged();
 }
 
 void DigitrafficClient::fetchDetailedCauseCategories()
 {
+    if (!m_detailedCauseFetch.needsRequest())
+        return;
     QNetworkRequest req{QUrl(QString::fromLatin1(kDetailedCauseCategoriesUrl))};
     req.setRawHeader("Digitraffic-User", digitraffic::kUserAgent);
     QNetworkReply *reply = m_net->get(req);
+    m_detailedCauseFetch.inFlight = true;
+    adjustPending(+1);
     connect(reply, &QNetworkReply::finished, this,
             [this, reply] { handleDetailedCauseCategories(reply); });
 }
@@ -319,8 +343,10 @@ void DigitrafficClient::fetchDetailedCauseCategories()
 void DigitrafficClient::handleDetailedCauseCategories(QNetworkReply *reply)
 {
     reply->deleteLater();
+    m_detailedCauseFetch.inFlight = false;
+    adjustPending(-1);
     if (reply->error() != QNetworkReply::NoError)
-        return;   // the delay-cause line just stays at the coarser top-level category
+        return;   // stays at the coarser top-level category until a retry lands
 
     const QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
     if (!doc.isArray())
@@ -335,7 +361,42 @@ void DigitrafficClient::handleDetailedCauseCategories(QNetworkReply *reply)
         if (!code.isEmpty())
             m_detailedCauseCategoryNames.insert(code, o.value("detailedCategoryName").toString());
     }
+    m_detailedCauseFetch.loaded = true;
     emit causeCategoryNamesChanged();
+}
+
+bool DigitrafficClient::metadataIncomplete() const
+{
+    return !m_stationsFetch.loaded || !m_causeFetch.loaded || !m_detailedCauseFetch.loaded;
+}
+
+void DigitrafficClient::retryMetadata()
+{
+    if (!metadataIncomplete()) {
+        m_metadataBackoff = 1;   // rearm at full speed should a fetch ever reset
+        m_metadataSkips = 0;
+        return;
+    }
+    // Startup issues all three, and `active: true` calls refresh() in the same
+    // breath — so leave the backoff alone on a cycle where every outstanding
+    // attempt is still in flight and there is nothing to re-issue yet.
+    if (!m_stationsFetch.needsRequest() && !m_causeFetch.needsRequest()
+        && !m_detailedCauseFetch.needsRequest())
+        return;
+
+    if (m_metadataSkips > 0) {
+        --m_metadataSkips;
+        return;
+    }
+
+    // Each is a no-op unless that endpoint actually needs re-issuing.
+    fetchStations();
+    fetchCauseCategories();
+    fetchDetailedCauseCategories();
+
+    // Thin out: attempt on the next cycle, then every 2nd, 4th … up to the cap.
+    m_metadataBackoff = std::min(m_metadataBackoff * 2, kMetadataBackoffMax);
+    m_metadataSkips = m_metadataBackoff - 1;
 }
 
 void DigitrafficClient::handleReply(QNetworkReply *reply)
@@ -367,9 +428,14 @@ void DigitrafficClient::handleReply(QNetworkReply *reply)
     }
 
     m_model->updateTrains(trains);
-    setStatus(QStringLiteral("%1 trains • updated %2")
+    // Missing name/cause metadata is a known degraded state, not a rendering
+    // bug — say so rather than leaving the user with bare codes and no clue.
+    setStatus(QStringLiteral("%1 trains • updated %2%3")
                   .arg(trains.size())
-                  .arg(QDateTime::currentDateTime().toString(QStringLiteral("HH:mm:ss"))));
+                  .arg(QDateTime::currentDateTime().toString(QStringLiteral("HH:mm:ss")),
+                       metadataIncomplete()
+                           ? QStringLiteral(" • station names unavailable, retrying")
+                           : QString()));
 }
 
 void DigitrafficClient::setStatus(const QString &status)

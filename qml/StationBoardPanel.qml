@@ -17,6 +17,13 @@ Rectangle {
     border.width: 1
     radius: 8
 
+    // U2-W4: Escape closes the board, same as the detail panel.
+    Shortcut {
+        sequence: StandardKey.Cancel
+        enabled: root.service.hasSelection
+        onActivated: root.service.clear()
+    }
+
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: 14
@@ -32,14 +39,14 @@ Rectangle {
                     Layout.fillWidth: true
                     text: root.service.stationName
                     font.bold: true
-                    font.pointSize: TypeScale.panelTitle
+                    font.pointSize: TypeScale.title
                     color: Theme.textStrong
                     elide: Text.ElideRight
                 }
                 Label {
                     text: qsTr("Station board")
                     color: Theme.textMuted
-                    font.pointSize: TypeScale.panelCaption
+                    font.pointSize: TypeScale.caption
                 }
             }
             // Close button — keyboard-focusable (matches the detail panel).
@@ -56,7 +63,7 @@ Rectangle {
                     anchors.centerIn: parent
                     name: "close"
                     color: Theme.textMuted
-                    size: TypeScale.panelIconSm
+                    size: TypeScale.iconSm
                 }
                 Rectangle {
                     anchors.fill: parent
@@ -82,7 +89,7 @@ Rectangle {
             Layout.fillWidth: true
             text: root.service.status
             color: Theme.textMuted
-            font.pointSize: TypeScale.panelCaption
+            font.pointSize: TypeScale.caption
             visible: text.length > 0
         }
 
@@ -142,7 +149,7 @@ Rectangle {
                         Layout.preferredWidth: 50
                         Label {
                             text: boardRow.timeText
-                            font.pointSize: TypeScale.panelBody
+                            font.pointSize: TypeScale.body
                             font.bold: true
                             font.strikeout: boardRow.cancelled
                             color: Theme.textStrong
@@ -150,7 +157,7 @@ Rectangle {
                         Label {
                             text: boardRow.estimateText
                             visible: text.length > 0
-                            font.pointSize: TypeScale.panelCaption
+                            font.pointSize: TypeScale.caption
                             color: boardRow.delayMinutes > 0 ? Theme.delayLate : Theme.delayEarly
                         }
                     }
@@ -162,7 +169,7 @@ Rectangle {
                         Label {
                             Layout.fillWidth: true
                             text: boardRow.trainLabel + (boardRow.arriving ? qsTr("  · arrives") : "")
-                            font.pointSize: TypeScale.panelBody
+                            font.pointSize: TypeScale.body
                             font.bold: true
                             color: Theme.textStrong
                             elide: Text.ElideRight
@@ -170,7 +177,7 @@ Rectangle {
                         Label {
                             Layout.fillWidth: true
                             text: boardRow.destination
-                            font.pointSize: TypeScale.panelCaption
+                            font.pointSize: TypeScale.caption
                             color: Theme.textMuted
                             elide: Text.ElideRight
                         }
@@ -179,7 +186,7 @@ Rectangle {
                             Layout.fillWidth: true
                             text: boardRow.causeText
                             color: Theme.textMuted
-                            font.pointSize: TypeScale.panelCaption
+                            font.pointSize: TypeScale.caption
                             font.italic: true
                             // A detailed reason ("Liikenteenohjaus: Yhteyden odotus") does
                             // not fit this column on one line, and the longest ones need
@@ -197,7 +204,7 @@ Rectangle {
                             Layout.alignment: Qt.AlignRight
                             text: boardRow.track.length > 0 ? qsTr("Trk %1").arg(boardRow.track) : ""
                             visible: text.length > 0
-                            font.pointSize: TypeScale.panelCaption
+                            font.pointSize: TypeScale.caption
                             color: Theme.textMuted
                         }
                         Label {
@@ -207,7 +214,7 @@ Rectangle {
                                   : (boardRow.delayMinutes === 0
                                      ? "±0"
                                      : (boardRow.delayMinutes > 0 ? "+" : "") + boardRow.delayMinutes)
-                            font.pointSize: TypeScale.panelCaption
+                            font.pointSize: TypeScale.caption
                             font.bold: true
                             color: boardRow.cancelled || boardRow.delayMinutes > 0
                                    ? Theme.delayLate

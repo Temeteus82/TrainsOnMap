@@ -18,7 +18,9 @@ re-litigated next round.
 Suggested fix-order: **CPP-C1, CPP-C2** first (user-visible bugs), then
 **CPP-W1, CPP-W2** (one-line win + startup robustness), then the rest.
 
-> **Status — both criticals fixed** (2026-08-29), in `src/TrainDetailsService.cpp`.
+> **Status — both criticals and the first two warnings fixed** (2026-08-29).
+>
+> `src/TrainDetailsService.cpp`:
 > - **CPP-C1** — the timetable reply now carries the run it was issued for and is
 >   dropped when the selection has moved on, mirroring `fetchComposition`.
 >   `clear()` additionally lowers `loading`, which the late reply used to do.
@@ -26,8 +28,18 @@ Suggested fix-order: **CPP-C1, CPP-C2** first (user-visible bugs), then
 >   only when the header fields / canonicalised route codes actually change, so a
 >   live MQTT refresh no longer resets the trail or rebuilds the overlay polyline.
 >
-> Builds clean, all 6 ctest targets pass. **Not covered by a regression test** —
-> see the note under CPP-C1.
+> `src/TrainListModel.cpp`, `src/DigitrafficClient.cpp`:
+> - **CPP-W1** — the neighbour scan visits only `j > i` and writes the one
+>   haversine to both rows, after a prologue resetting every row to the `-1`
+>   sentinel. Pinned by a new `tst_trainlistmodel` target.
+> - **CPP-W2** — the three metadata fetches carry `loaded`/`inFlight` state and
+>   are re-issued from the 60 s resync until they land, with a capped backoff,
+>   routed through `adjustPending()`, and a status line that names the degraded
+>   state.
+>
+> Builds clean, all **7** ctest targets pass. The two criticals and CPP-W2 are
+> **not covered by a regression test** — see the note under CPP-C1, which
+> applies to `DigitrafficClient` for the same reason.
 
 ---
 
@@ -118,8 +130,21 @@ would let the trail reset bind to the narrower signal.
 
 ## Warnings — real defects, lower blast radius
 
-### CPP-W1 — The all-pairs neighbour scan computes every pair twice
+### CPP-W1 — The all-pairs neighbour scan computes every pair twice — **Fixed**
 `src/TrainListModel.cpp:427`
+
+**Fixed (2026-08-29):** the inner loop starts at `i + 1` and feeds the single
+`distanceTo()` to both `m_rows[i]` and `m_rows[j]`. Because a row is now written
+from either side of a pair, "no neighbour yet" can no longer be a loop-local
+`best`: a prologue resets every row to the `-1` sentinel before the scan, which
+also guarantees a pass cannot leave the previous pass's distance behind.
+
+New `tst_trainlistmodel` ctest target pins the contract — the lone-train `-1`,
+every row getting its own nearest (including the last row, only ever written as
+the `j` side), and the stale-distance clear. Confirmed non-vacuous: reverting to
+a one-sided write fails `everyRowGetsItsNearest`.
+
+The scan is still O(n²); the `TrackService::Grid` idea below is untouched.
 
 `recomputeNearestNeighbors()` runs the inner loop `j` over the full range with
 `if (j == i) continue`, rather than `j > i`, so each symmetric pair is computed,
@@ -139,8 +164,24 @@ would make this near-linear.
 
 ---
 
-### CPP-W2 — Metadata is fetched once at startup and never retried
+### CPP-W2 — Metadata is fetched once at startup and never retried — **Fixed**
 `src/DigitrafficClient.cpp:62-64` (handlers at `:244`, `:288`, `:319`)
+
+**Fixed (2026-08-29):** each of the three endpoints carries a `MetadataFetch`
+(`loaded` / `inFlight`), and `retryMetadata()` — called from `refresh()`, i.e.
+on the existing 60 s resync — re-issues whichever have not landed. Attempts thin
+out over 1, 2, 4, 8 cycles and stay capped at 8, so a long outage is not hammered
+but recovery lands within ~8 minutes. The backoff is not spent on a cycle where
+every outstanding attempt is still in flight, which matters because startup
+issues all three and `active: true` calls `refresh()` in the same breath.
+
+All three now go through `adjustPending()`, closing the `loading` under-report,
+and the status line reads `… • station names unavailable, retrying` while any
+endpoint is missing, so the degraded state is named rather than silent.
+
+> **No regression test**, for the reason given under CPP-C1: `DigitrafficClient`
+> constructs its own `QNetworkAccessManager`, so there is no seam to inject a
+> canned failing reply through. Verified by reading and a live run.
 
 `fetchStations()`, `fetchCauseCategories()` and `fetchDetailedCauseCategories()`
 are called only from the constructor, and every failure path is a bare `return`
@@ -753,9 +794,9 @@ Verified against the source; do not re-file these.
    exists ten lines away in `fetchComposition`.
 2. ~~**CPP-C2**~~ — **done.** Live updates wipe the trail. User-visible; the trail feature
    currently cannot work for the selected train.
-3. **CPP-W1** — one-line `j > i`, free 2× on the 60 s hitch.
-4. **CPP-W2** — startup metadata retry. Cheap, and removes a whole class of
-   "why are the station names missing" reports.
+3. ~~**CPP-W1**~~ — **done.** One-line `j > i`, free 2× on the 60 s hitch.
+4. ~~**CPP-W2**~~ — **done.** Startup metadata retry. Cheap, and removes a whole
+   class of "why are the station names missing" reports.
 5. **CPP-W5** + **CPP-O1** together — centralise `stationLabel` while extracting
    the shared service plumbing it lives in.
 6. **CPP-W6, CPP-W7, CPP-W8** as one pass — all three are "validate remote data at

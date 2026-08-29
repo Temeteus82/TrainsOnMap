@@ -7,7 +7,7 @@ import QtQuick
 Canvas {
     id: root
 
-    property string name: "train"       // "train" | "close" | "check"
+    property string name: "train"       // "train" | "close" | "check" | "chevron"
     property color color: "black"
     property real size: 16
 
@@ -33,6 +33,13 @@ Canvas {
             ctx.beginPath()
             ctx.moveTo(6 * s, 6 * s);  ctx.lineTo(18 * s, 18 * s)
             ctx.moveTo(18 * s, 6 * s); ctx.lineTo(6 * s, 18 * s)
+            ctx.stroke()
+        } else if (name === "chevron") {
+            // Points down; callers rotate 180° for "up" (see CollapseButton).
+            ctx.beginPath()
+            ctx.moveTo(7 * s, 10 * s)
+            ctx.lineTo(12 * s, 15 * s)
+            ctx.lineTo(17 * s, 10 * s)
             ctx.stroke()
         } else if (name === "check") {
             ctx.beginPath()

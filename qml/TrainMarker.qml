@@ -233,7 +233,7 @@ MapQuickItem {
                 Text {
                     anchors.horizontalCenter: parent.horizontalCenter
                     text: marker.badgeLabel
-                    font.pointSize: TypeScale.panelCaption
+                    font.pointSize: TypeScale.caption
                     font.bold: true
                     color: marker.labelInk
                     // QtRendering's distance-field glyphs go soft at this small a
@@ -251,7 +251,7 @@ MapQuickItem {
                     anchors.horizontalCenter: parent.horizontalCenter
                     visible: marker.model.speed > 0
                     text: Math.round(marker.model.speed) + " km/h"
-                    font.pointSize: TypeScale.panelCaption
+                    font.pointSize: TypeScale.caption
                     color: marker.labelInk
                     opacity: 0.9
                     renderType: Text.QtRendering
@@ -263,7 +263,7 @@ MapQuickItem {
                     anchors.horizontalCenter: parent.horizontalCenter
                     visible: marker.late
                     text: qsTr("+%1 min").arg(marker.model.delayMinutes)
-                    font.pointSize: TypeScale.panelCaption
+                    font.pointSize: TypeScale.caption
                     font.bold: true
                     color: marker.labelInk
                     renderType: Text.QtRendering
