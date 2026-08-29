@@ -47,6 +47,13 @@ Suggested fix-order: **CPP-C1, CPP-C2** first (user-visible bugs), then
 > both `show()` slots, and the MQTT topic filter; live payloads now match on
 > `departureDate` as well. Pinned by four new test slots.
 >
+> **CPP-W12, CPP-W13, CPP-I3, CPP-I6 fixed** (2026-08-29, error-handling pass):
+> one `parseArray`/`parseObject` helper pair that reports the reason, used at all
+> nine remote-JSON sites; a partial live payload can no longer blank a loaded
+> timetable; the full-snapshot clock is consumed on success; and the board
+> comparator is a strict weak ordering regardless of what Qt does with invalid
+> `QDateTime`s. Pinned by two new test slots.
+>
 > **CPP-W4, CPP-O2, CPP-I4, CPP-I8, CPP-I9, CPP-I10 fixed** (2026-08-29,
 > types-and-constants pass): one `QStringList` spelling across the routing API,
 > one shared `kRequestTimeout`, `QLatin1String` category tests, `routeKey` built
@@ -508,7 +515,7 @@ only to stamp rows inserted after the metadata landed.
 
 ---
 
-### CPP-W12 — The live MQTT path lacks the REST path's payload guards
+### CPP-W12 — The live MQTT path lacks the REST path's payload guards — **Fixed**
 `src/TrainDetailsService.cpp:375`
 
 `handleTrain` checks `QJsonParseError`, `doc.isArray()` and non-empty before
@@ -533,9 +540,14 @@ leaving the last good REST-loaded state on screen — the behaviour
 `FmiWeatherClient.cpp:117-124` already implements deliberately for its own
 partial-response case.
 
+**Fixed (2026-08-29)** exactly as written. The parse now goes through
+`digitraffic::parseObject` (CPP-W13's helper, which reports the reason), and a
+payload carrying no `timeTableRows` is dropped before `applyTrainObject` can
+overwrite anything.
+
 ---
 
-### CPP-W13 — Parse-failure reporting is inconsistent across the four clients
+### CPP-W13 — Parse-failure reporting is inconsistent across the four clients — **Fixed**
 `src/DigitrafficClient.cpp:152`, `:250`, `:294`, `:325`;
 `src/TrainDetailsService.cpp:316`; `src/StationBoardService.cpp:126`;
 `src/DigitrafficMqttClient.cpp:244`
@@ -561,6 +573,16 @@ checking the parse error and expected root type together and logging the reason 
 failure. Silence remains the right *user-facing* behaviour for the optional
 metadata endpoints, but a `qWarning` costs nothing and turns a silent feature
 outage into something a bug report can name.
+
+**Fixed (2026-08-29)** as `digitraffic::parseArray` / `parseObject`, returning
+`std::optional` so an **empty** array stays distinguishable from a failed parse —
+the delta endpoints use empty for "nothing changed", and conflating the two would
+make a full snapshot skip its own reset. All nine remote-JSON sites now go through
+one of the two, including the two that were already correct, so there is a single
+spelling. `parseObject` absorbs the "object, or one-element array wrapping it"
+tolerance that two callers had spelled out by hand. `RailGraph::loadFromJson` is
+left alone: local blob, not a remote feed. Pinned by two new slots in
+`tst_digitrafficformat`, which assert the warning text as well as the return.
 
 ---
 
@@ -720,7 +742,7 @@ transitioning to the stale presentation after 300 s. Or call
 `data(index(0), RingStateRole)` twice >300 s apart with no intervening
 `dataChanged` and compare.
 
-### CPP-I3 — The resync clock is consumed on issue, not on success (72)
+### CPP-I3 — The resync clock is consumed on issue, not on success (72) — **Fixed**
 `src/DigitrafficClient.cpp:129` — `m_lastFullCategories = now` is assigned when
 the full snapshot is *issued*. If it fails, `handleCategories` returns at `:149`
 before the reset block at `:159-166`, so the clock is spent and the next ~5 minutes
@@ -730,6 +752,14 @@ full snapshot was **issued**", so the wording may be deliberate; endpoint failur
 rate unknown. Growth is bounded by fleet size — delayed trimming, not a leak.
 **Verify:** inject a `HostNotFoundError` on a cycle where `full == true` and log
 `m_accStatuses.size()` / `m_routePolys.size()` over the following ten minutes.
+
+**Fixed (2026-08-29)** without the injection rig: the clock is now stamped in
+`handleCategories` when a full snapshot actually applies, rather than in
+`refreshCategories` when one is issued. A failed full pull therefore leaves the
+window unspent and the next cycle is full again, which is the behaviour the
+header comment already implied to a reader; that comment now says "landed" and
+why. Not covered by a regression test — it needs a failing reply, which this
+suite has no harness for.
 
 ### CPP-I4 — Category comparisons against bare `const char*` (72) — **Fixed**
 `src/DigitrafficClient.cpp:404` — `cat != "Long-distance" && ...` constructs three
@@ -764,7 +794,7 @@ read-only.
 `wss://rata.digitraffic.fi` reachable, run across a date boundary and watch
 `trainClient.model.count` — it should plateau near fleet size.
 
-### CPP-I6 — Board sort key may be an invalid `QDateTime` (68)
+### CPP-I6 — Board sort key may be an invalid `QDateTime` (68) — **Fixed**
 `src/StationBoardService.cpp:196` — `row.sortTime = digitraffic::parseIso(...)` is
 stored with no `isValid()` check and is the sole `std::sort` key for the board
 (`:201-203`). `parseIso` returns an invalid `QDateTime` when the string does not
@@ -777,6 +807,13 @@ Severity ranges from "a few odd rows" to something worse.
 directions and against another invalid one; check the three results form a
 consistent strict weak ordering. Then feed `handleReply` a canned response with
 one malformed `scheduledTime`.
+
+**Fixed (2026-08-29)** without settling the Qt semantics question, because the
+comparator no longer asks it: valid rows sort before invalid ones, two invalid
+rows compare equivalent, and only two valid times reach `<`. That is a strict weak
+ordering by construction whatever Qt does with invalid operands, which is the
+cheaper answer than proving the current form safe. The comparator is a lambda
+inside `handleReply` and is not covered by a test.
 
 ### CPP-I7 — MQTT frame reassembly drains quadratically (68)
 `src/DigitrafficMqttClient.cpp:204` — `m_rxBuffer.remove(0, total)` after each

@@ -119,9 +119,7 @@ void DigitrafficClient::refreshCategories()
                       || m_lastFullCategories.msecsTo(now) >= kFullCategoriesIntervalMs;
 
     QUrl url(QString::fromLatin1(kLiveTrainsUrl));
-    if (full) {
-        m_lastFullCategories = now;
-    } else {
+    if (!full) {
         QUrlQuery query;
         query.addQueryItem(QStringLiteral("version"), QString::number(m_liveVersion));
         url.setQuery(query);
@@ -143,9 +141,17 @@ void DigitrafficClient::handleCategories(QNetworkReply *reply, bool full)
     if (reply->error() != QNetworkReply::NoError)
         return;   // markers keep their last colours until the next refresh
 
-    const QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
-    if (!doc.isArray())
+    const auto parsed = digitraffic::parseArray(reply->readAll(), "live-trains");
+    if (!parsed)
         return;
+
+    // The full-snapshot clock is consumed here, on success, not when the request
+    // was issued: a failed full pull used to spend the 5-minute window anyway,
+    // leaving the next ~5 minutes of deltas merging onto accumulated maps that
+    // were never cleared (I3). A failure now simply means the next cycle is full
+    // again.
+    if (full)
+        m_lastFullCategories = QDateTime::currentDateTimeUtc();
 
     // A full snapshot is authoritative: drop the accumulated state (and the
     // version baseline) first, so trains that have left the fleet fall out and the
@@ -159,7 +165,7 @@ void DigitrafficClient::handleCategories(QNetworkReply *reply, bool full)
         m_liveVersion = 0;
     }
 
-    const QJsonArray arr = doc.array();
+    const QJsonArray arr = *parsed;
     for (const QJsonValue &v : arr) {
         const QJsonObject o = v.toObject();
         // Key on (departureDate, trainNumber): the number alone is reused daily
@@ -247,11 +253,11 @@ void DigitrafficClient::handleStations(QNetworkReply *reply)
     if (reply->error() != QNetworkReply::NoError)
         return;   // station snapping stays disabled until a retry lands
 
-    const QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
-    if (!doc.isArray())
+    const auto parsed = digitraffic::parseArray(reply->readAll(), "metadata/stations");
+    if (!parsed)
         return;
 
-    const QJsonArray arr = doc.array();
+    const QJsonArray arr = *parsed;
     QHash<QString, QGeoCoordinate> coords;
     coords.reserve(arr.size());
     m_stationNames.clear();
@@ -307,11 +313,12 @@ void DigitrafficClient::handleCauseCategories(QNetworkReply *reply)
     if (reply->error() != QNetworkReply::NoError)
         return;   // the delay-cause line stays blank until a retry lands
 
-    const QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
-    if (!doc.isArray())
+    const auto parsed = digitraffic::parseArray(reply->readAll(),
+                                                "metadata/cause-category-codes");
+    if (!parsed)
         return;
 
-    const QJsonArray arr = doc.array();
+    const QJsonArray arr = *parsed;
     m_causeCategoryNames.clear();
     m_causeCategoryNames.reserve(arr.size());
     for (const QJsonValue &v : arr) {
@@ -345,11 +352,12 @@ void DigitrafficClient::handleDetailedCauseCategories(QNetworkReply *reply)
     if (reply->error() != QNetworkReply::NoError)
         return;   // stays at the coarser top-level category until a retry lands
 
-    const QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
-    if (!doc.isArray())
+    const auto parsed = digitraffic::parseArray(reply->readAll(),
+                                                "metadata/detailed-cause-category-codes");
+    if (!parsed)
         return;
 
-    const QJsonArray arr = doc.array();
+    const QJsonArray arr = *parsed;
     m_detailedCauseCategoryNames.clear();
     m_detailedCauseCategoryNames.reserve(arr.size());
     for (const QJsonValue &v : arr) {

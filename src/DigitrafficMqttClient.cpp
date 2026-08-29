@@ -5,7 +5,6 @@
 
 #include <QDebug>
 #include <QJsonArray>
-#include <QJsonDocument>
 #include <QJsonObject>
 #include <QNetworkRequest>
 #include <QRandomGenerator>
@@ -243,10 +242,10 @@ void DigitrafficMqttClient::handleLocationPayload(const QByteArray &payload)
 {
     if (!m_model || payload.isEmpty())
         return;
-    const QJsonDocument doc = QJsonDocument::fromJson(payload);
-    if (!doc.isObject())
+    const auto train = digitraffic::parseObject(payload, "train-locations stream");
+    if (!train)
         return;
-    const TrainPosition tp = parseTrainLocation(doc.object());
+    const TrainPosition tp = parseTrainLocation(*train);
     if (tp.coordinate.isValid())
         m_model->upsertTrain(tp);
 }

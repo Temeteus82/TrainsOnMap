@@ -10,6 +10,7 @@
 #include <QDate>
 #include <QDateTime>
 #include <QHash>
+#include <QRegularExpression>
 #include <QTest>
 #include <QTime>
 #include <QTimeZone>
@@ -82,6 +83,45 @@ private slots:
         // Cause present but the metadata hasn't loaded yet; the services rebuild
         // once it lands, so an empty string here is expected, not a hole.
         QVERIFY(digitraffic::causeText(QStringLiteral("A"), QString(), {}, {}).isEmpty());
+    }
+
+    /// An empty array is a successful parse, not a failure — the delta endpoints
+    /// use it for "nothing changed", and conflating the two would make a full
+    /// snapshot skip its reset. A failure must both report nothing and say why.
+    void parseArraySeparatesEmptyFromBroken()
+    {
+        const auto ok = digitraffic::parseArray("[{\"a\":1}]", "test");
+        QVERIFY(ok.has_value());
+        QCOMPARE(ok->size(), 1);
+
+        const auto empty = digitraffic::parseArray("[]", "test");
+        QVERIFY(empty.has_value());
+        QVERIFY(empty->isEmpty());
+
+        // Both failure modes name the endpoint (CPP-W13): four handlers used to
+        // return with no status change and no log line at all.
+        QTest::ignoreMessage(QtWarningMsg,
+                             QRegularExpression(QStringLiteral("^test: JSON parse failed")));
+        QVERIFY(!digitraffic::parseArray("[{", "test").has_value());
+
+        QTest::ignoreMessage(QtWarningMsg, "test: expected a JSON array root");
+        QVERIFY(!digitraffic::parseArray("{\"a\":1}", "test").has_value());
+    }
+
+    /// parseObject takes the bare object and the one-element array wrapping it —
+    /// two callers spelled that tolerance out by hand before it moved here.
+    void parseObjectAcceptsEitherShape()
+    {
+        const auto bare = digitraffic::parseObject("{\"trainNumber\":5}", "test");
+        QVERIFY(bare.has_value());
+        QCOMPARE(bare->value(QStringLiteral("trainNumber")).toInt(), 5);
+
+        const auto wrapped = digitraffic::parseObject("[{\"trainNumber\":5}]", "test");
+        QVERIFY(wrapped.has_value());
+        QCOMPARE(wrapped->value(QStringLiteral("trainNumber")).toInt(), 5);
+
+        QTest::ignoreMessage(QtWarningMsg, "test: expected a JSON object root");
+        QVERIFY(!digitraffic::parseObject("[]", "test").has_value());
     }
 
     /// The whole point of centralising this: three private copies disagreed on

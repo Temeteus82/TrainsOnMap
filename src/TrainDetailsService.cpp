@@ -7,9 +7,7 @@
 
 #include <QTime>
 #include <QJsonArray>
-#include <QJsonDocument>
 #include <QJsonObject>
-#include <QJsonParseError>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
@@ -242,14 +240,13 @@ void TrainDetailsService::handleTrain(QNetworkReply *reply)
         return;
     }
 
-    QJsonParseError perr{};
-    const QJsonDocument doc = QJsonDocument::fromJson(reply->readAll(), &perr);
-    if (perr.error != QJsonParseError::NoError || !doc.isArray() || doc.array().isEmpty()) {
+    const auto trains = digitraffic::parseArray(reply->readAll(), "trains");
+    if (!trains || trains->isEmpty()) {
         setStatus(QStringLiteral("No timetable for train %1").arg(m_trainNumber));
         return;
     }
 
-    applyTrainObject(doc.array().first().toObject(), /*live=*/false);
+    applyTrainObject(trains->first().toObject(), /*live=*/false);
 }
 
 void TrainDetailsService::applyTrainObject(const QJsonObject &train, bool live)
@@ -327,13 +324,14 @@ void TrainDetailsService::handleComposition(QNetworkReply *reply)
         return;
     }
 
-    const QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
-    // The endpoint returns a single object; tolerate an array form defensively.
-    const QJsonObject comp = doc.isArray()
-        ? (doc.array().isEmpty() ? QJsonObject() : doc.array().first().toObject())
-        : doc.object();
+    // The endpoint returns a single object; parseObject tolerates the array form.
+    const auto comp = digitraffic::parseObject(reply->readAll(), "compositions");
+    if (!comp) {
+        clearComposition();
+        return;
+    }
 
-    const QJsonArray sections = comp.value(QStringLiteral("journeySections")).toArray();
+    const QJsonArray sections = comp->value(QStringLiteral("journeySections")).toArray();
     if (sections.isEmpty()) {
         clearComposition();
         return;
@@ -390,13 +388,24 @@ void TrainDetailsService::onStreamTrainMessage(const QByteArray &payload)
 {
     if (!m_hasSelection || payload.isEmpty())
         return;
-    const QJsonDocument doc = QJsonDocument::fromJson(payload);
-    // MQTT publishes a single object; tolerate an array just in case.
-    const QJsonObject train = doc.isArray() ? doc.array().first().toObject() : doc.object();
-    if (train.value(QStringLiteral("trainNumber")).toInt() != m_trainNumber
-        || train.value(QStringLiteral("departureDate")).toString() != m_departureDate)
+    // MQTT publishes a single object; parseObject tolerates an array just in case.
+    const auto train = digitraffic::parseObject(payload, "trains stream");
+    if (!train)
+        return;
+    if (train->value(QStringLiteral("trainNumber")).toInt() != m_trainNumber
+        || train->value(QStringLiteral("departureDate")).toString() != m_departureDate)
         return;   // not the run currently shown
-    applyTrainObject(train, /*live=*/true);
+
+    // applyTrainObject overwrites the header and the whole stop list
+    // unconditionally, and buildStops({}) is empty — so a *partial* live payload
+    // that parses and matches the run would silently blank a correctly loaded
+    // timetable, with no error and no way back short of reselecting the train
+    // (W12). Require the rows before letting it replace anything; dropping it
+    // leaves the last good state on screen, as the weather client already does
+    // for its own partial-response case.
+    if (train->value(QStringLiteral("timeTableRows")).toArray().isEmpty())
+        return;
+    applyTrainObject(*train, /*live=*/true);
 }
 
 void TrainDetailsService::rebuildStops()
