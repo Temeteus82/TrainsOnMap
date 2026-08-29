@@ -84,6 +84,29 @@ private slots:
         QVERIFY(digitraffic::causeText(QStringLiteral("A"), QString(), {}, {}).isEmpty());
     }
 
+    /// The whole point of centralising this: three private copies disagreed on
+    /// what a *present but blank* name means. A code beats a blank (CPP-W5).
+    void stationLabelPrefersACodeOverABlankName()
+    {
+        const QHash<QString, QString> names{
+            {QStringLiteral("HKI"), QStringLiteral("Helsinki")},
+            {QStringLiteral("XXX"), QString()}};   // present, blank — the drift case
+
+        QCOMPARE(digitraffic::stationLabel(names, QStringLiteral("HKI")),
+                 QStringLiteral("Helsinki"));
+        QCOMPARE(digitraffic::stationLabel(names, QStringLiteral("XXX")),
+                 QStringLiteral("XXX"));
+        QCOMPARE(digitraffic::stationLabel(names, QStringLiteral("TKU")),
+                 QStringLiteral("TKU"));   // absent
+
+        // The caller's own name (e.g. what came with the click) beats the code,
+        // but never beats a known name.
+        QCOMPARE(digitraffic::stationLabel(names, QStringLiteral("TKU"), QStringLiteral("Turku")),
+                 QStringLiteral("Turku"));
+        QCOMPARE(digitraffic::stationLabel(names, QStringLiteral("HKI"), QStringLiteral("Turku")),
+                 QStringLiteral("Helsinki"));
+    }
+
     void inFinlandBoxRejectsTheParseFailureSentinel()
     {
         QVERIFY(digitraffic::inFinlandBox(60.17, 24.94));    // Helsinki

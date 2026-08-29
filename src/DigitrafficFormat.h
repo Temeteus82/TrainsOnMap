@@ -73,6 +73,24 @@ inline QString hhmm(const QString &iso)
     return dt.isValid() ? dt.toLocalTime().toString(QStringLiteral("HH:mm")) : QString();
 }
 
+/// Display name for a station short code, from the /metadata/stations map: the
+/// mapped name when it is known and non-empty, else `fallback` when the caller
+/// has one (e.g. the name that came with the click), else the code itself.
+///
+/// The empty case is real — DigitrafficClient inserts `stationName` without the
+/// non-empty guard it applies to the code — and the three private copies of this
+/// resolver disagreed about it, so one such station rendered as its code on the
+/// board and as a blank cell in the timetable panel (review CPP-W5). A code beats
+/// a blank.
+inline QString stationLabel(const QHash<QString, QString> &names, const QString &code,
+                            const QString &fallback = {})
+{
+    const QString name = names.value(code);
+    if (!name.isEmpty())
+        return name;
+    return fallback.isEmpty() ? code : fallback;
+}
+
 /// Compose the human-readable delay reason from the two cause codes a
 /// timeTableRow carries, resolved through the `/metadata/cause-category-codes`
 /// maps: "Category: detail", or just the category when the detailed code is

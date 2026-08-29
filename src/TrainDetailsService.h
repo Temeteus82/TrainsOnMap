@@ -7,6 +7,7 @@
 #include <QtQmlIntegration>
 
 #include "CompositionModel.h"
+#include "FleetMetadata.h"
 #include "RailGraph.h"
 #include "TimetableModel.h"
 
@@ -111,7 +112,6 @@ private:
     void rebuildStops();                 ///< re-resolve names + push to model
     void setLoading(bool loading);
     void setStatus(const QString &status);
-    QString stationLabel(const QString &shortCode) const;   ///< resolved name, code fallback
 
     QNetworkAccessManager *m_net = nullptr;
     TimetableModel *m_model = nullptr;
@@ -119,9 +119,7 @@ private:
     DigitrafficMqttClient *m_stream = nullptr;
     DigitrafficClient *m_fleet = nullptr;
 
-    QHash<QString, QString> m_stationNames;   ///< shortCode -> name (from `fleet`)
-    QHash<QString, QString> m_causeCategoryNames; ///< cause category code -> name (from `fleet`)
-    QHash<QString, QString> m_detailedCauseCategoryNames; ///< detailed cause category code -> name (from `fleet`)
+    FleetMetadata m_meta;                     ///< reads `fleet`'s shared name/cause maps
     QVector<TimetableStop> m_stops;           ///< last fetched stops (codes resolved lazily)
 
     bool m_hasSelection = false;

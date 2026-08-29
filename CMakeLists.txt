@@ -54,6 +54,7 @@ qt_add_executable(TrainsOnMap
     src/Projection.h
     src/MqttCodec.h
     src/DigitrafficFormat.h
+    src/FleetMetadata.h
     src/NetworkDiagnostics.h
 )
 

@@ -154,7 +154,8 @@ None overridden. Private helpers: `onStationNames` (pull the fleet's name map),
 `handleTrain`/`applyTrainObject` (timetable header + stops),
 `fetchComposition`/`handleComposition`/`clearComposition` (carriage strip),
 `onStreamTrainMessage` (live MQTT update), `rebuildStops` (re-resolve names and
-push to the model), `setLoading`/`setStatus`, and `stationLabel`.
+push to the model), and `setLoading`/`setStatus`. Station names and delay causes
+are resolved through the `FleetMetadata` member, not a private copy of the maps.
 
 ## 11. Ownership and Lifecycle
 

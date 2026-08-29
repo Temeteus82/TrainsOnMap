@@ -47,6 +47,12 @@ Suggested fix-order: **CPP-C1, CPP-C2** first (user-visible bugs), then
 > both `show()` slots, and the MQTT topic filter; live payloads now match on
 > `departureDate` as well. Pinned by four new test slots.
 >
+> **CPP-W5 + CPP-O1 fixed** (2026-08-29, shared-plumbing pass): one
+> `digitraffic::stationLabel()` replaces three drifted copies, and the new
+> `FleetMetadata` helper reads the fleet's three metadata maps through the
+> client pointer instead of each service caching its own. Pinned by one new
+> test slot.
+>
 > **CPP-W3, CPP-W9, CPP-W11 fixed** (2026-08-29, invalidation pass): the
 > timetable refresh updates in place instead of resetting when the station
 > sequence is unchanged; the metadata/status values are denormalised onto
@@ -280,7 +286,7 @@ changes, since the types were already identical.
 
 ---
 
-### CPP-W5 — `stationLabel` exists three times with two different semantics
+### CPP-W5 — `stationLabel` exists three times with two different semantics — **Fixed**
 `src/TrainDetailsService.cpp:179` and `:391` vs `src/StationBoardService.cpp:72`
 
 - `TrainDetailsService::stationLabel` → `m_stationNames.value(code, code)`. The
@@ -302,6 +308,13 @@ This is exactly the drift `DigitrafficFormat.h:9-11` was created to stop —
 **Fix idea:** move the resolver next to `causeText` in `DigitrafficFormat.h` with
 the empty-tolerant fallback (the board's behaviour is the correct one — a code
 beats a blank), and delete all three local copies.
+
+**Fixed (2026-08-29)** exactly as written: `digitraffic::stationLabel(names, code,
+fallback = {})` sits next to `causeText`, takes the board's empty-tolerant
+behaviour, and all three copies are gone. The optional `fallback` covers
+`StationBoardService::show`, the one caller that has a name of its own to prefer
+over the bare code. Pinned by
+`tst_digitrafficformat::stationLabelPrefersACodeOverABlankName`.
 
 ---
 
@@ -561,7 +574,7 @@ startup simplicity, at least document the memory cost next to `m_all`.
 
 ## Opportunities — consistency and hygiene
 
-### CPP-O1 — Duplicated fleet-metadata plumbing across two services
+### CPP-O1 — Duplicated fleet-metadata plumbing across two services — **Fixed**
 `src/StationBoardService.cpp:28-74` vs `src/TrainDetailsService.cpp:177-198`
 
 Near-identical copies of: the same three `QHash<QString,QString>` members, the
@@ -579,6 +592,21 @@ common base) owning the three maps, the wiring, `stationLabel()` and a
 `resolveCauseText()`. Both `rebuild*()` also deep-copy their whole row vector on
 every metadata arrival purely to stamp `causeText`; resolving that at model-read
 time removes the copy from both.
+
+**Fixed (2026-08-29)** with `src/FleetMetadata.h`, a non-QObject helper — but it
+owns *no* maps. Nothing ever wrote to the per-service copies: they were assigned
+wholesale from the client that owns the originals, so the helper holds the
+`DigitrafficClient *` and reads through it, and the three accessors now return
+`const &`. That deletes six members, both `stationLabel()`s, and the copy halves
+of all four handlers; each service keeps its own `fleet` property and signal
+wiring (the handlers differ in what they rebuild) and adds one
+`m_meta.setFleet()` line to it.
+
+**Not done:** resolving `causeText` at model-read time. The `rebuild*()` copy
+runs when a metadata map lands — once or twice per session — not per repaint, and
+pushing resolution into the models would couple them to the services and cut
+against the write-time denormalisation `CPP-W11` just adopted. Revisit only if a
+metadata arrival ever shows up in a profile.
 
 ---
 
@@ -847,8 +875,8 @@ Verified against the source; do not re-file these.
 3. ~~**CPP-W1**~~ — **done.** One-line `j > i`, free 2× on the 60 s hitch.
 4. ~~**CPP-W2**~~ — **done.** Startup metadata retry. Cheap, and removes a whole
    class of "why are the station names missing" reports.
-5. **CPP-W5** + **CPP-O1** together — centralise `stationLabel` while extracting
-   the shared service plumbing it lives in.
+5. ~~**CPP-W5** + **CPP-O1**~~ — **done** together — centralise `stationLabel`
+   while extracting the shared service plumbing it lives in.
 6. ~~**CPP-W6, CPP-W7, CPP-W8**~~ — **done** as one pass — all three are "validate
    remote data at the parse boundary".
 7. ~~**CPP-W3, CPP-W9, CPP-W11**~~ — **done** as one pass — all three are "stop
