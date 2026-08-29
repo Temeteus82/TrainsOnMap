@@ -22,6 +22,7 @@ StationBoardService::StationBoardService(QObject *parent)
     , m_net(new QNetworkAccessManager(this))
     , m_board(new StationBoardModel(this))
 {
+    m_net->setTransferTimeout(digitraffic::kRequestTimeout);
     netdiag::logSslErrors(m_net, "StationBoardService");
 }
 
@@ -83,7 +84,6 @@ void StationBoardService::show(const QString &code, const QString &name)
         "?arriving_trains=8&departing_trains=8&include_nonstopping=false").arg(code);
     QNetworkRequest req{QUrl(url)};
     req.setRawHeader("Digitraffic-User", digitraffic::kUserAgent);
-    req.setTransferTimeout(15000);
     QNetworkReply *reply = m_net->get(req);
     connect(reply, &QNetworkReply::finished, this, [this, reply, code] { handleReply(reply, code); });
 }

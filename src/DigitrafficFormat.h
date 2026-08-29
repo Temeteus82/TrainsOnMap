@@ -4,6 +4,8 @@
 #include <QHash>
 #include <QString>
 
+#include <chrono>
+
 /// Presentation helpers for Digitraffic timetable fields, shared by the two
 /// services that render the same API data in different panels
 /// (`StationBoardService` and `TrainDetailsService`). Both had grown private
@@ -18,6 +20,14 @@ namespace digitraffic {
 ///
 /// Keep the version in step with `project(... VERSION)` in CMakeLists.txt.
 constexpr auto kUserAgent = "TrainsOnMap/0.1 (+https://github.com/Temeteus82/TrainsOnMap)";
+
+/// Abort a stalled request rather than leaving a panel stuck on "Loading…".
+/// One value for all three Digitraffic clients: it had grown into a named
+/// constexpr in two of them, a bare `15000` set per-request in the third — where
+/// any request added later would silently get no timeout at all — and the `int`
+/// overload it used is deprecated in Qt 6.7+ (review CPP-O2). Set it on the
+/// QNetworkAccessManager in the constructor, not per request.
+constexpr auto kRequestTimeout = std::chrono::seconds{15};
 
 /// Coarse Finland bounding box (lat 59–71, lon 19–32) — the same box the FMI
 /// weather query pins (`bbox=19,59,32,71`). Needed because a malformed remote

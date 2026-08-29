@@ -14,10 +14,15 @@
 #include <QUrlQuery>
 #include <QXmlStreamReader>
 
+#include <chrono>
+
 namespace {
 constexpr const char *kWfsUrl = "https://opendata.fmi.fi/wfs";
 constexpr int kPollMs = 10 * 60 * 1000;   // FMI stations report every 10 min
 constexpr int kWindowSecs = 30 * 60;      // ask for the last half hour, keep the latest
+// Deliberately longer than digitraffic::kRequestTimeout: a different provider,
+// and this one is a WFS query that assembles a half hour of observations.
+constexpr auto kRequestTimeout = std::chrono::seconds{20};
 
 QUrl buildQueryUrl()
 {
@@ -42,7 +47,7 @@ FmiWeatherClient::FmiWeatherClient(QObject *parent)
     , m_net(new QNetworkAccessManager(this))
     , m_model(new WeatherStationModel(this))
 {
-    m_net->setTransferTimeout(20000);
+    m_net->setTransferTimeout(kRequestTimeout);
     netdiag::logSslErrors(m_net, "FmiWeatherClient");
     m_timer.setInterval(kPollMs);
     connect(&m_timer, &QTimer::timeout, this, &FmiWeatherClient::fetchData);

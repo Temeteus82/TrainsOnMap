@@ -44,7 +44,7 @@ struct TrainPosition {
 /// station short codes (used to resolve the route polyline + nearest stop) plus
 /// the booked commercialTrack per stopping station (used for platform snapping).
 struct TrainRoute {
-    QVector<QString> codes;
+    QStringList codes;
     QHash<QString, QString> commercialTrack;
 };
 

@@ -201,9 +201,9 @@ bool RailGraph::loadFromJson(const QByteArray &json)
     return !m_tracks.isEmpty();
 }
 
-QString RailGraph::routeKey(const QVector<QString> &stationCodes)
+QString RailGraph::routeKey(const QStringList &stationCodes)
 {
-    return QStringList(stationCodes.cbegin(), stationCodes.cend()).join(QLatin1Char('|'));
+    return stationCodes.join(QLatin1Char('|'));
 }
 
 QStringList RailGraph::canonicalRouteCodes(const QStringList &rawCodes)
@@ -219,7 +219,7 @@ QStringList RailGraph::canonicalRouteCodes(const QStringList &rawCodes)
     return out;
 }
 
-QVector<int> RailGraph::routePath(const QVector<QString> &stationCodes) const
+QVector<int> RailGraph::routePath(const QStringList &stationCodes) const
 {
     // Dijkstra over the track graph from any track in `sources` to the nearest
     // track in `targets`. Returns the ordered track path (inclusive) and the

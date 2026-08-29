@@ -18,7 +18,6 @@
 #include <QUrlQuery>
 
 #include <algorithm>
-#include <chrono>
 
 namespace {
 constexpr auto kLatestUrl = "https://rata.digitraffic.fi/api/v1/train-locations/latest/";
@@ -41,8 +40,6 @@ constexpr int kResyncIntervalMs = 60 * 1000;
 // evict trains that quietly left the fleet (a finished train may never appear in
 // a delta). At the 60 s resync that's one full pull per ~5 deltas.
 constexpr qint64 kFullCategoriesIntervalMs = 5 * 60 * 1000;
-// Abort a stalled request rather than leaving the status stuck on "Fetching…".
-constexpr auto kRequestTimeout = std::chrono::seconds{15};
 // Ceiling on the metadata retry backoff, in resync cycles. At the 60 s resync
 // that is one attempt per 8 min during a long outage — quiet enough not to
 // hammer a dead network, soon enough that recovery is not noticeable.
@@ -55,7 +52,7 @@ DigitrafficClient::DigitrafficClient(QObject *parent)
     , m_model(new TrainListModel(this))
     , m_stations(new StationListModel(this))
 {
-    m_net->setTransferTimeout(kRequestTimeout);
+    m_net->setTransferTimeout(digitraffic::kRequestTimeout);
     netdiag::logSslErrors(m_net, "DigitrafficClient");
 
     m_timer.setInterval(kResyncIntervalMs);
@@ -92,15 +89,6 @@ void DigitrafficClient::setMatcher(TrackService *matcher)
     // shared MQTT path both funnel through it).
     m_model->setMatcher(matcher);
     emit matcherChanged();
-}
-
-void DigitrafficClient::setPollIntervalMs(int ms)
-{
-    ms = qMax(1000, ms);    // be a good API citizen
-    if (m_timer.interval() == ms)
-        return;
-    m_timer.setInterval(ms);
-    emit pollIntervalMsChanged();
 }
 
 void DigitrafficClient::refresh()
@@ -231,7 +219,7 @@ void DigitrafficClient::handleCategories(QNetworkReply *reply, bool full)
     recomputePunctuality();
 
     if (m_matcher) {
-        QVector<QVector<QString>> routeSequences;
+        QVector<QStringList> routeSequences;
         routeSequences.reserve(m_accRoutes.size());
         for (auto it = m_accRoutes.constBegin(); it != m_accRoutes.constEnd(); ++it)
             routeSequences.push_back(it.value().codes);
@@ -274,10 +262,19 @@ void DigitrafficClient::handleStations(QNetworkReply *reply)
         const QString code = o.value("stationShortCode").toString();
         if (code.isEmpty())
             continue;
-        const QGeoCoordinate coord(o.value("latitude").toDouble(),
-                                   o.value("longitude").toDouble());
+        // Same parse-boundary rule as the train and weather feeds: a missing or
+        // non-numeric lat/lon reads as 0.0, and QGeoCoordinate(0, 0) is *valid*,
+        // so isValid() alone would let it into the snapping table — which the
+        // next block already guards against and this insert did not (I10).
+        const QJsonValue latV = o.value("latitude");
+        const QJsonValue lonV = o.value("longitude");
+        QGeoCoordinate coord;
+        if (latV.isDouble() && lonV.isDouble()
+            && digitraffic::inFinlandBox(latV.toDouble(), lonV.toDouble()))
+            coord = QGeoCoordinate(latV.toDouble(), lonV.toDouble());
         const QString name = o.value("stationName").toString();
-        coords.insert(code, coord);
+        if (coord.isValid())
+            coords.insert(code, coord);
         m_stationNames.insert(code, name);
         // Only passenger stations get a map dot (freight/junction points would
         // just clutter the board layer, and their station board is uninteresting).
@@ -467,7 +464,8 @@ void DigitrafficClient::recomputePunctuality()
         if (!st.known || !st.running || st.cancelled)
             continue;
         const QString cat = m_accCategories.value(it.key());
-        if (cat != "Long-distance" && cat != "Commuter" && cat != "Cargo")
+        if (cat != QLatin1String("Long-distance") && cat != QLatin1String("Commuter")
+            && cat != QLatin1String("Cargo"))
             continue;
         Tally &t = byCat[cat];
         ++t.total;

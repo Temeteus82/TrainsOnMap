@@ -16,13 +16,9 @@
 #include <QUrl>
 
 #include <algorithm>
-#include <chrono>
 #include <utility>
 
 namespace {
-// Abort a stalled request rather than leaving the panel stuck on "Loading…".
-constexpr auto kRequestTimeout = std::chrono::seconds{15};
-
 QString estimate(const QJsonObject &row, const QString &scheduled)
 {
     // Best known time: actual if it happened, otherwise the live estimate.
@@ -170,7 +166,7 @@ TrainDetailsService::TrainDetailsService(QObject *parent)
     , m_model(new TimetableModel(this))
     , m_composition(new CompositionModel(this))
 {
-    m_net->setTransferTimeout(kRequestTimeout);
+    m_net->setTransferTimeout(digitraffic::kRequestTimeout);
     netdiag::logSslErrors(m_net, "TrainDetailsService");
 }
 

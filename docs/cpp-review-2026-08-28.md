@@ -47,6 +47,15 @@ Suggested fix-order: **CPP-C1, CPP-C2** first (user-visible bugs), then
 > both `show()` slots, and the MQTT topic filter; live payloads now match on
 > `departureDate` as well. Pinned by four new test slots.
 >
+> **CPP-W4, CPP-O2, CPP-I4, CPP-I8, CPP-I9, CPP-I10 fixed** (2026-08-29,
+> types-and-constants pass): one `QStringList` spelling across the routing API,
+> one shared `kRequestTimeout`, `QLatin1String` category tests, `routeKey` built
+> once per route per pass, the dead `pollIntervalMs` API deleted, and the station
+> coordinate insert guarded like its neighbour. No new test: the type change is
+> proved by the compiler accepting every call site unchanged, and the
+> `kickPrecompute` restructure is set arithmetic with the same outcome by
+> construction (argued under CPP-I8).
+>
 > **CPP-W5 + CPP-O1 fixed** (2026-08-29, shared-plumbing pass): one
 > `digitraffic::stationLabel()` replaces three drifted copies, and the new
 > `FleetMetadata` helper reads the fleet's three metadata maps through the
@@ -256,7 +265,7 @@ refresh); the reset survives only for a genuinely new selection. Pinned by
 
 ---
 
-### CPP-W4 — Conversions between two spellings of the same Qt 6 type
+### CPP-W4 — Conversions between two spellings of the same Qt 6 type — **Fixed**
 `src/RailGraph.cpp:206`, `src/TrackService.cpp:236`, `src/TrackService.cpp:329`
 
 Route station sequences are declared `QVector<QString>` in the graph/matcher API
@@ -283,6 +292,10 @@ every 60 s poll.
 the idiomatic Qt name and carries the `join()` that `routeKey` wants anyway. All
 three expressions collapse to passing the argument straight through. No call-site
 changes, since the types were already identical.
+
+**Fixed (2026-08-29)** exactly as written, and confirmed by the compiler: every
+call site built unchanged, which is the proof the two spellings were one type.
+`routeKey` is now `stationCodes.join('|')`.
 
 ---
 
@@ -610,7 +623,7 @@ metadata arrival ever shows up in a profile.
 
 ---
 
-### CPP-O2 — Transfer timeouts set three different ways
+### CPP-O2 — Transfer timeouts set three different ways — **Fixed**
 `src/StationBoardService.cpp:95`, `src/FmiWeatherClient.cpp:44`
 
 - `DigitrafficClient.cpp:45,54` and `TrainDetailsService.cpp:24,173` — named
@@ -626,6 +639,13 @@ request later added to `StationBoardService` silently gets no timeout at all. Th
 `DigitrafficFormat.h` alongside `kUserAgent` — which exists for precisely this
 "all four callers grew their own copy" problem — and set it on the manager in each
 constructor via the `std::chrono` overload.
+
+**Fixed (2026-08-29)** for the three Digitraffic clients, which now share
+`digitraffic::kRequestTimeout` set on the manager — so a request added to
+`StationBoardService` later cannot end up with no timeout. `FmiWeatherClient`
+deliberately keeps its own longer budget (a different provider, and a WFS query
+that assembles half an hour of observations) but takes the `std::chrono` spelling
+and a named constant saying why it differs.
 
 ---
 
@@ -711,7 +731,7 @@ rate unknown. Growth is bounded by fleet size — delayed trimming, not a leak.
 **Verify:** inject a `HostNotFoundError` on a cycle where `full == true` and log
 `m_accStatuses.size()` / `m_routePolys.size()` over the following ten minutes.
 
-### CPP-I4 — Category comparisons against bare `const char*` (72)
+### CPP-I4 — Category comparisons against bare `const char*` (72) — **Fixed**
 `src/DigitrafficClient.cpp:404` — `cat != "Long-distance" && ...` constructs three
 temporary `QString`s per iteration over the whole accumulated status map. Every
 other category test uses `QLatin1String` (`TrainListModel.cpp:502`,
@@ -722,6 +742,12 @@ category strings" question not chased to a recommendation.
 **Verify:** build with `-DQT_NO_CAST_FROM_ASCII` and confirm this is the only new
 failure in the file. Grep `"Long-distance"` across `src/` and `qml/` to size the
 shared-vocabulary question.
+
+**Fixed (2026-08-29)** as `QLatin1String`, matching every other category test in
+the codebase. The shared-vocabulary question is left open: the strings are
+Digitraffic's own field values and four files compare against them, but a shared
+enum would have to survive the QML boundary too — worth its own decision, not a
+drive-by.
 
 ### CPP-I5 — Row pruning happens only on the REST path (68)
 `src/TrainListModel.cpp:175` — pruning and bearing-history GC live only in
@@ -763,7 +789,7 @@ for typical single-packet frames the current code is fine.
 **Verify:** log `message.size()` and packets-decoded per `onBinaryMessage` over a
 few minutes of live traffic.
 
-### CPP-I8 — `routeKey` computed twice per route per pass (66)
+### CPP-I8 — `routeKey` computed twice per route per pass (66) — **Fixed**
 `src/TrackService.cpp:266` — `kickPrecompute()` builds each route's key once for
 the `live` eviction set (`:269`) and again inside `consider()` (`:285`) — a
 `QStringList` construction plus `'|'` join over each route's full station
@@ -776,7 +802,14 @@ a few ms is invisible.
 **Verify:** log `m_pendingRoutes.size()` and time `kickPrecompute()` at peak fleet
 size. Under a millisecond makes this a non-issue.
 
-### CPP-I9 — `pollIntervalMs` may be dead API (65)
+**Fixed (2026-08-29)** without measuring, because the fix was smaller than the
+measurement: the eviction set and the dedupe now share one pass, so each route is
+keyed once instead of twice. `live` doubles as the `seen` set — a key is inserted
+exactly once, and a repeat occurrence returns early — and eviction moved below the
+build, which is immaterial since any key found in the cache is by construction in
+`live` and so never the one erased.
+
+### CPP-I9 — `pollIntervalMs` may be dead API (65) — **Fixed**
 `src/DigitrafficClient.h:30` — the property, its setter and its signal have no
 reader or writer in `qml/`, `src/` or `tests/`. The interval is set once in the
 constructor from `kResyncIntervalMs` and never changed. The setter carries the
@@ -786,7 +819,14 @@ future tuning API, and it is documented in `src/doc/DigitrafficClient.md`.
 **Verify:** confirm whether the interval is meant to be QML-tunable; `git log` the
 property to see whether it ever had a caller.
 
-### CPP-I10 — Station coordinate insert unguarded, one line above a guarded one (65)
+**Settled (2026-08-29): deleted.** `git log -S` shows the property, setter and
+signal arriving in the initial commit and never gaining a caller in `qml/`,
+`src/` or `tests/`. This is an application, not a library, so there is no
+external consumer to break; the interval is set once from `kResyncIntervalMs`.
+Removing it also retires the `DEP-7` `qMax` hit and the two `TMO-1` hits on the
+property. Restorable from git the day someone wants tunable polling.
+
+### CPP-I10 — Station coordinate insert unguarded, one line above a guarded one (65) — **Fixed**
 `src/DigitrafficClient.cpp:265-268` — `coords.insert(code, coord)` is
 unconditional while the very next block filters `passengerStations` on
 `coord.isValid()`. A record with a missing lat/lon yields (0,0) — valid — and
@@ -797,6 +837,13 @@ apply a 250 m radius, and (0,0) is ~7000 km from any Finnish fix, so it can neve
 win the comparison. Latent, contingent on a future reader without a distance bound.
 **Verify:** decide whether `m_stationCoords` is intended as a general lookup or
 permanently a radius-gated snapping table.
+
+**Fixed (2026-08-29)** without needing that decision — the guard is cheap and the
+answer only affects how bad the bug would be. The insert now applies the same
+parse-boundary rule as the train and weather feeds: `isDouble()` on both fields
+and `inFinlandBox()`, so a missing lat/lon can no longer enter the table as
+(0, 0). Consistent with CPP-W6/W7 rather than a fourth spelling of the same
+check.
 
 ---
 

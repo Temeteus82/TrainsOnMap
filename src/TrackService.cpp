@@ -223,7 +223,7 @@ TrackMatch TrackService::matchOnRoute(const QGeoCoordinate &fix, const RouteMatc
     return match;
 }
 
-void TrackService::precomputeRoutes(const QVector<QVector<QString>> &routes)
+void TrackService::precomputeRoutes(const QVector<QStringList> &routes)
 {
     // Stash the latest requested set so kickPrecompute() can (re)drive against it
     // once the graph is ready and any in-flight precompute has finished.
@@ -233,10 +233,9 @@ void TrackService::precomputeRoutes(const QVector<QVector<QString>> &routes)
 
 void TrackService::pinRoute(const QStringList &stationCodes)
 {
-    QVector<QString> codes(stationCodes.cbegin(), stationCodes.cend());
-    if (codes == m_pinnedRoute)
+    if (stationCodes == m_pinnedRoute)
         return;
-    m_pinnedRoute = std::move(codes);
+    m_pinnedRoute = stationCodes;
     kickPrecompute();   // resolve it now if needed, and re-evaluate eviction
 }
 
@@ -252,23 +251,39 @@ void TrackService::kickPrecompute()
     // The selected train's route is pinned: kept from eviction and resolved even
     // after the train drops out of the live fleet, so its overlay and Tier-2
     // match survive while it stays selected (R7).
-    const QString pinnedKey =
-        m_pinnedRoute.size() >= 2 ? RailGraph::routeKey(m_pinnedRoute) : QString();
-
-    if (m_pendingRoutes.isEmpty() && pinnedKey.isEmpty())
+    const bool havePinned = m_pinnedRoute.size() >= 2;
+    if (m_pendingRoutes.isEmpty() && !havePinned)
         return;   // nothing to resolve, and no live set to evict against
 
-    // Evict cached routes no longer in the current set (plus the pinned one) so
-    // the cache can't grow unbounded as departureDates roll over (#7). Done below
-    // the in-flight early-return so a 60 s resync arriving while a precompute runs
-    // doesn't rescan the whole cache for nothing — the finished handler reaches
-    // this on completion anyway (R2).
+    // One pass over the routes, keying each exactly once (I8): the key feeds both
+    // the eviction set and the dedupe below. It used to be built twice per route
+    // per pass — a join over the full station sequence — across a set that
+    // handleCategories refills with the whole live fleet every 60 s.
+    //
+    // `live` drives eviction of cached routes no longer in the current set (plus
+    // the pinned one) so the cache can't grow unbounded as departureDates roll
+    // over (#7). `todo` skips routes already resolved — or already known
+    // unresolvable (a sentinel invalid polyline, #8) — so a refresh only computes
+    // genuinely new ones. The pinned route is resolved alongside them.
     QSet<QString> live;
     live.reserve(m_pendingRoutes.size() + 1);
-    for (const QVector<QString> &codes : m_pendingRoutes)
-        live.insert(RailGraph::routeKey(codes));
-    if (!pinnedKey.isEmpty())
-        live.insert(pinnedKey);
+    QVector<QStringList> todo;
+    const auto consider = [&](const QStringList &codes) {
+        const QString key = RailGraph::routeKey(codes);
+        if (live.contains(key))
+            return;   // same route twice in one pass: keyed and queued already
+        live.insert(key);
+        if (!m_routePolys.contains(key))
+            todo.append(codes);
+    };
+    for (const QStringList &codes : m_pendingRoutes)
+        consider(codes);
+    if (havePinned)
+        consider(m_pinnedRoute);
+
+    // Eviction runs after `live` is complete. Order against `todo` is immaterial:
+    // any key `consider` found in the cache is by construction in `live`, so it
+    // is never the one erased here.
     for (auto it = m_routePolys.begin(); it != m_routePolys.end();) {
         if (live.contains(it.key()))
             ++it;
@@ -276,22 +291,6 @@ void TrackService::kickPrecompute()
             it = m_routePolys.erase(it);
     }
 
-    // Dedupe by routeKey and skip routes already resolved — or already known
-    // unresolvable (a sentinel invalid polyline, #8) — so a 60 s refresh only
-    // computes genuinely new ones. The pinned route is resolved alongside them.
-    QVector<QVector<QString>> todo;
-    QSet<QString> seen;
-    const auto consider = [&](const QVector<QString> &codes) {
-        const QString key = RailGraph::routeKey(codes);
-        if (m_routePolys.contains(key) || seen.contains(key))
-            return;
-        seen.insert(key);
-        todo.append(codes);
-    };
-    for (const QVector<QString> &codes : m_pendingRoutes)
-        consider(codes);
-    if (m_pinnedRoute.size() >= 2)
-        consider(m_pinnedRoute);
     if (todo.isEmpty())
         return;
 
@@ -315,7 +314,7 @@ void TrackService::kickPrecompute()
         // that don't resolve — so unresolvable routes aren't re-Dijkstra'd on
         // every refresh (#8). routePolyline()/matchOnRoute() treat an invalid
         // entry the same as "not found".
-        for (const QVector<QString> &codes : todo)
+        for (const QStringList &codes : todo)
             out.insert(RailGraph::routeKey(codes),
                        graph->buildPolyline(graph->routePath(codes)));
         return out;
@@ -325,8 +324,7 @@ void TrackService::kickPrecompute()
 QVariantList TrackService::routePolyline(const QStringList &stationCodes) const
 {
     QVariantList out;
-    const auto it = m_routePolys.constFind(
-        RailGraph::routeKey(QVector<QString>(stationCodes.cbegin(), stationCodes.cend())));
+    const auto it = m_routePolys.constFind(RailGraph::routeKey(stationCodes));
     if (it == m_routePolys.constEnd())
         return out;
     out.reserve(it->points.size());

@@ -27,7 +27,6 @@ class DigitrafficClient : public QObject
     // Passenger stations for the map's clickable station layer (station board).
     Q_PROPERTY(StationListModel *stations READ stations CONSTANT)
     Q_PROPERTY(bool active READ isActive WRITE setActive NOTIFY activeChanged)
-    Q_PROPERTY(int pollIntervalMs READ pollIntervalMs WRITE setPollIntervalMs NOTIFY pollIntervalMsChanged)
     Q_PROPERTY(QString status READ status NOTIFY statusChanged)
     // True while a refresh() round-trip (position + category fetch) is in
     // flight, so the sidebar can show feedback instead of the Refresh button
@@ -50,8 +49,6 @@ public:
     bool isActive() const { return m_active; }
     void setActive(bool active);
 
-    int pollIntervalMs() const { return m_timer.interval(); }
-    void setPollIntervalMs(int ms);
 
     QString status() const { return m_status; }
 
@@ -93,7 +90,6 @@ public slots:
 
 signals:
     void activeChanged();
-    void pollIntervalMsChanged();
     void statusChanged();
     void loadingChanged();
     void punctualityChanged();

@@ -27,7 +27,7 @@ struct TrackMatch {
 /// Inputs for a route-constrained match: the train's scheduled path plus the
 /// continuity/platform context the matcher needs to disambiguate parallel tracks.
 struct RouteMatchRequest {
-    QVector<QString> stationCodes; ///< ordered scheduled station short codes
+    QStringList stationCodes;      ///< ordered scheduled station short codes
     double prevChainage = -1.0;    ///< last route position (m); <0 => global search
     double advanceMeters = 0.0;    ///< expected progress since the last fix (speed·Δt)
     QString platformStation;       ///< when stopped at a station, snap to its platform
@@ -83,7 +83,7 @@ public:
     /// Resolve + cache route polylines for the given station sequences off the
     /// GUI thread (routes are static per run, so this runs once per refresh and
     /// dedupes identical routes). Cheap no-op until the network has loaded.
-    void precomputeRoutes(const QVector<QVector<QString>> &routes);
+    void precomputeRoutes(const QVector<QStringList> &routes);
 
 public slots:
     /// Show only tracks intersecting the given WGS84 bounding box.
@@ -160,11 +160,11 @@ private:
     Grid m_grid;                            ///< spatial index over m_all (by id)
     std::shared_ptr<RailGraph> m_graph;     ///< Tier-2 network; null until loaded
     QHash<QString, RailGraph::RoutePolyline> m_routePolys;  ///< routeKey -> polyline
-    QVector<QString> m_pinnedRoute;         ///< selected train's route, kept from eviction (R7)
+    QStringList m_pinnedRoute;              ///< selected train's route, kept from eviction (R7)
     ///< Latest requested route set (stashed so precompute can be re-driven once
     ///< the graph is ready / a busy precompute finishes, and so departed routes
     ///< can be evicted from m_routePolys).
-    QVector<QVector<QString>> m_pendingRoutes;
+    QVector<QStringList> m_pendingRoutes;
     bool m_precomputing = false;
     bool m_loading = false;
     QString m_status;

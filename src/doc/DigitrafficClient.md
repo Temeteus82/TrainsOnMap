@@ -48,7 +48,6 @@ mapping their JSON onto the model and the matcher.
 |----------|------|------|-------|--------|-------------|
 | `model` | `TrainListModel *` | `model` | — | — (`CONSTANT`) | The live-train list model, owned by the client. Read-only. |
 | `active` | `bool` | `isActive` | `setActive` | `activeChanged` | When set true, fetches immediately and starts the resync timer; false stops polling. |
-| `pollIntervalMs` | `int` | `pollIntervalMs` | `setPollIntervalMs` | `pollIntervalMsChanged` | Resync interval in ms; clamped to a 1000 ms minimum to be a good API citizen. |
 | `status` | `QString` | `status` | — | `statusChanged` | Human-readable status (e.g. "Fetching train positions…", "123 trains • updated 14:05:09"). Read-only. |
 | `matcher` | `TrackService *` | `matcher` | `setMatcher` | `matcherChanged` | Optional rail-network matcher; when set, the model snaps and flags incoming GPS fixes against the track geometry. |
 
@@ -65,10 +64,6 @@ None public.
 #### void activeChanged()
 
 Emitted when the `active` property flips.
-
-#### void pollIntervalMsChanged()
-
-Emitted when the resync interval changes.
 
 #### void statusChanged()
 
@@ -104,10 +99,6 @@ The model getter (also the `model` property).
 
 Getter/setter for `active`. `setActive(true)` calls `refresh()` then starts the
 timer; `setActive(false)` stops it.
-
-#### int pollIntervalMs() const / void setPollIntervalMs(int ms)
-
-Getter/setter for the resync interval; the setter floors `ms` at 1000.
 
 #### QString status() const
 
