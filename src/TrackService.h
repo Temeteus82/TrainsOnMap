@@ -27,7 +27,7 @@ struct TrackMatch {
 /// Inputs for a route-constrained match: the train's scheduled path plus the
 /// continuity/platform context the matcher needs to disambiguate parallel tracks.
 struct RouteMatchRequest {
-    QVector<QString> stationCodes; ///< ordered scheduled station short codes
+    QStringList stationCodes;      ///< ordered scheduled station short codes
     double prevChainage = -1.0;    ///< last route position (m); <0 => global search
     double advanceMeters = 0.0;    ///< expected progress since the last fix (speed·Δt)
     QString platformStation;       ///< when stopped at a station, snap to its platform
@@ -83,7 +83,7 @@ public:
     /// Resolve + cache route polylines for the given station sequences off the
     /// GUI thread (routes are static per run, so this runs once per refresh and
     /// dedupes identical routes). Cheap no-op until the network has loaded.
-    void precomputeRoutes(const QVector<QVector<QString>> &routes);
+    void precomputeRoutes(const QVector<QStringList> &routes);
 
 public slots:
     /// Show only tracks intersecting the given WGS84 bounding box.
@@ -108,9 +108,11 @@ signals:
     void routesReady();
 
 private:
-    /// One render segment: a WGS84 polyline plus a lat/lon bbox for viewport cull.
+    /// One render segment: a lat/lon bbox for viewport cull plus the index of the
+    /// graph track holding the geometry. The QML-facing QVariantList is *not*
+    /// stored here — see boxedPath() for why (CPP-W14).
     struct Segment {
-        QVariantList path;
+        int trackIndex = -1;      ///< index into m_graph->tracks(); geometry lives there
         bool mainTrack = false;   ///< paaraide: running line (true) vs siding (false)
         double minLat = 0.0;
         double maxLat = 0.0;
@@ -155,16 +157,32 @@ private:
     void setLoading(bool loading);
     void setStatus(const QString &status);
 
+    /// The QML-facing boxed polyline for segment `id`, built on first request and
+    /// cached.
+    ///
+    /// loadNetwork() used to box all 211k QGeoCoordinates across the whole country
+    /// into permanently-resident QVariantLists, on top of the unboxed copy
+    /// RailGraph already keeps — and QVariant cannot hold a QGeoCoordinate inline,
+    /// so that is one heap allocation per vertex for geometry the viewport will
+    /// mostly never ask for (CPP-W14). Now nothing is boxed until a viewport
+    /// selects it.
+    ///
+    /// The cache is unbounded, but its ceiling is "segments the user actually
+    /// panned over", which is at worst the old eager cost and in practice a small
+    /// fraction of it. An LRU is the upgrade if that ever stops being true.
+    const QVariantList &boxedPath(int id) const;
+
     TrackListModel *m_model = nullptr;
     QVector<Segment> m_all;                 ///< render segments (viewport cull only)
+    mutable QHash<int, QVariantList> m_boxed;   ///< segment id -> boxed path; see boxedPath()
     Grid m_grid;                            ///< spatial index over m_all (by id)
     std::shared_ptr<RailGraph> m_graph;     ///< Tier-2 network; null until loaded
     QHash<QString, RailGraph::RoutePolyline> m_routePolys;  ///< routeKey -> polyline
-    QVector<QString> m_pinnedRoute;         ///< selected train's route, kept from eviction (R7)
+    QStringList m_pinnedRoute;              ///< selected train's route, kept from eviction (R7)
     ///< Latest requested route set (stashed so precompute can be re-driven once
     ///< the graph is ready / a busy precompute finishes, and so departed routes
     ///< can be evicted from m_routePolys).
-    QVector<QVector<QString>> m_pendingRoutes;
+    QVector<QStringList> m_pendingRoutes;
     bool m_precomputing = false;
     bool m_loading = false;
     QString m_status;

@@ -1,6 +1,6 @@
 #include "TrackListModel.h"
 
-#include <QSet>
+#include <algorithm>
 
 TrackListModel::TrackListModel(QObject *parent)
     : QAbstractListModel(parent)
@@ -43,16 +43,21 @@ void TrackListModel::setVisibleSegments(const QVector<int> &ids, const QVector<Q
     const int oldCount = m_paths.size();
 
     // Phase 1 — remove rows whose id is no longer in the new set, batching
-    // contiguous runs into a single begin/endRemoveRows.
-    const QSet<int> wanted(ids.begin(), ids.end());
+    // contiguous runs into a single begin/endRemoveRows. `ids` is ascending (the
+    // caller sorts and uniques it, and phase 2 below already relies on that), so
+    // membership is a binary search rather than a QSet rebuilt on every viewport
+    // change (I1).
+    const auto wanted = [&ids](int id) {
+        return std::binary_search(ids.cbegin(), ids.cend(), id);
+    };
     int row = 0;
     while (row < m_ids.size()) {
-        if (wanted.contains(m_ids.at(row))) {
+        if (wanted(m_ids.at(row))) {
             ++row;
             continue;
         }
         int end = row;
-        while (end < m_ids.size() && !wanted.contains(m_ids.at(end)))
+        while (end < m_ids.size() && !wanted(m_ids.at(end)))
             ++end;
         beginRemoveRows(QModelIndex(), row, end - 1);
         m_ids.remove(row, end - row);
@@ -79,10 +84,17 @@ void TrackListModel::setVisibleSegments(const QVector<int> &ids, const QVector<Q
             ++runEnd;
         const int n = runEnd - k;
         beginInsertRows(QModelIndex(), cur, cur + n - 1);
-        for (int j = runEnd - 1; j >= k; --j) {  // reverse-insert keeps ascending order
-            m_ids.insert(cur, ids.at(j));
-            m_paths.insert(cur, paths.at(j));
-            m_main.insert(cur, mains.at(j));
+        // Make room with one shift per vector, then fill. Inserting the run
+        // element-by-element memmoved the whole tail n times — O(n·m) across three
+        // vectors, on the GUI thread, when a pan into a dense region drops hundreds
+        // of new segments into a model holding thousands (I1).
+        m_ids.insert(cur, n, 0);
+        m_paths.insert(cur, n, QVariantList());
+        m_main.insert(cur, n, false);
+        for (int j = 0; j < n; ++j) {
+            m_ids[cur + j] = ids.at(k + j);
+            m_paths[cur + j] = paths.at(k + j);
+            m_main[cur + j] = mains.at(k + j);
         }
         endInsertRows();
         cur += n;

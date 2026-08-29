@@ -7,6 +7,13 @@
 CompositionModel::CompositionModel(QObject *parent)
     : QRangeModel(&m_vehicles, parent)
 {
+    // Drive `count` off the model's own structural signals rather than only off the
+    // hand-written setters below: a row change through the inherited QRangeModel
+    // write API would otherwise move rowCount() without notifying, leaving QML
+    // `count` bindings stale (review CPP-O3). Same wiring as TrainFilterModel.
+    connect(this, &QAbstractItemModel::rowsInserted, this, &CompositionModel::countChanged);
+    connect(this, &QAbstractItemModel::rowsRemoved, this, &CompositionModel::countChanged);
+    connect(this, &QAbstractItemModel::modelReset, this, &CompositionModel::countChanged);
 }
 
 void CompositionModel::setVehicles(const QVector<CompositionVehicle> &vehicles)
@@ -15,7 +22,6 @@ void CompositionModel::setVehicles(const QVector<CompositionVehicle> &vehicles)
     beginResetModel();
     m_vehicles = vehicles;
     endResetModel();
-    emit countChanged();
 }
 
 void CompositionModel::clear()
@@ -25,5 +31,4 @@ void CompositionModel::clear()
     beginResetModel();
     m_vehicles.clear();
     endResetModel();
-    emit countChanged();
 }

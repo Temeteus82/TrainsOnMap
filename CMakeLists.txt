@@ -337,6 +337,17 @@ target_include_directories(tst_compositionmodel PRIVATE src)
 target_link_libraries(tst_compositionmodel PRIVATE Qt6::Core Qt6::Qml Qt6::Test)
 add_test(NAME compositionmodel COMMAND tst_compositionmodel)
 
+# The viewport diff behind the track layer: setVisibleSegments() has to leave the
+# model holding exactly the incoming set, ascending and with its three parallel
+# vectors aligned, while announcing every structural change. QAbstractItemModelTester
+# checks the signals against the row counts; the rest checks the contents.
+qt_add_executable(tst_tracklistmodel
+    tests/tst_tracklistmodel.cpp
+    src/TrackListModel.h src/TrackListModel.cpp)
+target_include_directories(tst_tracklistmodel PRIVATE src)
+target_link_libraries(tst_tracklistmodel PRIVATE Qt6::Core Qt6::Qml Qt6::Test)
+add_test(NAME tracklistmodel COMMAND tst_tracklistmodel)
+
 # DigitrafficFormat is header-only and pure QtCore — the timestamp and delay-cause
 # formatting the station board and the train detail panel both render. Pinned
 # because these started as per-service copies that silently drifted apart.

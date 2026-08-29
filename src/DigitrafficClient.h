@@ -27,7 +27,6 @@ class DigitrafficClient : public QObject
     // Passenger stations for the map's clickable station layer (station board).
     Q_PROPERTY(StationListModel *stations READ stations CONSTANT)
     Q_PROPERTY(bool active READ isActive WRITE setActive NOTIFY activeChanged)
-    Q_PROPERTY(int pollIntervalMs READ pollIntervalMs WRITE setPollIntervalMs NOTIFY pollIntervalMsChanged)
     Q_PROPERTY(QString status READ status NOTIFY statusChanged)
     // True while a refresh() round-trip (position + category fetch) is in
     // flight, so the sidebar can show feedback instead of the Refresh button
@@ -50,8 +49,6 @@ public:
     bool isActive() const { return m_active; }
     void setActive(bool active);
 
-    int pollIntervalMs() const { return m_timer.interval(); }
-    void setPollIntervalMs(int ms);
 
     QString status() const { return m_status; }
 
@@ -93,7 +90,6 @@ public slots:
 
 signals:
     void activeChanged();
-    void pollIntervalMsChanged();
     void statusChanged();
     void loadingChanged();
     void punctualityChanged();
@@ -174,8 +170,10 @@ private:
     // Highest Train.version seen since the last full snapshot; the next delta
     // request asks for trains modified after this. Reset to 0 on a full resync.
     qint64 m_liveVersion = 0;
-    // When the last full (non-delta) /live-trains snapshot was issued; drives the
-    // periodic resync. Invalid until the first pull, so the first one is full.
+    // When the last full (non-delta) /live-trains snapshot successfully landed —
+    // consumed on success, not on issue, so a failed full pull doesn't spend the
+    // window (I3). Drives the periodic resync; invalid until the first pull lands,
+    // so the first request is full.
     QDateTime m_lastFullCategories;
     // Accumulated per-train state, kept in sync across deltas and pushed to the
     // model in full each cycle (the model setters replace wholesale). Keyed by

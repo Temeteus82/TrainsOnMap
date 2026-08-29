@@ -1,7 +1,6 @@
 #include "StationBoardService.h"
 
 #include <QJsonArray>
-#include <QJsonDocument>
 #include <QJsonObject>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
@@ -22,6 +21,7 @@ StationBoardService::StationBoardService(QObject *parent)
     , m_net(new QNetworkAccessManager(this))
     , m_board(new StationBoardModel(this))
 {
+    m_net->setTransferTimeout(digitraffic::kRequestTimeout);
     netdiag::logSslErrors(m_net, "StationBoardService");
 }
 
@@ -83,7 +83,6 @@ void StationBoardService::show(const QString &code, const QString &name)
         "?arriving_trains=8&departing_trains=8&include_nonstopping=false").arg(code);
     QNetworkRequest req{QUrl(url)};
     req.setRawHeader("Digitraffic-User", digitraffic::kUserAgent);
-    req.setTransferTimeout(15000);
     QNetworkReply *reply = m_net->get(req);
     connect(reply, &QNetworkReply::finished, this, [this, reply, code] { handleReply(reply, code); });
 }
@@ -114,14 +113,14 @@ void StationBoardService::handleReply(QNetworkReply *reply, const QString &code)
         return;
     }
 
-    const QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
-    if (!doc.isArray()) {
+    const auto parsed = digitraffic::parseArray(reply->readAll(), "live-trains/station");
+    if (!parsed) {
         setStatus(QStringLiteral("Board unavailable"));
         return;
     }
 
     QVector<StationBoardRow> rows;
-    const QJsonArray arr = doc.array();
+    const QJsonArray arr = *parsed;
     rows.reserve(arr.size());
     for (const QJsonValue &v : arr) {
         const QJsonObject o = v.toObject();
@@ -191,6 +190,14 @@ void StationBoardService::handleReply(QNetworkReply *reply, const QString &code)
     }
 
     std::sort(rows.begin(), rows.end(), [](const StationBoardRow &a, const StationBoardRow &b) {
+        // parseIso returns an invalid QDateTime for a time that doesn't parse, and
+        // comparing invalid QDateTimes is undefined in Qt 6 — which would make this
+        // a non-strict-weak ordering and std::sort itself UB, not merely a few odd
+        // rows (I6). Unparseable rows sort last, in a defined order.
+        if (a.sortTime.isValid() != b.sortTime.isValid())
+            return a.sortTime.isValid();
+        if (!a.sortTime.isValid())
+            return false;   // both unparseable: equivalent
         return a.sortTime < b.sortTime;
     });
 

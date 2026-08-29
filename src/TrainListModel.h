@@ -44,7 +44,7 @@ struct TrainPosition {
 /// station short codes (used to resolve the route polyline + nearest stop) plus
 /// the booked commercialTrack per stopping station (used for platform snapping).
 struct TrainRoute {
-    QVector<QString> codes;
+    QStringList codes;
     QHash<QString, QString> commercialTrack;
 };
 
@@ -163,6 +163,17 @@ public:
     /// repaint on change.
     void setTrainStatuses(const QHash<TrainKey, TrainStatus> &statuses);
 
+    /// Re-evaluate every row's status ring and emit for the ones that changed.
+    ///
+    /// The ring is partly a function of *wall-clock time* — a position older than
+    /// kStalePositionSecs reads as stale — but QML binds the role once and only
+    /// re-reads on a dataChanged naming it. So a train that stops reporting keeps
+    /// its old colour until something else pokes the row (review CPP-I2). The
+    /// metadata/status setters and updateTrains() call this as part of their own
+    /// pass; DigitrafficClient also calls it when a poll *fails*, which is exactly
+    /// when no other path would.
+    void refreshRingStates();
+
     /// Set the rail-network map-matcher used to snap/flag incoming GPS fixes.
     /// Optional: with none set, positions are stored raw. Not owned.
     void setMatcher(const TrackService *matcher) { m_matcher = matcher; }
@@ -204,6 +215,7 @@ private:
         QString trainType;                ///< "IC" / "S" / "HL" / ...
         QString commuterLine;             ///< commuter line letter, "" if none
         TrainStatus status;               ///< live running status
+        QString ringState;                ///< last emitted marker ring; see restampRing()
     };
 
     /// The single upsert funnel for every position update, REST or MQTT. Drops
@@ -248,4 +260,16 @@ private:
 
     /// Resolve the status-ring state for a row from its position + cached status.
     QString ringStateFor(const Row &row) const;
+
+    /// Recompute `row.ringState`; true when it changed and the row needs emitting.
+    bool restampRing(Row &row);
+
+    /// Drop rows whose last fix is older than kAbandonedSecs, at most once a
+    /// minute. Snapshot-driven pruning lives in updateTrains() and so runs only on
+    /// the REST path; if REST stays down while MQTT keeps working — independent
+    /// transports with independent failure modes — nothing ever removes a row, and
+    /// the midnight departureDate rollover mints a fresh key set daily (CPP-I5).
+    void pruneAbandonedRows();
+
+    QDateTime m_lastAbandonSweep;   ///< rate-limits pruneAbandonedRows()
 };

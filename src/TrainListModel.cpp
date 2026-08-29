@@ -15,6 +15,14 @@ constexpr qint64 kStaleGraceSecs = 120;
 
 // Status-ring thresholds.
 constexpr qint64 kStalePositionSecs = 300;   // position older than this reads as stale
+// A row with no fix for this long is not a train the user is looking at — it has
+// been greyed out for hours — so it can go even without a REST snapshot to prune
+// against (I5). Far beyond kStaleGraceSecs on purpose: this is a backstop against
+// unbounded growth, not a second opinion on when a marker is stale.
+constexpr qint64 kAbandonedSecs = 6 * 60 * 60;
+// How often the abandoned-row sweep may run. It is O(rows) and only matters
+// during a multi-hour REST outage, so once a minute is generous.
+constexpr qint64 kAbandonSweepSecs = 60;
 constexpr int kLateMinutes = 5;              // amber "late" ring at this delay or more
 constexpr int kVeryLateMinutes = 15;         // red "very late" ring at this delay or more
 constexpr double kStoppedSpeedKmh = 0.5;     // below this a train counts as stopped/waiting
@@ -83,7 +91,7 @@ QVariant TrainListModel::data(const QModelIndex &index, int role) const
     case CategoryRole:    return row.category;
     case TrainTypeRole:   return row.trainType;
     case CommuterLineRole: return row.commuterLine;
-    case RingStateRole:   return ringStateFor(row);
+    case RingStateRole:   return row.ringState;
     case DelayMinutesRole: return row.status.delayMinutes;
     case AccuracyRole:    return row.pos.accuracy;
     case TrackOffsetRole: return row.trackOffsetMeters;
@@ -205,6 +213,10 @@ void TrainListModel::updateTrains(const QVector<TrainPosition> &trains)
 
     recomputeNearestNeighbors();
 
+    // Rings age with the clock, so a snapshot is also the moment to re-check every
+    // row: applyOne only restamps the trains the snapshot actually carried (I2).
+    refreshRingStates();
+
     // Garbage-collect bearing history down to currently-live trains so it can't
     // grow unbounded over a long session.
     for (auto it = m_previous.begin(); it != m_previous.end();)
@@ -216,7 +228,50 @@ void TrainListModel::updateTrains(const QVector<TrainPosition> &trains)
 
 void TrainListModel::upsertTrain(const TrainPosition &train)
 {
+    pruneAbandonedRows();
     applyOne(train);
+}
+
+void TrainListModel::pruneAbandonedRows()
+{
+    const QDateTime now = QDateTime::currentDateTimeUtc();
+    if (m_lastAbandonSweep.isValid() && m_lastAbandonSweep.secsTo(now) < kAbandonSweepSecs)
+        return;
+    m_lastAbandonSweep = now;
+
+    bool removed = false;
+    for (int i = m_rows.size() - 1; i >= 0; --i) {
+        const QDateTime &ts = m_rows.at(i).pos.timestamp;
+        if (!ts.isValid() || ts.secsTo(now) < kAbandonedSecs)
+            continue;
+        beginRemoveRows(QModelIndex(), i, i);
+        m_rows.remove(i);
+        endRemoveRows();
+        removed = true;
+    }
+    if (!removed)
+        return;
+    reindex();
+    for (auto it = m_previous.begin(); it != m_previous.end();)
+        it = m_indexByKey.contains(it.key()) ? std::next(it) : m_previous.erase(it);
+    emit countChanged();
+}
+
+bool TrainListModel::restampRing(Row &row)
+{
+    const QString state = ringStateFor(row);
+    if (state == row.ringState)
+        return false;
+    row.ringState = state;
+    return true;
+}
+
+void TrainListModel::refreshRingStates()
+{
+    QVector<bool> changed(m_rows.size(), false);
+    for (int i = 0; i < m_rows.size(); ++i)
+        changed[i] = restampRing(m_rows[i]);
+    emitChangedRuns(changed, { RingStateRole });
 }
 
 void TrainListModel::applyOne(const TrainPosition &train)
@@ -388,6 +443,7 @@ void TrainListModel::applyOne(const TrainPosition &train)
         row.matchedTunniste = matchedTunniste;
         row.chainage = newChainage;
         row.onRoute = onRoute;
+        restampRing(row);   // the emission below already names RingStateRole
         const QModelIndex idx = index(rowIndex);
         emit dataChanged(idx, idx,
                          { CoordinateRole, SpeedRole, BearingRole, TimestampRole,
@@ -411,6 +467,7 @@ void TrainListModel::applyOne(const TrainPosition &train)
     row.trainType = m_typeByNumber.value(key);
     row.commuterLine = m_lineByNumber.value(key);
     row.status = m_statusByNumber.value(key);
+    restampRing(row);
     m_rows.push_back(row);
     m_indexByKey.insert(key, newRow);
     endInsertRows();
@@ -478,6 +535,10 @@ void TrainListModel::setTrainMetadata(const QHash<TrainKey, QString> &types,
         row.commuterLine = line;
         changed[i] = true;
     }
+    // Category gates the delay ring, so restamp after stamping the metadata.
+    for (int i = 0; i < m_rows.size(); ++i)
+        if (restampRing(m_rows[i]))
+            changed[i] = true;
     // RingStateRole too: ringStateFor() gates the delay ring on category,
     // so a category change can change the ring even if status is unchanged.
     emitChangedRuns(changed,
@@ -495,6 +556,9 @@ void TrainListModel::setTrainStatuses(const QHash<TrainKey, TrainStatus> &status
         m_rows[i].status = st;
         changed[i] = true;
     }
+    for (int i = 0; i < m_rows.size(); ++i)
+        if (restampRing(m_rows[i]))
+            changed[i] = true;
     emitChangedRuns(changed, { RingStateRole, DelayMinutesRole });
 }
 

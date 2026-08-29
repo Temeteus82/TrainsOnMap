@@ -68,7 +68,7 @@ public:
     /// Empty when fewer than two stations resolve, or when any consecutive pair
     /// is unroutable — an internal gap aborts the whole route rather than
     /// stitching a chord across it (the caller then falls back to Tier-1).
-    QVector<int> routePath(const QVector<QString> &stationCodes) const;
+    QVector<int> routePath(const QStringList &stationCodes) const;
 
     /// Build a chainage-parameterised polyline from an ordered track-index path.
     RoutePolyline buildPolyline(const QVector<int> &trackPath) const;
@@ -89,7 +89,7 @@ public:
 
     /// Stable cache key for an ordered station sequence (identical routes share
     /// one resolved polyline).
-    static QString routeKey(const QVector<QString> &stationCodes);
+    static QString routeKey(const QStringList &stationCodes);
 
     /// Canonical station-code sequence for a route: drops empty codes and
     /// collapses consecutive duplicates (timetable ARRIVAL+DEPARTURE rows repeat

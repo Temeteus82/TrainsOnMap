@@ -6,6 +6,13 @@
 WeatherStationModel::WeatherStationModel(QObject *parent)
     : QRangeModel(&m_points, parent)
 {
+    // Drive `count` off the model's own structural signals rather than only off the
+    // hand-written setters below: a row change through the inherited QRangeModel
+    // write API would otherwise move rowCount() without notifying, leaving QML
+    // `count` bindings stale (review CPP-O3). Same wiring as TrainFilterModel.
+    connect(this, &QAbstractItemModel::rowsInserted, this, &WeatherStationModel::countChanged);
+    connect(this, &QAbstractItemModel::rowsRemoved, this, &WeatherStationModel::countChanged);
+    connect(this, &QAbstractItemModel::modelReset, this, &WeatherStationModel::countChanged);
 }
 
 void WeatherStationModel::setPoints(const QVector<WeatherPoint> &points)
@@ -13,7 +20,6 @@ void WeatherStationModel::setPoints(const QVector<WeatherPoint> &points)
     beginResetModel();
     m_points = points;
     endResetModel();
-    emit countChanged();
 }
 
 void WeatherStationModel::clear()
@@ -23,5 +29,4 @@ void WeatherStationModel::clear()
     beginResetModel();
     m_points.clear();
     endResetModel();
-    emit countChanged();
 }

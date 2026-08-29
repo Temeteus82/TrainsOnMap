@@ -1,8 +1,16 @@
 #pragma once
 
 #include <QDateTime>
+#include <QDebug>
 #include <QHash>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonParseError>
 #include <QString>
+
+#include <chrono>
+#include <optional>
 
 /// Presentation helpers for Digitraffic timetable fields, shared by the two
 /// services that render the same API data in different panels
@@ -18,6 +26,14 @@ namespace digitraffic {
 ///
 /// Keep the version in step with `project(... VERSION)` in CMakeLists.txt.
 constexpr auto kUserAgent = "TrainsOnMap/0.1 (+https://github.com/Temeteus82/TrainsOnMap)";
+
+/// Abort a stalled request rather than leaving a panel stuck on "Loading…".
+/// One value for all three Digitraffic clients: it had grown into a named
+/// constexpr in two of them, a bare `15000` set per-request in the third — where
+/// any request added later would silently get no timeout at all — and the `int`
+/// overload it used is deprecated in Qt 6.7+ (review CPP-O2). Set it on the
+/// QNetworkAccessManager in the constructor, not per request.
+constexpr auto kRequestTimeout = std::chrono::seconds{15};
 
 /// Coarse Finland bounding box (lat 59–71, lon 19–32) — the same box the FMI
 /// weather query pins (`bbox=19,59,32,71`). Needed because a malformed remote
@@ -71,6 +87,54 @@ inline QString hhmm(const QString &iso)
         return {};
     const QDateTime dt = parseIso(iso);
     return dt.isValid() ? dt.toLocalTime().toString(QStringLiteral("HH:mm")) : QString();
+}
+
+/// Parse a remote JSON body whose root must be an array, naming `context` in a
+/// warning when it is not. Nothing returned means "do not proceed"; an empty
+/// array is a *successful* parse and comes back as one — the delta endpoints use
+/// that to mean "nothing changed", which is not the same as a failure.
+///
+/// Seven of the nine reply handlers called the single-argument fromJson() and
+/// discarded the reason entirely, and four of those returned with no status
+/// change and no log line at all — so a response-shape change, a truncated body
+/// or a content-encoding regression was indistinguishable from a quiet feed
+/// (review CPP-W13). Silence remains the right *user-facing* behaviour for the
+/// optional metadata endpoints; a warning costs nothing and gives a bug report
+/// something to name.
+inline std::optional<QJsonArray> parseArray(const QByteArray &body, const char *context)
+{
+    QJsonParseError err{};
+    const QJsonDocument doc = QJsonDocument::fromJson(body, &err);
+    if (err.error != QJsonParseError::NoError) {
+        qWarning("%s: JSON parse failed at offset %d: %s", context, int(err.offset),
+                 qUtf8Printable(err.errorString()));
+        return {};
+    }
+    if (!doc.isArray()) {
+        qWarning("%s: expected a JSON array root", context);
+        return {};
+    }
+    return doc.array();
+}
+
+/// As parseArray, for a body whose root is a single object. A one-element array
+/// wrapping the object is accepted too: two of the three callers already spelled
+/// that tolerance out by hand, and Digitraffic is not consistent about it.
+inline std::optional<QJsonObject> parseObject(const QByteArray &body, const char *context)
+{
+    QJsonParseError err{};
+    const QJsonDocument doc = QJsonDocument::fromJson(body, &err);
+    if (err.error != QJsonParseError::NoError) {
+        qWarning("%s: JSON parse failed at offset %d: %s", context, int(err.offset),
+                 qUtf8Printable(err.errorString()));
+        return {};
+    }
+    if (doc.isObject())
+        return doc.object();
+    if (doc.isArray() && !doc.array().isEmpty() && doc.array().first().isObject())
+        return doc.array().first().toObject();
+    qWarning("%s: expected a JSON object root", context);
+    return {};
 }
 
 /// Display name for a station short code, from the /metadata/stations map: the

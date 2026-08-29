@@ -47,6 +47,36 @@ Suggested fix-order: **CPP-C1, CPP-C2** first (user-visible bugs), then
 > both `show()` slots, and the MQTT topic filter; live payloads now match on
 > `departureDate` as well. Pinned by four new test slots.
 >
+> **CPP-O3, CPP-O4, CPP-I2, CPP-I5 settled** (2026-08-29, model-freshness pass):
+> the status ring is re-derived and re-emitted when the clock moves it — closing
+> a regression **CPP-W9 introduced** by removing the whole-model burst that had
+> been masking it — abandoned rows can no longer accumulate on an MQTT-only
+> session, `count` is driven off the models' own structural signals, and the
+> surviving lint is resolved or explicitly declined. This closes every finding in
+> this document.
+>
+> **CPP-W10, CPP-W14, CPP-I1, CPP-I7 fixed** (2026-08-29, performance pass): the
+> hot matcher queries the spatial grid that already existed, the national network
+> is no longer eagerly boxed into `QVariantList`s, the viewport diff splices runs
+> in one shift, and MQTT reassembly drains linearly. New `tst_tracklistmodel`
+> target (8 ctest targets now).
+>
+> **CPP-W12, CPP-W13, CPP-I3, CPP-I6 fixed** (2026-08-29, error-handling pass):
+> one `parseArray`/`parseObject` helper pair that reports the reason, used at all
+> nine remote-JSON sites; a partial live payload can no longer blank a loaded
+> timetable; the full-snapshot clock is consumed on success; and the board
+> comparator is a strict weak ordering regardless of what Qt does with invalid
+> `QDateTime`s. Pinned by two new test slots.
+>
+> **CPP-W4, CPP-O2, CPP-I4, CPP-I8, CPP-I9, CPP-I10 fixed** (2026-08-29,
+> types-and-constants pass): one `QStringList` spelling across the routing API,
+> one shared `kRequestTimeout`, `QLatin1String` category tests, `routeKey` built
+> once per route per pass, the dead `pollIntervalMs` API deleted, and the station
+> coordinate insert guarded like its neighbour. No new test: the type change is
+> proved by the compiler accepting every call site unchanged, and the
+> `kickPrecompute` restructure is set arithmetic with the same outcome by
+> construction (argued under CPP-I8).
+>
 > **CPP-W5 + CPP-O1 fixed** (2026-08-29, shared-plumbing pass): one
 > `digitraffic::stationLabel()` replaces three drifted copies, and the new
 > `FleetMetadata` helper reads the fleet's three metadata maps through the
@@ -256,7 +286,7 @@ refresh); the reset survives only for a genuinely new selection. Pinned by
 
 ---
 
-### CPP-W4 — Conversions between two spellings of the same Qt 6 type
+### CPP-W4 — Conversions between two spellings of the same Qt 6 type — **Fixed**
 `src/RailGraph.cpp:206`, `src/TrackService.cpp:236`, `src/TrackService.cpp:329`
 
 Route station sequences are declared `QVector<QString>` in the graph/matcher API
@@ -283,6 +313,10 @@ every 60 s poll.
 the idiomatic Qt name and carries the `join()` that `routeKey` wants anyway. All
 three expressions collapse to passing the argument straight through. No call-site
 changes, since the types were already identical.
+
+**Fixed (2026-08-29)** exactly as written, and confirmed by the compiler: every
+call site built unchanged, which is the proof the two spellings were one type.
+`routeKey` is now `stationCodes.join('|')`.
 
 ---
 
@@ -442,7 +476,7 @@ nothing at all when a delta poll changed nothing. Pinned by
 
 ---
 
-### CPP-W10 — The hot map-matching path ignores the spatial index that already exists
+### CPP-W10 — The hot map-matching path ignores the spatial index that already exists — **Fixed**
 `src/TrackService.cpp:151`
 
 `matchToNetwork()` linearly scans all 4,934 tracks on every fix, rejecting each
@@ -465,6 +499,15 @@ candidate ids, then run the existing per-vertex projection only on those.
 Correctness is unchanged because the exact bbox test still runs per hit — the same
 contract `loadForBounds()` already relies on. Keep the linear scan as the
 empty-grid fallback, exactly as `loadForBounds()` does.
+
+**Fixed (2026-08-29)** as written, with one correction to the finding: the grid
+ids are **not** index-parallel to `m_graph->tracks()` — `loadNetwork()` skips
+tracks with fewer than two points, so the two sequences diverge at the first such
+track. `Segment` now carries its `trackIndex` explicitly rather than resting on an
+invariant nobody was enforcing (the same field CPP-W14 needs). The ±600 m margin
+box spans well under one 0.1° cell, so a query touches one to four cells;
+duplicates across cells are deliberately not deduped, since re-running an
+idempotent projection is cheaper than sorting the candidates per fix.
 
 ---
 
@@ -495,7 +538,7 @@ only to stamp rows inserted after the metadata landed.
 
 ---
 
-### CPP-W12 — The live MQTT path lacks the REST path's payload guards
+### CPP-W12 — The live MQTT path lacks the REST path's payload guards — **Fixed**
 `src/TrainDetailsService.cpp:375`
 
 `handleTrain` checks `QJsonParseError`, `doc.isArray()` and non-empty before
@@ -520,9 +563,14 @@ leaving the last good REST-loaded state on screen — the behaviour
 `FmiWeatherClient.cpp:117-124` already implements deliberately for its own
 partial-response case.
 
+**Fixed (2026-08-29)** exactly as written. The parse now goes through
+`digitraffic::parseObject` (CPP-W13's helper, which reports the reason), and a
+payload carrying no `timeTableRows` is dropped before `applyTrainObject` can
+overwrite anything.
+
 ---
 
-### CPP-W13 — Parse-failure reporting is inconsistent across the four clients
+### CPP-W13 — Parse-failure reporting is inconsistent across the four clients — **Fixed**
 `src/DigitrafficClient.cpp:152`, `:250`, `:294`, `:325`;
 `src/TrainDetailsService.cpp:316`; `src/StationBoardService.cpp:126`;
 `src/DigitrafficMqttClient.cpp:244`
@@ -549,9 +597,19 @@ failure. Silence remains the right *user-facing* behaviour for the optional
 metadata endpoints, but a `qWarning` costs nothing and turns a silent feature
 outage into something a bug report can name.
 
+**Fixed (2026-08-29)** as `digitraffic::parseArray` / `parseObject`, returning
+`std::optional` so an **empty** array stays distinguishable from a failed parse —
+the delta endpoints use empty for "nothing changed", and conflating the two would
+make a full snapshot skip its own reset. All nine remote-JSON sites now go through
+one of the two, including the two that were already correct, so there is a single
+spelling. `parseObject` absorbs the "object, or one-element array wrapping it"
+tolerance that two callers had spelled out by hand. `RailGraph::loadFromJson` is
+left alone: local blob, not a remote feed. Pinned by two new slots in
+`tst_digitrafficformat`, which assert the warning text as well as the return.
+
 ---
 
-### CPP-W14 — The entire national network is eagerly boxed into `QVariantList`
+### CPP-W14 — The entire national network is eagerly boxed into `QVariantList` — **Fixed**
 `src/TrackService.cpp:88`
 
 `loadNetwork()` boxes all **211,054** `QGeoCoordinate` vertices across 4,934
@@ -569,6 +627,17 @@ does not follow that the boxed copy needs to exist for the whole country up fron
 first time `loadForBounds()` selects a segment, cached in a bounded LRU keyed by
 segment id (a viewport holds a few hundred at most). If the eager form is kept for
 startup simplicity, at least document the memory cost next to `m_all`.
+
+**Fixed (2026-08-29)** by the lazy-boxing half: `Segment` keeps the bbox, the
+main-track flag and the track index — no `QVariantList` — and `boxedPath()` builds
+one on first request from `loadForBounds()`, cached by segment id and dropped when
+the network reloads. `m_all` is now ~40 bytes a segment instead of holding 211k
+heap-allocated `QVariant`s.
+
+**Not done:** the LRU. The cache's ceiling is "segments the user actually panned
+over", which is at worst the old eager cost and in practice a small fraction of
+it, so an eviction policy would be machinery guarding a bound that is already
+better than what shipped. Noted in the code next to the cache.
 
 ---
 
@@ -610,7 +679,7 @@ metadata arrival ever shows up in a profile.
 
 ---
 
-### CPP-O2 — Transfer timeouts set three different ways
+### CPP-O2 — Transfer timeouts set three different ways — **Fixed**
 `src/StationBoardService.cpp:95`, `src/FmiWeatherClient.cpp:44`
 
 - `DigitrafficClient.cpp:45,54` and `TrainDetailsService.cpp:24,173` — named
@@ -627,9 +696,16 @@ request later added to `StationBoardService` silently gets no timeout at all. Th
 "all four callers grew their own copy" problem — and set it on the manager in each
 constructor via the `std::chrono` overload.
 
+**Fixed (2026-08-29)** for the three Digitraffic clients, which now share
+`digitraffic::kRequestTimeout` set on the manager — so a request added to
+`StationBoardService` later cannot end up with no timeout. `FmiWeatherClient`
+deliberately keeps its own longer budget (a different provider, and a WFS query
+that assembles half an hour of observations) but takes the `std::chrono` spelling
+and a named constant saying why it differs.
+
 ---
 
-### CPP-O3 — `QRangeModel` rows are reported as editable
+### CPP-O3 — `QRangeModel` rows are reported as editable — **Fixed**
 `src/TimetableModel.cpp:11`, `CompositionModel.cpp:8`, `StationBoardModel.cpp:7`,
 `StationListModel.cpp:8`, `WeatherStationModel.cpp:7`
 
@@ -657,9 +733,20 @@ cannot go stale regardless of which API changed the rows. Handing `QRangeModel` 
 const view would additionally strip `ItemIsEditable` — check it against the
 in-place assignment pattern the `set*` methods rely on before adopting it.
 
+**Fixed (2026-08-29)**, the durable half: all five constructors wire `countChanged`
+to the three structural signals, and the hand-written `emit countChanged()` calls
+are gone — every one of them sat directly after an `endResetModel()`, so the
+emissions are unchanged (the existing `tst_timetablemodel` /
+`tst_compositionmodel` count assertions still pass, which is the check).
+
+**Not done, and now ruled out:** the const view. `TimetableModel::setStops()`
+assigns its rows in place on a live refresh since **CPP-W3** — that is the whole
+point of that fix — so the container cannot be handed over const. `ItemIsEditable`
+stays; it is inert for a QML `ListView` and nothing calls the write API.
+
 ---
 
-### CPP-O4 — Surviving lint hits
+### CPP-O4 — Surviving lint hits — **Fixed**
 25 of 53, all style/hygiene:
 
 | Rule | Count | Where | Note |
@@ -669,6 +756,20 @@ in-place assignment pattern the `set*` methods rely on before adopting it.
 | `TMO-1` | 4 | `DigitrafficClient.h:30,53`, `.cpp:38,43` | Poll interval as bare `int` ms. The file already uses `std::chrono` for `kRequestTimeout`. Moot if `CPP-I9` resolves to "delete". |
 | `DEP-7` | 1 | `DigitrafficClient.cpp:94` | `qMax` → `std::max`. Also moot under `CPP-I9`. |
 
+**Settled (2026-08-29).**
+
+- `HDR-3` (8) — **already handled project-wide**, which the lint pass could not
+  see: `CMakeLists.txt:19` defines `NOMINMAX` for every Windows build precisely so
+  unparenthesised `std::min`/`std::max` are safe, and says so. No change.
+- `TMO-1` (4) — two retired with `CPP-I9`; the remaining `kResyncIntervalMs` is
+  now `constexpr auto kResyncInterval = std::chrono::seconds{60}`, matching the
+  other durations in the file.
+- `DEP-7` (1) — retired with `CPP-I9`; the `qMax` was inside the deleted setter.
+- `VAR-3` (12) — **deliberately not changed.** Direct brace init on
+  `QNetworkRequest` is a Qt-framework convention with little force in app code,
+  the rule's own note says as much, and touching twelve call sites to satisfy a
+  style preference is churn with no reader benefit.
+
 ---
 
 ## Investigation targets
@@ -676,7 +777,7 @@ in-place assignment pattern the `set*` methods rely on before adopting it.
 Not verified — each says why, and how to settle it. Capped at 10 by confidence;
 five further candidates in the 60–62 band were dropped by the cap.
 
-### CPP-I1 — `TrackListModel` inserts run elements one at a time (74)
+### CPP-I1 — `TrackListModel` inserts run elements one at a time (74) — **Fixed**
 `src/TrackListModel.cpp:82` — a run of `n` new segments into a model of `m` rows
 costs O(n·m) element moves across three parallel vectors. A pan into a dense
 region (Helsinki, Tampere) can insert hundreds into a model holding thousands, on
@@ -686,7 +787,19 @@ viewport is debounced in QML, so it may sit inside the frame budget.
 **Verify:** log `ids.size()`, `oldCount` and the insertion phase's wall time while
 panning across Helsinki at several zoom levels; batch if it exceeds ~2 ms.
 
-### CPP-I2 — `ringState` ages with wall-clock time but emits no `dataChanged` (72)
+**Fixed (2026-08-29)** without the measurement, on the same reasoning as CPP-I8:
+the fix is smaller than the rig. The run is now spliced by making room with one
+`insert(i, n, value)` per vector and filling it, instead of n element-wise inserts
+each memmoving the tail; the `QSet` rebuild is gone too, replaced by a binary
+search over the already-ascending `ids` (an ordering both phases relied on
+anyway). Note Qt 6's `QList` has **no** iterator-range insert — the declaration in
+`qlist.h` is inside `#if 0` — which is why the count-overload spelling is used.
+
+Pinned by a new `tst_tracklistmodel` target: three viewport transitions under
+`QAbstractItemModelTester`, plus the no-op and mid-run-insert cases. Confirmed
+non-vacuous by mutating the fill index and watching it fail.
+
+### CPP-I2 — `ringState` ages with wall-clock time but emits no `dataChanged` (72) — **Fixed**
 `src/TrainListModel.cpp:467`, consumed at `:86` — `ringStateFor()` compares
 against `kStalePositionSecs` (300 s) using the current time, so a row's ring state
 changes with time alone. `TrainMarker.qml:69-74` binds it once and only
@@ -700,7 +813,28 @@ transitioning to the stale presentation after 300 s. Or call
 `data(index(0), RingStateRole)` twice >300 s apart with no intervening
 `dataChanged` and compare.
 
-### CPP-I3 — The resync clock is consumed on issue, not on success (72)
+**Fixed (2026-08-29) — and it had stopped being masked.** The 60 s poll used to
+hide this because `setTrainStatuses()` emitted a whole-model `dataChanged` every
+cycle, repainting every ring whether or not anything changed. **CPP-W9 removed
+exactly that**, so by the time this was reached the ring genuinely never
+refreshed for a train that stopped reporting — a regression introduced by the
+earlier fix in this same series.
+
+The ring is now cached on the row and re-derived by `refreshRingStates()`, which
+emits only for rows whose ring actually moved. It is called from `updateTrains()`
+(the snapshot path), from both metadata/status setters, and — the case nothing
+else covers — from `DigitrafficClient::handleReply`'s **error** branch, so the
+markers stop claiming freshness during precisely the outage that made them
+stale. `data()` is a plain member read, which also finishes `CPP-W11`'s two clock
+reads per call.
+
+Pinned by `tst_trainlistmodel::ringStateFollowsTheClockNotJustTheStatus`: two rows
+with identical status and category, separated only by fix age, resolve to
+different rings, and a re-derive with nothing changed emits nothing. The clock
+crossing itself is not simulated — that would need an injectable clock — but it
+follows from those two properties plus `restampRing()` being a compare.
+
+### CPP-I3 — The resync clock is consumed on issue, not on success (72) — **Fixed**
 `src/DigitrafficClient.cpp:129` — `m_lastFullCategories = now` is assigned when
 the full snapshot is *issued*. If it fails, `handleCategories` returns at `:149`
 before the reset block at `:159-166`, so the clock is spent and the next ~5 minutes
@@ -711,7 +845,15 @@ rate unknown. Growth is bounded by fleet size — delayed trimming, not a leak.
 **Verify:** inject a `HostNotFoundError` on a cycle where `full == true` and log
 `m_accStatuses.size()` / `m_routePolys.size()` over the following ten minutes.
 
-### CPP-I4 — Category comparisons against bare `const char*` (72)
+**Fixed (2026-08-29)** without the injection rig: the clock is now stamped in
+`handleCategories` when a full snapshot actually applies, rather than in
+`refreshCategories` when one is issued. A failed full pull therefore leaves the
+window unspent and the next cycle is full again, which is the behaviour the
+header comment already implied to a reader; that comment now says "landed" and
+why. Not covered by a regression test — it needs a failing reply, which this
+suite has no harness for.
+
+### CPP-I4 — Category comparisons against bare `const char*` (72) — **Fixed**
 `src/DigitrafficClient.cpp:404` — `cat != "Long-distance" && ...` constructs three
 temporary `QString`s per iteration over the whole accumulated status map. Every
 other category test uses `QLatin1String` (`TrainListModel.cpp:502`,
@@ -723,7 +865,13 @@ category strings" question not chased to a recommendation.
 failure in the file. Grep `"Long-distance"` across `src/` and `qml/` to size the
 shared-vocabulary question.
 
-### CPP-I5 — Row pruning happens only on the REST path (68)
+**Fixed (2026-08-29)** as `QLatin1String`, matching every other category test in
+the codebase. The shared-vocabulary question is left open: the strings are
+Digitraffic's own field values and four files compare against them, but a shared
+enum would have to survive the QML boundary too — worth its own decision, not a
+drive-by.
+
+### CPP-I5 — Row pruning happens only on the REST path (68) — **Fixed**
 `src/TrainListModel.cpp:175` — pruning and bearing-history GC live only in
 `updateTrains()`, reachable only from REST success (`DigitrafficClient.cpp:369`,
 behind the error early-return at `:346`). The MQTT path (`upsertTrain` →
@@ -738,7 +886,17 @@ read-only.
 `wss://rata.digitraffic.fi` reachable, run across a date boundary and watch
 `trainClient.model.count` — it should plateau near fleet size.
 
-### CPP-I6 — Board sort key may be an invalid `QDateTime` (68)
+**Fixed (2026-08-29)** with a backstop rather than a second pruning policy.
+Snapshot-driven pruning cannot work without a snapshot, and lowering the bar to
+"no fix recently" would delete legitimately parked trains during the very outage
+this is about. Instead `pruneAbandonedRows()` drops rows with no fix for **six
+hours** — far beyond the 120 s grace, so it never competes with the REST prune —
+and runs at most once a minute from `upsertTrain()`, GC-ing `m_previous` with the
+rows. That bounds the growth this describes without changing what the map shows
+in any healthy state. Not covered by a test: it needs a six-hour-old fix and a
+REST-down/MQTT-up split.
+
+### CPP-I6 — Board sort key may be an invalid `QDateTime` (68) — **Fixed**
 `src/StationBoardService.cpp:196` — `row.sortTime = digitraffic::parseIso(...)` is
 stored with no `isValid()` check and is the sole `std::sort` key for the board
 (`:201-203`). `parseIso` returns an invalid `QDateTime` when the string does not
@@ -752,7 +910,14 @@ directions and against another invalid one; check the three results form a
 consistent strict weak ordering. Then feed `handleReply` a canned response with
 one malformed `scheduledTime`.
 
-### CPP-I7 — MQTT frame reassembly drains quadratically (68)
+**Fixed (2026-08-29)** without settling the Qt semantics question, because the
+comparator no longer asks it: valid rows sort before invalid ones, two invalid
+rows compare equivalent, and only two valid times reach `<`. That is a strict weak
+ordering by construction whatever Qt does with invalid operands, which is the
+cheaper answer than proving the current form safe. The comparator is a lambda
+inside `handleReply` and is not covered by a test.
+
+### CPP-I7 — MQTT frame reassembly drains quadratically (68) — **Fixed**
 `src/DigitrafficMqttClient.cpp:204` — `m_rxBuffer.remove(0, total)` after each
 decoded packet memmoves the whole remainder, and `mid()` at `:202` deep-copies
 each body. Draining a frame of `k` packets is O(k²) in buffer bytes plus `k`
@@ -763,7 +928,15 @@ for typical single-packet frames the current code is fine.
 **Verify:** log `message.size()` and packets-decoded per `onBinaryMessage` over a
 few minutes of live traffic.
 
-### CPP-I8 — `routeKey` computed twice per route per pass (66)
+**Fixed (2026-08-29)**, again cheaper than measuring: the drain loop walks a
+cursor and erases once at the end, so a frame of k packets costs one memmove
+rather than k. The `mid()` copy per body is left as it is — it feeds
+`dispatchPacket(const QByteArray &)`, and a view would ripple through the codec
+for a copy that is bounded by one packet. The cursor is advanced *before*
+dispatch and the final erase is clamped, because a publish can reach QML and from
+there `closeConnection()`, which clears the buffer under the loop.
+
+### CPP-I8 — `routeKey` computed twice per route per pass (66) — **Fixed**
 `src/TrackService.cpp:266` — `kickPrecompute()` builds each route's key once for
 the `live` eviction set (`:269`) and again inside `consider()` (`:285`) — a
 `QStringList` construction plus `'|'` join over each route's full station
@@ -776,7 +949,14 @@ a few ms is invisible.
 **Verify:** log `m_pendingRoutes.size()` and time `kickPrecompute()` at peak fleet
 size. Under a millisecond makes this a non-issue.
 
-### CPP-I9 — `pollIntervalMs` may be dead API (65)
+**Fixed (2026-08-29)** without measuring, because the fix was smaller than the
+measurement: the eviction set and the dedupe now share one pass, so each route is
+keyed once instead of twice. `live` doubles as the `seen` set — a key is inserted
+exactly once, and a repeat occurrence returns early — and eviction moved below the
+build, which is immaterial since any key found in the cache is by construction in
+`live` and so never the one erased.
+
+### CPP-I9 — `pollIntervalMs` may be dead API (65) — **Fixed**
 `src/DigitrafficClient.h:30` — the property, its setter and its signal have no
 reader or writer in `qml/`, `src/` or `tests/`. The interval is set once in the
 constructor from `kResyncIntervalMs` and never changed. The setter carries the
@@ -786,7 +966,14 @@ future tuning API, and it is documented in `src/doc/DigitrafficClient.md`.
 **Verify:** confirm whether the interval is meant to be QML-tunable; `git log` the
 property to see whether it ever had a caller.
 
-### CPP-I10 — Station coordinate insert unguarded, one line above a guarded one (65)
+**Settled (2026-08-29): deleted.** `git log -S` shows the property, setter and
+signal arriving in the initial commit and never gaining a caller in `qml/`,
+`src/` or `tests/`. This is an application, not a library, so there is no
+external consumer to break; the interval is set once from `kResyncIntervalMs`.
+Removing it also retires the `DEP-7` `qMax` hit and the two `TMO-1` hits on the
+property. Restorable from git the day someone wants tunable polling.
+
+### CPP-I10 — Station coordinate insert unguarded, one line above a guarded one (65) — **Fixed**
 `src/DigitrafficClient.cpp:265-268` — `coords.insert(code, coord)` is
 unconditional while the very next block filters `passengerStations` on
 `coord.isValid()`. A record with a missing lat/lon yields (0,0) — valid — and
@@ -797,6 +984,13 @@ apply a 250 m radius, and (0,0) is ~7000 km from any Finnish fix, so it can neve
 win the comparison. Latent, contingent on a future reader without a distance bound.
 **Verify:** decide whether `m_stationCoords` is intended as a general lookup or
 permanently a radius-gated snapping table.
+
+**Fixed (2026-08-29)** without needing that decision — the guard is cheap and the
+answer only affects how bad the bug would be. The insert now applies the same
+parse-boundary rule as the train and weather feeds: `isDouble()` on both fields
+and `inFinlandBox()`, so a missing lat/lon can no longer enter the table as
+(0, 0). Consistent with CPP-W6/W7 rather than a fourth spelling of the same
+check.
 
 ---
 
@@ -881,7 +1075,9 @@ Verified against the source; do not re-file these.
    remote data at the parse boundary".
 7. ~~**CPP-W3, CPP-W9, CPP-W11**~~ — **done** as one pass — all three are "stop
    invalidating the whole model when a few fields changed".
-8. The rest as convenient.
+8. ~~The rest~~ — **done.** W4, W10, W12, W13, W14, O2, O3, O4 and every
+   investigation target I1–I10 are closed above, each with what shipped and what
+   was deliberately declined.
 
 Findings below confidence 60 were suppressed entirely. No source files were
 modified by the review.
