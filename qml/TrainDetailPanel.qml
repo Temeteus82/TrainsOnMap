@@ -37,6 +37,17 @@ Rectangle {
     border.width: 1
     radius: 8
 
+    // U2-O4: a panel fading in on the right is a silent event for a screen-reader
+    // user, and Qt Quick has no live-region equivalent to announce it. Focus
+    // already enters this root when the panel opens (U2-W4), so naming the root
+    // and giving it a role turns that focus move into the announcement — the
+    // practical Qt-native form of the same thing.
+    Accessible.role: Accessible.Pane
+    Accessible.name: root.details.hasSelection
+                     ? qsTr("Timetable for %1").arg(root.details.title)
+                     : qsTr("Train details")
+    Accessible.description: qsTr("Press Escape to close.")
+
     // U2-W4: Escape closes a transient panel in every application the user has
     // ever used. Gated on hasSelection because the Loader keeps this item alive
     // (hidden) after close, so an always-on shortcut would fight its sibling.
@@ -139,7 +150,7 @@ Rectangle {
                     return ""
                 var parts = []
                 if (root.matchInfo.offset !== undefined && root.matchInfo.offset >= 0) {
-                    var where = root.matchInfo.onRoute ? qsTr("on route") : qsTr("nearest track")
+                    const where = root.matchInfo.onRoute ? qsTr("on route") : qsTr("nearest track")
                     parts.push(where + " · " + qsTr("%1 m off").arg(Math.round(root.matchInfo.offset)))
                 }
                 if (root.matchInfo.accuracy !== undefined && root.matchInfo.accuracy >= 0)

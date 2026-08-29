@@ -23,7 +23,7 @@ QString estimate(const QJsonObject &row, const QString &scheduled)
     QString iso = row.value(QStringLiteral("actualTime")).toString();
     if (iso.isEmpty())
         iso = row.value(QStringLiteral("liveEstimateTime")).toString();
-    const QString est = digitraffic::hhmm(iso);
+    const QString est = digitraffic::localTime(iso);
     return est == scheduled ? QString() : est;   // only surface when it differs
 }
 
@@ -48,7 +48,7 @@ QVector<TimetableStop> buildStops(const QJsonArray &rows)
         }
 
         TimetableStop &s = stops[current];
-        const QString sched = digitraffic::hhmm(row.value(QStringLiteral("scheduledTime")).toString());
+        const QString sched = digitraffic::localTime(row.value(QStringLiteral("scheduledTime")).toString());
         const bool isArrival = row.value(QStringLiteral("type")).toString() == QLatin1String("ARRIVAL");
 
         if (isArrival) {

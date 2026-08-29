@@ -1,12 +1,19 @@
 # UI audit — round 2 (2026-08-26)
 
-> **Status (2026-08-29):** 14 of 20 findings are fixed and marked *Fixed*
-> below — U2-W1, U2-C2, U2-C3 on 2026-08-26; U2-W5, U2-W7, U2-O3, U2-O5 and
-> then both Criticals (U2-C1 with U2-O1, and U2-C4 with U2-W8) on 2026-08-27;
-> U2-W3, U2-W4 (focus management) and U2-W2 (type scale) on 2026-08-29.
+> **Status (2026-08-29):** every finding is fixed and marked *Fixed* below —
+> U2-W1, U2-C2, U2-C3 on 2026-08-26; U2-W5, U2-W7, U2-O3, U2-O5 and then both
+> Criticals (U2-C1 with U2-O1, and U2-C4 with U2-W8) on 2026-08-27; U2-W3, U2-W4
+> (focus management) and U2-W2 (type scale) on 2026-08-29.
 >
-> **Still open:** U2-W6 (localisation), U2-W9 (first-run zoom), U2-W10 (sidebar
-> density), U2-O2 (map empty/error state), U2-O4 (panel-open announcement).
+> **All findings closed (2026-08-29).** The last five — U2-W6 (localisation),
+> U2-W9 (first-run view), U2-W10 (sidebar density), U2-O2 (map empty/error state)
+> and U2-O4 (panel-open announcement) — landed together; see each below for what
+> shipped and, for U2-W6, what was deliberately declined.
+>
+> One correction to this document came out of that pass: **U2-W9's premise was
+> wrong.** The app never opened at zoom 7, because the saved view was overwritten
+> by the map's own construction signals before the restore read it — it opened at
+> roughly zoom 11 instead, hiding the application for the opposite reason.
 
 Scope: the nine files in `qml/`, audited against WCAG 2.2 AA, the Laws of UX
 set, and the qt-ui-design checklist (typography, motion, keyboard/multi-input,
@@ -399,7 +406,7 @@ hard part and it is already done.
 **Fixed** exactly as written, at the foot of the Appearance group in
 `InfoPanel.qml`. The plumbing was indeed the hard part and was already done.
 
-### U2-W6 — Localisation is scaffolded but not wired, and will clip when it is
+### U2-W6 — Localisation is scaffolded but not wired, and will clip when it is — **Fixed**
 
 48 `qsTr()` calls across the QML; zero `.ts` files; no `qt_add_translations()`
 in `CMakeLists.txt`. Nothing is translatable today despite the markup.
@@ -422,6 +429,29 @@ Also worth a decision rather than a fix: station names and delay-cause
 categories arrive from Digitraffic in Finnish (`"Onnettomuus"`) regardless of UI
 language, so a translated build is bilingual by construction. That may be
 perfectly acceptable — it is worth saying so deliberately.
+
+**Fixed (2026-08-29), the two halves that are bugs today.**
+
+- *Times.* `hhmm()` is now `localTime()` and formats through
+  `QLocale::system()`. The status line's `"HH:mm:ss"` goes the same way and loses
+  its seconds with it — that line is rewritten once per 60 s poll, so second
+  precision was never telling anyone anything. Verified live: a Finnish desktop
+  now renders `19.49`, the separator this locale actually uses, where the
+  hardcoded format gave `19:49`.
+- *Containers.* `ToggleRow`'s label wraps and the row's height follows it, so
+  "Long-distance" under a 40 % expansion or the OS "Large text" setting gets a
+  second line instead of a clipped one; the four group headings wrap too; and the
+  station board's time column is a `minimumWidth` floor rather than a hard 50 px,
+  which a 12-hour locale's `9:12 AM` overflowed.
+
+**Not done — a decision, not a deferral.** No `.ts` files and no
+`qt_add_translations()`. Wiring those without a target language ships an empty
+translation file and a `QTranslator` that loads nothing: scaffolding, and the
+`qsTr()` markup is worth keeping regardless as correct practice. The bilingual
+question this finding raises is the reason — Digitraffic's station names and
+cause categories arrive in Finnish whatever the UI language, so "translate the
+UI" is a product decision about a half-translated result, not a build-system
+task. It becomes a five-line change the day a language is chosen.
 
 ### U2-W7 — Station-dot hit target is 22×22 — **Fixed**
 
@@ -462,7 +492,7 @@ U2-C4's dark-mode lift then has somewhere to live.
 outside `Theme.qml` now returns nothing, so a future theme pass really is a
 one-file edit.
 
-### U2-W9 — The first-run view hides most of the application
+### U2-W9 — The first-run view hides most of the application — **Fixed**
 
 The app opens at zoom 7 (`Main.qml`, `savedZoom: 7.0`). At that zoom:
 
@@ -480,7 +510,26 @@ know what is available and where.
 ("Zoom in for train labels and stations") that disappears past the threshold —
 the sidebar already has the plumbing for conditional text.
 
-### U2-W10 — The sidebar carries seven groups permanently
+**Fixed (2026-08-29) — and the finding's premise was wrong in an interesting
+way.** The app did not open at zoom 7. `savedZoom: 7.0` was never reaching the
+map: `Map` emits `zoomLevelChanged`/`centerChanged` during its own construction,
+which runs *before* the `Component.onCompleted` that reads those properties back,
+so the loader's saved values were overwritten with the map's defaults and the
+restore was a no-op. Two fresh launches, screenshotted, opened at roughly zoom 11
+on an arbitrary suburb — one showed a single train.
+
+So the opening view hid most of the application for the opposite reason: too far
+in, not too far out. The initial view is now separate `readonly` properties from
+the live saved ones, with an `everBuilt` flag telling a cold start from the
+theme-driven rebuild the saved values exist for. First run now opens on southern
+Finland with the whole network and labelled trains — verified by screenshot,
+3,054 track segments against the ~200 the old opening view loaded.
+
+The hint line is in as well, since it answers the general case the zoom value
+cannot: it appears whenever the map is below the label/chip threshold, wherever
+the user has zoomed to, and removes itself above it.
+
+### U2-W10 — The sidebar carries seven groups permanently — **Fixed**
 
 `InfoPanel` stacks: identity header, live status, two counts, punctuality, status
 text, Refresh, three train-type filters, track legend, siding toggle, weather
@@ -506,6 +555,14 @@ parts worth watching. The within-card disclosure above is still the fix; the
 collapse gives it a proven mechanism (header outside the Flickable, content
 `visible: false` so it leaves the tab chain) to reuse per group.
 
+**Closed (2026-08-29)** with the within-card disclosure, reusing exactly that
+mechanism. The four set-once groups — legend, overlays, appearance, attribution —
+happen to be contiguous and run to the end of the column, so they fold behind one
+"Legend & settings" row, closed by default; header, live status and the three
+train filters stay open, which is the split this finding asked for. The group is
+`visible: false` when closed, so it leaves the tab chain as well as the view, and
+the layout skips it so the card shrinks to fit.
+
 ---
 
 ## Opportunities
@@ -522,12 +579,21 @@ audit.
 
 **Fixed** — built as part of U2-C1 above; see there for what shipped.
 
-### U2-O2 — No empty or error state for the map
+### U2-O2 — No empty or error state for the map — **Fixed**
 
 If the fleet is empty, the network is down, or MQTT never connects, the map is
 blank tiles and the only signal is a muted status line inside the sidebar card.
 An overlay on the map itself — where the user is looking — would do better, and
 "Graceful Failure" wants a stated fallback, not silence.
+
+**Fixed (2026-08-29)** as a centred card on the map, shown once a fetch has
+settled (`loading` covers the first poll, so it never flashes over a map that is
+simply still filling). The body reuses the client's own status string rather than
+inventing a second error vocabulary that could disagree with the sidebar, and the
+card carries `Accessible.AlertMessage` so it is not a purely visual signal.
+
+No retry button on it: Refresh is a few centimetres away in the sidebar, and the
+overlay's job is to say what happened.
 
 ### U2-O3 — The arrow animations exceed the motion budget — **Fixed**
 
@@ -543,11 +609,18 @@ represents real-world motion paced to the data cadence, not a UI transition.
 `CoordinateAnimation` was left at 1000 ms for the stated reason, with a comment
 so it isn't "tidied" to match.
 
-### U2-O4 — Panel opening is not announced
+### U2-O4 — Panel opening is not announced — **Fixed**
 
 A panel fading in on the right is a silent event for a screen-reader user, and
 there is no `Accessible` live-region equivalent. Pairs naturally with the
 focus-management fix in U2-W4.
+
+**Fixed (2026-08-29)** by using the focus move U2-W4 already added, rather than
+reaching for a live region Qt Quick does not have: both panel roots now carry an
+`Accessible.role` and a name that says which panel and which subject
+("Departure board for Tampere"), plus a description naming the Escape key. Focus
+enters that root when the panel opens, so the announcement is the focus change —
+the practical Qt-native form of the same thing.
 
 ### U2-O5 — ScrollBar fade Behaviors are not gated on reduced motion — **Fixed**
 

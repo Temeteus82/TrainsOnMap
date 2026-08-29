@@ -167,8 +167,8 @@ void StationBoardService::handleReply(QNetworkReply *reply, const QString &code)
         const QString live = r.value("liveEstimateTime").toString().isEmpty()
                                  ? r.value("actualTime").toString()
                                  : r.value("liveEstimateTime").toString();
-        row.timeText = digitraffic::hhmm(sched);
-        const QString est = digitraffic::hhmm(live);
+        row.timeText = digitraffic::localTime(sched);
+        const QString est = digitraffic::localTime(live);
         if (!est.isEmpty() && est != row.timeText)
             row.estimateText = est;
         row.track = r.value("commercialTrack").toString();

@@ -16,6 +16,15 @@ Rectangle {
     property string streamStatus: ""
     property string punctuality: ""
 
+    /// Current map zoom, so the card can say what is being withheld at this scale
+    /// (U2-W9). 0 while the map is still loading, which reads as "not zoomed in"
+    /// — the hint is then correct anyway.
+    property real mapZoom: 0
+    /// The zoom at which train labels and weather chips appear; station dots come
+    /// one level later. Kept here next to the hint that names them, and asserted
+    /// against Main.qml's thresholds by the hint text itself.
+    readonly property real detailZoom: 8.0
+
     // Train-category filter (marker visibility); an unrecognised/empty category
     // (metadata not loaded yet) is always shown, so trains never vanish at startup.
     property bool showCommuter: true
@@ -41,6 +50,14 @@ Rectangle {
     /// the train list, and this one is seven groups tall (U2-W10) — on a short
     /// window that is most of the screen spent on controls you set once.
     property bool collapsed: false
+
+    /// U2-W10, the within-card half: live status and the train filters change or
+    /// get used constantly, while the legend, overlays, appearance and attribution
+    /// are read once and then compete for the same permanent space. Those four are
+    /// folded behind one disclosure row, closed by default — the card-level
+    /// collapse above is all-or-nothing and takes the live status with it, which is
+    /// the part worth watching.
+    property bool settingsCollapsed: true
 
     radius: 12
     color: Theme.cardBg
@@ -273,11 +290,25 @@ Rectangle {
             }
         }
 
+        // U2-W9: at the opening zoom the map is a scatter of anonymous dots —
+        // labels, station dots and weather chips are all above the threshold — with
+        // nothing saying so. One line that removes itself once it stops being true.
+        Label {
+            Layout.fillWidth: true
+            visible: root.mapZoom > 0 && root.mapZoom < root.detailZoom
+            text: qsTr("Zoom in for train labels, stations and weather.")
+            font.pointSize: TypeScale.caption
+            color: Theme.textMuted
+            wrapMode: Text.WordWrap
+        }
+
         Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.hairline }
 
         // ---- Train-type filter ---------------------------------------------
         Label {
+            Layout.fillWidth: true
             text: qsTr("Show trains")
+            wrapMode: Text.Wrap   // U2-W6: expand, don't clip
             font.pointSize: TypeScale.caption
             font.bold: true
             color: Theme.textMuted
@@ -301,156 +332,193 @@ Rectangle {
 
         Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.hairline }
 
-        // ---- Track legend + siding toggle -----------------------------------
-        Label {
-            text: qsTr("Track legend")
-            font.pointSize: TypeScale.caption
-            font.bold: true
-            color: Theme.textMuted
-        }
-
+        // ---- Legend & settings (set-once; folded behind one row, U2-W10) ----
         RowLayout {
             Layout.fillWidth: true
-            spacing: 16
+            spacing: 6
+
+            Label {
+                Layout.fillWidth: true
+                text: qsTr("Legend & settings")
+                font.pointSize: TypeScale.caption
+                font.bold: true
+                color: Theme.textMuted
+            }
+            CollapseButton {
+                collapsed: root.settingsCollapsed
+                label: qsTr("legend and settings")
+                onToggled: root.settingsCollapsed = !root.settingsCollapsed
+            }
+        }
+
+        // `visible: false` (not clipping) so the whole group leaves the tab chain
+        // as well as the view — the mechanism the card-level collapse already
+        // proved, reused per group. A layout skips invisible items, so the card
+        // shrinks to fit.
+        ColumnLayout {
+            Layout.fillWidth: true
+            spacing: 12
+            visible: !root.settingsCollapsed
+
+            // ---- Track legend + siding toggle -----------------------------------
+            Label {
+                Layout.fillWidth: true
+                text: qsTr("Track legend")
+                wrapMode: Text.Wrap   // U2-W6: expand, don't clip
+                font.pointSize: TypeScale.caption
+                font.bold: true
+                color: Theme.textMuted
+            }
 
             RowLayout {
-                spacing: 6
-                Rectangle { width: 16; height: 3; radius: 1.5; color: Theme.railColor }
-                Label { text: qsTr("Running line"); font.pointSize: TypeScale.caption; color: Theme.textMuted }
+                Layout.fillWidth: true
+                spacing: 16
+
+                RowLayout {
+                    spacing: 6
+                    Rectangle { Layout.preferredWidth: 16; Layout.preferredHeight: 3;
+                                radius: 1.5; color: Theme.railColor }
+                    Label { text: qsTr("Running line"); font.pointSize: TypeScale.caption; color: Theme.textMuted }
+                }
+                RowLayout {
+                    spacing: 6
+                    Rectangle { Layout.preferredWidth: 16; Layout.preferredHeight: 3;
+                                radius: 1.5; color: Theme.railSidingColor }
+                    Label { text: qsTr("Siding"); font.pointSize: TypeScale.caption; color: Theme.textMuted }
+                }
             }
-            RowLayout {
-                spacing: 6
-                Rectangle { width: 16; height: 3; radius: 1.5; color: Theme.railSidingColor }
-                Label { text: qsTr("Siding"); font.pointSize: TypeScale.caption; color: Theme.textMuted }
+
+            ToggleRow {
+                label: qsTr("Show sidings")
+                checked: root.showSidings
+                onToggled: root.showSidings = !root.showSidings
             }
-        }
 
-        ToggleRow {
-            label: qsTr("Show sidings")
-            checked: root.showSidings
-            onToggled: root.showSidings = !root.showSidings
-        }
+            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.hairline }
 
-        Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.hairline }
+            // ---- Overlays -------------------------------------------------------
+            Label {
+                Layout.fillWidth: true
+                text: qsTr("Overlays")
+                wrapMode: Text.Wrap   // U2-W6: expand, don't clip
+                font.pointSize: TypeScale.caption
+                font.bold: true
+                color: Theme.textMuted
+            }
 
-        // ---- Overlays -------------------------------------------------------
-        Label {
-            text: qsTr("Overlays")
-            font.pointSize: TypeScale.caption
-            font.bold: true
-            color: Theme.textMuted
-        }
+            ToggleRow {
+                label: qsTr("Weather")
+                checked: root.showWeather
+                onToggled: root.showWeather = !root.showWeather
+            }
+            Label {
+                Layout.fillWidth: true
+                text: qsTr("FMI weather stations (air °C).")
+                font.pointSize: TypeScale.caption
+                color: Theme.textMuted
+                wrapMode: Text.WordWrap
+                visible: root.showWeather
+            }
 
-        ToggleRow {
-            label: qsTr("Weather")
-            checked: root.showWeather
-            onToggled: root.showWeather = !root.showWeather
-        }
-        Label {
-            Layout.fillWidth: true
-            text: qsTr("FMI weather stations (air °C).")
-            font.pointSize: TypeScale.caption
-            color: Theme.textMuted
-            wrapMode: Text.WordWrap
-            visible: root.showWeather
-        }
+            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.hairline }
 
-        Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.hairline }
+            // ---- Theme toggle (Auto follows the desktop colour scheme) ---------
+            Label {
+                Layout.fillWidth: true
+                text: qsTr("Appearance")
+                wrapMode: Text.Wrap   // U2-W6: expand, don't clip
+                font.pointSize: TypeScale.caption
+                font.bold: true
+                color: Theme.textMuted
+            }
 
-        // ---- Theme toggle (Auto follows the desktop colour scheme) ---------
-        Label {
-            text: qsTr("Appearance")
-            font.pointSize: TypeScale.caption
-            font.bold: true
-            color: Theme.textMuted
-        }
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 32   // toward the 44 px desktop hit-target guideline
+                radius: 8
+                color: Theme.subtleHover
+                border.color: Theme.controlOutline
+                border.width: 1
 
-        Rectangle {
-            Layout.fillWidth: true
-            Layout.preferredHeight: 32   // toward the 44 px desktop hit-target guideline
-            radius: 8
-            color: Theme.subtleHover
-            border.color: Theme.controlOutline
-            border.width: 1
+                Row {
+                    anchors.fill: parent
+                    anchors.margins: 3
 
-            Row {
-                anchors.fill: parent
-                anchors.margins: 3
+                    Repeater {
+                        model: 3
 
-                Repeater {
-                    model: 3
+                        // W4: each segment is keyboard-focusable and operable (Tab to
+                        // reach, Space/Enter to select) with a visible focus ring, and
+                        // exposes itself to assistive tech as a radio button.
+                        delegate: Item {
+                            id: seg
+                            required property int index
+                            readonly property string mode: ["auto", "light", "dark"][index]
+                            readonly property string label: [qsTr("Auto"), qsTr("Light"), qsTr("Dark")][index]
+                            readonly property bool active: Theme.mode === mode
+                            width: parent.width / 3
+                            height: parent.height
 
-                    // W4: each segment is keyboard-focusable and operable (Tab to
-                    // reach, Space/Enter to select) with a visible focus ring, and
-                    // exposes itself to assistive tech as a radio button.
-                    delegate: Item {
-                        id: seg
-                        required property int index
-                        readonly property string mode: ["auto", "light", "dark"][index]
-                        readonly property string label: [qsTr("Auto"), qsTr("Light"), qsTr("Dark")][index]
-                        readonly property bool active: Theme.mode === mode
-                        width: parent.width / 3
-                        height: parent.height
-
-                        activeFocusOnTab: true
-                        Accessible.role: Accessible.RadioButton
-                        Accessible.name: label
-                        Accessible.checkable: true
-                        Accessible.checked: active
-                        Keys.onPressed: (event) => {
-                            if (event.key === Qt.Key_Space || event.key === Qt.Key_Return
-                                    || event.key === Qt.Key_Enter) {
-                                Theme.mode = seg.mode
-                                event.accepted = true
+                            activeFocusOnTab: true
+                            Accessible.role: Accessible.RadioButton
+                            Accessible.name: label
+                            Accessible.checkable: true
+                            Accessible.checked: active
+                            Keys.onPressed: (event) => {
+                                if (event.key === Qt.Key_Space || event.key === Qt.Key_Return
+                                        || event.key === Qt.Key_Enter) {
+                                    Theme.mode = seg.mode
+                                    event.accepted = true
+                                }
                             }
-                        }
 
-                        Rectangle {
-                            anchors.fill: parent
-                            anchors.margins: 1
-                            radius: 6
-                            color: seg.active ? Theme.accent : "transparent"
+                            Rectangle {
+                                anchors.fill: parent
+                                anchors.margins: 1
+                                radius: 6
+                                color: seg.active ? Theme.accent : "transparent"
+                            }
+                            // Keyboard focus ring.
+                            Rectangle {
+                                anchors.fill: parent
+                                radius: 6
+                                color: "transparent"
+                                border.color: Theme.focusRing
+                                border.width: 2
+                                visible: seg.activeFocus
+                            }
+                            Label {
+                                anchors.centerIn: parent
+                                text: seg.label
+                                font.pointSize: TypeScale.caption
+                                font.bold: seg.active
+                                color: seg.active ? Theme.accentText : Theme.textMuted
+                            }
+                            TapHandler { onTapped: Theme.mode = seg.mode }
                         }
-                        // Keyboard focus ring.
-                        Rectangle {
-                            anchors.fill: parent
-                            radius: 6
-                            color: "transparent"
-                            border.color: Theme.focusRing
-                            border.width: 2
-                            visible: seg.activeFocus
-                        }
-                        Label {
-                            anchors.centerIn: parent
-                            text: seg.label
-                            font.pointSize: TypeScale.caption
-                            font.bold: seg.active
-                            color: seg.active ? Theme.accentText : Theme.textMuted
-                        }
-                        TapHandler { onTapped: Theme.mode = seg.mode }
                     }
                 }
             }
-        }
 
-        // U2-W5: the reduced-motion flag gates six animations and persists via
-        // QSettings, but had no control — turning it on meant editing the
-        // registry by hand. Qt has no prefers-reduced-motion to inherit, so the
-        // project-level setting has to be exposed here.
-        ToggleRow {
-            label: qsTr("Reduce motion")
-            checked: Theme.reducedMotion
-            onToggled: Theme.reducedMotion = !Theme.reducedMotion
-        }
+            // U2-W5: the reduced-motion flag gates six animations and persists via
+            // QSettings, but had no control — turning it on meant editing the
+            // registry by hand. Qt has no prefers-reduced-motion to inherit, so the
+            // project-level setting has to be exposed here.
+            ToggleRow {
+                label: qsTr("Reduce motion")
+                checked: Theme.reducedMotion
+                onToggled: Theme.reducedMotion = !Theme.reducedMotion
+            }
 
-        Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.hairline }
+            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.hairline }
 
-        Label {
-            Layout.fillWidth: true
-            text: qsTr("Data © Fintraffic / Digitraffic (CC BY 4.0)\nMap © Esri, HERE, Garmin, © OpenStreetMap contributors")
-            color: Theme.textMuted   // ≥ 4.5:1 on the card
-            font.pointSize: TypeScale.caption
-            wrapMode: Text.WordWrap
+            Label {
+                Layout.fillWidth: true
+                text: qsTr("Data © Fintraffic / Digitraffic (CC BY 4.0)\nMap © Esri, HERE, Garmin, © OpenStreetMap contributors")
+                color: Theme.textMuted   // ≥ 4.5:1 on the card
+                font.pointSize: TypeScale.caption
+                wrapMode: Text.WordWrap
+            }
         }
     }
     }

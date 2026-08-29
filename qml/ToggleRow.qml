@@ -17,8 +17,10 @@ Item {
 
     Layout.fillWidth: true
     // 32 px: a step toward the 44 px desktop hit-target guideline without
-    // ballooning the sidebar (5 of these stack per screen).
-    implicitHeight: 32
+    // ballooning the sidebar (5 of these stack per screen). The row grows past it
+    // when the label wraps — a translated "Long-distance" or the OS "Large text"
+    // setting used to clip against a fixed height (U2-W6).
+    implicitHeight: Math.max(32, labelText.implicitHeight + 10)
 
     activeFocusOnTab: true
     Accessible.role: Accessible.CheckBox
@@ -55,10 +57,14 @@ Item {
         }
 
         Label {
+            id: labelText
             Layout.fillWidth: true
             text: root.label
             font.pointSize: TypeScale.body
             color: Theme.textStrong
+            // Wrap rather than elide: these name what the checkbox does, and half
+            // a label with an ellipsis is worse than two lines.
+            wrapMode: Text.Wrap
         }
     }
 

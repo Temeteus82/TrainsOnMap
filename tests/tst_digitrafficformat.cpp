@@ -10,6 +10,7 @@
 #include <QDate>
 #include <QDateTime>
 #include <QHash>
+#include <QLocale>
 #include <QRegularExpression>
 #include <QTest>
 #include <QTime>
@@ -21,32 +22,35 @@ class tst_DigitrafficFormat : public QObject
 
 private slots:
 
-    void hhmmAcceptsBothIsoForms()
+    void localTimeAcceptsBothIsoForms()
     {
         // Same instant, with and without fractional seconds — Digitraffic emits
         // both shapes and the panels must render them identically. See the file
         // comment: this is the assumption parseIso()'s single call rests on.
-        const QString withMs = digitraffic::hhmm(QStringLiteral("2026-07-26T09:12:00.000Z"));
-        const QString plain = digitraffic::hhmm(QStringLiteral("2026-07-26T09:12:00Z"));
+        const QString withMs = digitraffic::localTime(QStringLiteral("2026-07-26T09:12:00.000Z"));
+        const QString plain = digitraffic::localTime(QStringLiteral("2026-07-26T09:12:00Z"));
         QVERIFY(!withMs.isEmpty());
         QCOMPARE(plain, withMs);
     }
 
-    void hhmmRendersLocalTime()
+    void localTimeUsesTheSystemLocale()
     {
         // Build the instant directly rather than through the helper's own
         // parsing, so the expectation is independent of the code under test
-        // (and of the machine's time zone).
+        // (and of the machine's time zone). The format is the system locale's
+        // own short time — hardcoding "HH:mm" here would re-assert exactly the
+        // bug U2-W6 removed, and would fail on a 12-hour machine.
         const QDateTime utc{QDate(2026, 7, 26), QTime(9, 12), QTimeZone::UTC};
-        const QString expected = utc.toLocalTime().toString(QStringLiteral("HH:mm"));
-        QCOMPARE(digitraffic::hhmm(QStringLiteral("2026-07-26T09:12:00.000Z")), expected);
+        const QString expected =
+            QLocale::system().toString(utc.toLocalTime().time(), QLocale::ShortFormat);
+        QCOMPARE(digitraffic::localTime(QStringLiteral("2026-07-26T09:12:00.000Z")), expected);
     }
 
-    void hhmmIsEmptyForMissingOrJunk()
+    void localTimeIsEmptyForMissingOrJunk()
     {
         // A missing time is normal (no estimate yet), not an error.
-        QVERIFY(digitraffic::hhmm(QString()).isEmpty());
-        QVERIFY(digitraffic::hhmm(QStringLiteral("not a timestamp")).isEmpty());
+        QVERIFY(digitraffic::localTime(QString()).isEmpty());
+        QVERIFY(digitraffic::localTime(QStringLiteral("not a timestamp")).isEmpty());
     }
 
     void parseIsoReportsInvalidInput()

@@ -7,7 +7,8 @@ the UI as strings. Two services render the same API data in different panels —
 `StationBoardService` (the station departure board) and `TrainDetailsService`
 (the per-train timetable) — and both need the same two conversions:
 
-- an ISO8601 timestamp → the local `"HH:mm"` a row displays;
+- an ISO8601 timestamp → the local clock time a row displays, in the system
+  locale's own short form;
 - a pair of delay-cause codes + the `/metadata/cause-category-codes` maps → the
   human-readable reason line.
 
@@ -36,13 +37,15 @@ Digitraffic emits fractional seconds on most timestamp fields
 `Qt::ISODateWithMs` parse covers both shapes: when *parsing*, Qt treats the
 fractional part as optional, so `Qt::ISODateWithMs` and `Qt::ISODate` accept
 exactly the same set of strings — the two only differ in `toString()`.
-`tst_digitrafficformat`'s `hhmmAcceptsBothIsoForms()` pins that assumption, so a
+`tst_digitrafficformat`'s `localTimeAcceptsBothIsoForms()` pins that assumption, so a
 future change in Qt's parser surfaces as a test failure rather than as silently
 blank times in the panels.
 
-#### QString hhmm(const QString &iso)
+#### QString localTime(const QString &iso)
 
-The timestamp as local-time `"HH:mm"`. Empty in → empty out: a missing time is
+The timestamp as a local clock time, formatted by `QLocale::system()` rather than
+by a hardcoded `"HH:mm"` — which was invisible in 24-hour Finland and wrong
+everywhere else (UI audit U2-W6). Empty in → empty out: a missing time is
 the normal case for a field the API has no value for yet (e.g. no live estimate),
 not an error, and the panels render the gap as blank. An unparseable string also
 yields an empty string.
@@ -71,7 +74,7 @@ text fills in on the next pass.
 ## D. Rationale — why this is shared
 
 The two copies this header replaced were behaviourally equivalent but written
-differently, and the difference read as a bug: `StationBoardService::hhmm()` had
+differently, and the difference read as a bug: `StationBoardService`'s copy had
 a second `fromString(iso, Qt::ISODate)` fallback that `TrainDetailsService`'s
 copy lacked. A `qt-cpp-review` audit flagged that as a live defect — timestamps
 without fractional seconds blanking in the detail panel but not on the board.
@@ -95,7 +98,7 @@ project trees.
 #include "DigitrafficFormat.h"
 
 // A board/timetable row, straight off the API JSON.
-row.timeText = digitraffic::hhmm(r.value("scheduledTime").toString());
+row.timeText = digitraffic::localTime(r.value("scheduledTime").toString());
 row.sortTime = digitraffic::parseIso(r.value("liveEstimateTime").toString());
 
 // Resolved against DigitrafficClient's metadata maps. Both services reach

@@ -441,7 +441,11 @@ void DigitrafficClient::handleReply(QNetworkReply *reply)
     // bug — say so rather than leaving the user with bare codes and no clue.
     setStatus(QStringLiteral("%1 trains • updated %2%3")
                   .arg(trains.size())
-                  .arg(QDateTime::currentDateTime().toString(QStringLiteral("HH:mm:ss")),
+                  // Locale's own short time, not a hardcoded "HH:mm:ss" (U2-W6).
+                  // Seconds go with it: this line is rewritten once per 60 s poll,
+                  // so second-precision was never telling the user anything.
+                  .arg(QLocale::system().toString(QDateTime::currentDateTime().time(),
+                                                  QLocale::ShortFormat),
                        metadataIncomplete()
                            ? QStringLiteral(" • station names unavailable, retrying")
                            : QString()));

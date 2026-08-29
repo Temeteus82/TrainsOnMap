@@ -7,6 +7,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonParseError>
+#include <QLocale>
 #include <QString>
 
 #include <chrono>
@@ -79,14 +80,22 @@ inline QDateTime parseIso(const QString &iso)
     return QDateTime::fromString(iso, Qt::ISODateWithMs);
 }
 
-/// A Digitraffic timestamp as local "HH:mm". Empty in, empty out — a missing
-/// time is normal (e.g. no estimate yet), not an error.
-inline QString hhmm(const QString &iso)
+/// A Digitraffic timestamp as a local clock time, in the system locale's own
+/// short form. Empty in, empty out — a missing time is normal (e.g. no estimate
+/// yet), not an error.
+///
+/// This used to hardcode "HH:mm", which is invisible in Finland (24-hour) and
+/// simply wrong anywhere that reads 9:12 AM (UI audit U2-W6). The columns that
+/// render the result size to their content rather than to five characters, since
+/// a 12-hour locale needs more of them.
+inline QString localTime(const QString &iso)
 {
     if (iso.isEmpty())
         return {};
     const QDateTime dt = parseIso(iso);
-    return dt.isValid() ? dt.toLocalTime().toString(QStringLiteral("HH:mm")) : QString();
+    if (!dt.isValid())
+        return {};
+    return QLocale::system().toString(dt.toLocalTime().time(), QLocale::ShortFormat);
 }
 
 /// Parse a remote JSON body whose root must be an array, naming `context` in a

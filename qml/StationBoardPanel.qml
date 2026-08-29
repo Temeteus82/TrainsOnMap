@@ -17,6 +17,17 @@ Rectangle {
     border.width: 1
     radius: 8
 
+    // U2-O4: a panel fading in on the right is a silent event for a screen-reader
+    // user, and Qt Quick has no live-region equivalent to announce it. Focus
+    // already enters this root when the panel opens (U2-W4), so naming the root
+    // and giving it a role turns that focus move into the announcement — the
+    // practical Qt-native form of the same thing.
+    Accessible.role: Accessible.Pane
+    Accessible.name: root.service.hasSelection
+                     ? qsTr("Departure board for %1").arg(root.service.stationName)
+                     : qsTr("Station board")
+    Accessible.description: qsTr("Press Escape to close.")
+
     // U2-W4: Escape closes the board, same as the detail panel.
     Shortcut {
         sequence: StandardKey.Cancel
@@ -146,7 +157,9 @@ Rectangle {
                     // Time (scheduled + live estimate)
                     ColumnLayout {
                         spacing: 0
-                        Layout.preferredWidth: 50
+                        // Floor, not a fixed width: a 12-hour locale renders
+                        // "9:12 AM", which a hard 50 px clipped (U2-W6).
+                        Layout.minimumWidth: 50
                         Label {
                             text: boardRow.timeText
                             font.pointSize: TypeScale.body
