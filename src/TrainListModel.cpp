@@ -80,11 +80,11 @@ QVariant TrainListModel::data(const QModelIndex &index, int role) const
     case SpeedRole:       return row.pos.speed;
     case BearingRole:     return row.bearing;
     case TimestampRole:   return row.pos.timestamp;
-    case CategoryRole:    return m_categoryByNumber.value(keyOf(row.pos));
-    case TrainTypeRole:   return m_typeByNumber.value(keyOf(row.pos));
-    case CommuterLineRole: return m_lineByNumber.value(keyOf(row.pos));
+    case CategoryRole:    return row.category;
+    case TrainTypeRole:   return row.trainType;
+    case CommuterLineRole: return row.commuterLine;
     case RingStateRole:   return ringStateFor(row);
-    case DelayMinutesRole: return m_statusByNumber.value(keyOf(row.pos)).delayMinutes;
+    case DelayMinutesRole: return row.status.delayMinutes;
     case AccuracyRole:    return row.pos.accuracy;
     case TrackOffsetRole: return row.trackOffsetMeters;
     case NearestNeighborRole: return row.nearestNeighborMeters;
@@ -405,6 +405,12 @@ void TrainListModel::applyOne(const TrainPosition &train)
     row.matchedTunniste = matchedTunniste;
     row.chainage = newChainage;
     row.onRoute = onRoute;
+    // The side tables usually land before a mid-session insert; stamp them now
+    // — the setters only restamp rows that already exist (CPP-W11).
+    row.category = m_categoryByNumber.value(key);
+    row.trainType = m_typeByNumber.value(key);
+    row.commuterLine = m_lineByNumber.value(key);
+    row.status = m_statusByNumber.value(key);
     m_rows.push_back(row);
     m_indexByKey.insert(key, newRow);
     endInsertRows();
@@ -455,25 +461,62 @@ void TrainListModel::setTrainMetadata(const QHash<TrainKey, QString> &types,
     m_typeByNumber = types;
     m_categoryByNumber = categories;
     m_lineByNumber = commuterLines;
-    if (!m_rows.isEmpty())
-        // RingStateRole too: ringStateFor() gates the delay ring on category,
-        // so a category change can change the ring even if status is unchanged.
-        emit dataChanged(index(0), index(m_rows.size() - 1),
-                         { CategoryRole, TrainTypeRole, CommuterLineRole, RingStateRole });
+    // Stamp the values onto the rows (CPP-W11) and note which ones actually
+    // changed: most polls are deltas touching a handful of trains, so the old
+    // whole-model emission repainted every marker for nothing (CPP-W9).
+    QVector<bool> changed(m_rows.size(), false);
+    for (int i = 0; i < m_rows.size(); ++i) {
+        Row &row = m_rows[i];
+        const TrainKey key = keyOf(row.pos);
+        const QString type = m_typeByNumber.value(key);
+        const QString category = m_categoryByNumber.value(key);
+        const QString line = m_lineByNumber.value(key);
+        if (type == row.trainType && category == row.category && line == row.commuterLine)
+            continue;
+        row.trainType = type;
+        row.category = category;
+        row.commuterLine = line;
+        changed[i] = true;
+    }
+    // RingStateRole too: ringStateFor() gates the delay ring on category,
+    // so a category change can change the ring even if status is unchanged.
+    emitChangedRuns(changed,
+                    { CategoryRole, TrainTypeRole, CommuterLineRole, RingStateRole });
 }
 
 void TrainListModel::setTrainStatuses(const QHash<TrainKey, TrainStatus> &statuses)
 {
     m_statusByNumber = statuses;
-    if (!m_rows.isEmpty())
-        emit dataChanged(index(0), index(m_rows.size() - 1),
-                         { RingStateRole, DelayMinutesRole });
+    QVector<bool> changed(m_rows.size(), false);
+    for (int i = 0; i < m_rows.size(); ++i) {
+        const TrainStatus st = m_statusByNumber.value(keyOf(m_rows.at(i).pos));
+        if (st == m_rows.at(i).status)
+            continue;
+        m_rows[i].status = st;
+        changed[i] = true;
+    }
+    emitChangedRuns(changed, { RingStateRole, DelayMinutesRole });
+}
+
+void TrainListModel::emitChangedRuns(const QVector<bool> &changed, const QList<int> &roles)
+{
+    int runStart = -1;
+    for (int i = 0; i <= changed.size(); ++i) {
+        const bool on = i < changed.size() && changed.at(i);
+        if (on && runStart < 0)
+            runStart = i;
+        else if (!on && runStart >= 0) {
+            emit dataChanged(index(runStart), index(i - 1), roles);
+            runStart = -1;
+        }
+    }
 }
 
 QString TrainListModel::ringStateFor(const Row &row) const
 {
-    const TrainStatus st = m_statusByNumber.value(keyOf(row.pos));
+    const TrainStatus &st = row.status;
     const bool flaggedRunning = st.known && st.running && !st.cancelled;
+    const QDateTime now = QDateTime::currentDateTimeUtc();
 
     // The position feed (train-locations) is far fresher than the bulk
     // /live-trains poll that sets runningCurrently, and that flag lags actual
@@ -484,7 +527,7 @@ QString TrainListModel::ringStateFor(const Row &row) const
     // gliding along the rail) is greyed, which reads as a bug. Cancelled stays
     // authoritative; a cancelled train should not be on the live feed at all.
     const bool positionFresh = row.pos.timestamp.isValid()
-        && row.pos.timestamp.secsTo(QDateTime::currentDateTimeUtc()) <= kStalePositionSecs;
+        && row.pos.timestamp.secsTo(now) <= kStalePositionSecs;
     const bool demonstrablyRunning = positionFresh && row.pos.speed >= kStoppedSpeedKmh;
 
     // Stale / not running: greyed, no ring.
@@ -493,7 +536,7 @@ QString TrainListModel::ringStateFor(const Row &row) const
     if (st.known && !st.running && !demonstrablyRunning)
         return QStringLiteral("stale");
     if (row.pos.timestamp.isValid()
-        && row.pos.timestamp.secsTo(QDateTime::currentDateTimeUtc()) > kStalePositionSecs
+        && row.pos.timestamp.secsTo(now) > kStalePositionSecs
         && !flaggedRunning)
         return QStringLiteral("stale");
 
@@ -504,8 +547,8 @@ QString TrainListModel::ringStateFor(const Row &row) const
     // Delay/readiness rings are only meaningful for scheduled passenger trains.
     // Cargo and special movements (locomotive, shunting, on-track machines) carry
     // no delay indication.
-    const QString category = m_categoryByNumber.value(keyOf(row.pos));
-    if (category != QLatin1String("Long-distance") && category != QLatin1String("Commuter"))
+    if (row.category != QLatin1String("Long-distance")
+        && row.category != QLatin1String("Commuter"))
         return QStringLiteral("none");
 
     // Lateness takes precedence over the green ready ring: red at 15+ min late,

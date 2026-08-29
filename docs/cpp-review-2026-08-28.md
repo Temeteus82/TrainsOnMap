@@ -40,6 +40,25 @@ Suggested fix-order: **CPP-C1, CPP-C2** first (user-visible bugs), then
 > Builds clean, all **7** ctest targets pass. The two criticals and CPP-W2 are
 > **not covered by a regression test** — see the note under CPP-C1, which
 > applies to `DigitrafficClient` for the same reason.
+>
+> **CPP-W6, CPP-W7, CPP-W8 fixed** (2026-08-29, parse-boundary pass): shared
+> validators `inFinlandBox` / `isStationShortCode` / `isDepartureDate` in
+> `DigitrafficFormat.h`, applied at the FMI `<pos>` parse, `parseTrainLocation`,
+> both `show()` slots, and the MQTT topic filter; live payloads now match on
+> `departureDate` as well. Pinned by four new test slots.
+>
+> **CPP-W5 + CPP-O1 fixed** (2026-08-29, shared-plumbing pass): one
+> `digitraffic::stationLabel()` replaces three drifted copies, and the new
+> `FleetMetadata` helper reads the fleet's three metadata maps through the
+> client pointer instead of each service caching its own. Pinned by one new
+> test slot.
+>
+> **CPP-W3, CPP-W9, CPP-W11 fixed** (2026-08-29, invalidation pass): the
+> timetable refresh updates in place instead of resetting when the station
+> sequence is unchanged; the metadata/status values are denormalised onto
+> `TrainListModel::Row` at write time, so `data()` stops hashing side tables
+> and the setters emit only over the rows that actually changed. Pinned by two
+> new test slots.
 
 ---
 
@@ -207,7 +226,7 @@ rendering bug. Route the three through `adjustPending()`.
 
 ---
 
-### CPP-W3 — The timetable model resets on every live update
+### CPP-W3 — The timetable model resets on every live update — **Fixed**
 `src/TimetableModel.cpp:48`
 
 `setStops()` wraps its replacement in `beginResetModel`/`endResetModel` and is
@@ -228,6 +247,12 @@ unchanged, assign the changed fields in place and emit one `dataChanged` over th
 affected range. `TrackListModel::setVisibleSegments()` in this codebase is the
 model for how to do incremental structural updates — the timetable case is easier,
 since the structure is usually unchanged.
+
+**Fixed (2026-08-29)** exactly as written: when the station sequence is
+unchanged, `setStops()` assigns in place and emits one `dataChanged` over the
+first..last rows whose role-visible fields moved (none at all on an identical
+refresh); the reset survives only for a genuinely new selection. Pinned by
+`tst_timetablemodel::liveRefreshUpdatesInPlaceWithoutReset`.
 
 ---
 
@@ -261,7 +286,7 @@ changes, since the types were already identical.
 
 ---
 
-### CPP-W5 — `stationLabel` exists three times with two different semantics
+### CPP-W5 — `stationLabel` exists three times with two different semantics — **Fixed**
 `src/TrainDetailsService.cpp:179` and `:391` vs `src/StationBoardService.cpp:72`
 
 - `TrainDetailsService::stationLabel` → `m_stationNames.value(code, code)`. The
@@ -284,9 +309,16 @@ This is exactly the drift `DigitrafficFormat.h:9-11` was created to stop —
 the empty-tolerant fallback (the board's behaviour is the correct one — a code
 beats a blank), and delete all three local copies.
 
+**Fixed (2026-08-29)** exactly as written: `digitraffic::stationLabel(names, code,
+fallback = {})` sits next to `causeText`, takes the board's empty-tolerant
+behaviour, and all three copies are gone. The optional `fallback` covers
+`StationBoardService::show`, the one caller that has a name of its own to prefer
+over the bare code. Pinned by
+`tst_digitrafficformat::stationLabelPrefersACodeOverABlankName`.
+
 ---
 
-### CPP-W6 — FMI coordinates parsed without checking the conversion succeeded
+### CPP-W6 — FMI coordinates parsed without checking the conversion succeeded — **Fixed**
 `src/FmiWeatherClient.cpp:97`
 
 ```cpp
@@ -306,9 +338,14 @@ The `parts.size() >= 2` guard protects against out-of-bounds, not wrong content.
 either fails, matching the pattern already used immediately below. Since the query
 pins `bbox=19,59,32,71`, also reject coordinates outside it.
 
+**Fixed (2026-08-29)** exactly as written: both `ok` flags checked, plus a bbox
+reject via the new shared `digitraffic::inFinlandBox()` — the same box the query
+pins, and the same helper CPP-W7 uses. Pinned by
+`tst_digitrafficformat::inFinlandBoxRejectsTheParseFailureSentinel`.
+
 ---
 
-### CPP-W7 — Train coordinates accepted without an element type check
+### CPP-W7 — Train coordinates accepted without an element type check — **Fixed**
 `src/TrainListModel.h:78`
 
 Same class of bug as `CPP-W6`, on the train path.
@@ -332,9 +369,14 @@ itself to. Returning an invalid `QGeoCoordinate` makes both existing call-site
 gates (`DigitrafficClient.cpp:365`, `DigitrafficMqttClient.cpp:248`) do the right
 thing with no further change.
 
+**Fixed (2026-08-29)** exactly as written: `isDouble()` on both elements and the
+shared `inFinlandBox()` reject; on failure the coordinate stays invalid and the
+existing call-site gates do the rest. Pinned by
+`tst_trainlistmodel::malformedCoordinatesStayInvalid`.
+
 ---
 
-### CPP-W8 — Remote strings spliced unvalidated into URL paths and an MQTT topic
+### CPP-W8 — Remote strings spliced unvalidated into URL paths and an MQTT topic — **Fixed**
 `src/StationBoardService.cpp:91`, `src/TrainDetailsService.cpp:220` and `:288`,
 `src/DigitrafficMqttClient.cpp:120`
 
@@ -362,9 +404,17 @@ the whole class at once and is the only option that protects the MQTT topic, whe
 escaping is not available. Also match live payloads on `departureDate` as well as
 `trainNumber`.
 
+**Fixed (2026-08-29)** with two validators in `DigitrafficFormat.h` —
+`isStationShortCode()` (1–8 letters/digits, so `/ ? # &` and the MQTT wildcards
+can never enter) and `isDepartureDate()` (strict `yyyy-MM-dd`) — applied at
+`StationBoardService::show`, `TrainDetailsService::show`, and, because it is
+public API in its own right, `DigitrafficMqttClient::subscribeTrain`.
+`onStreamTrainMessage` now matches live payloads on `departureDate` too. Pinned
+by the two new validator tests in `tst_digitrafficformat`.
+
 ---
 
-### CPP-W9 — Whole-model `dataChanged` on delta-only updates
+### CPP-W9 — Whole-model `dataChanged` on delta-only updates — **Fixed**
 `src/TrainListModel.cpp:455` and `:463`
 
 `setTrainMetadata()` and `setTrainStatuses()` each emit `dataChanged` spanning the
@@ -382,6 +432,13 @@ repaint every marker in the `MapItemView` even when nothing about them moved.
 over the contiguous runs only — which is what `applyOne` already does correctly
 per row. Better still, have `DigitrafficClient` pass down only the delta keys it
 merged rather than the full accumulated maps.
+
+**Fixed (2026-08-29)** by the first option, folded with CPP-W11: the setters
+stamp the new values onto each `Row`, which both provides the previous value to
+diff against and lets `data()` skip the side tables. `emitChangedRuns()` then
+emits one `dataChanged` per contiguous run of rows that actually changed —
+nothing at all when a delta poll changed nothing. Pinned by
+`tst_trainlistmodel::statusRefreshTouchesOnlyChangedRows`.
 
 ---
 
@@ -411,7 +468,7 @@ empty-grid fallback, exactly as `loadForBounds()` does.
 
 ---
 
-### CPP-W11 — `data()` re-hashes side tables once per role
+### CPP-W11 — `data()` re-hashes side tables once per role — **Fixed**
 `src/TrainListModel.cpp:83`
 
 Five roles (`CategoryRole`, `TrainTypeRole`, `CommuterLineRole`,
@@ -429,6 +486,12 @@ visible marker on every repaint and after each whole-model burst from `CPP-W9`.
 `setTrainMetadata`/`setTrainStatuses` already walk the whole model to emit
 `dataChanged` — stamp the values in that same pass and let `data()` become a plain
 member read. Hoist the single `currentDateTimeUtc()` into a local regardless.
+
+**Fixed (2026-08-29)** exactly as written: `Row` carries
+`category`/`trainType`/`commuterLine`/`status`, stamped by the setters and on
+insert, so `data()` and `ringStateFor()` are plain member reads;
+`currentDateTimeUtc()` is read once per ring resolution. The side tables remain
+only to stamp rows inserted after the metadata landed.
 
 ---
 
@@ -511,7 +574,7 @@ startup simplicity, at least document the memory cost next to `m_all`.
 
 ## Opportunities — consistency and hygiene
 
-### CPP-O1 — Duplicated fleet-metadata plumbing across two services
+### CPP-O1 — Duplicated fleet-metadata plumbing across two services — **Fixed**
 `src/StationBoardService.cpp:28-74` vs `src/TrainDetailsService.cpp:177-198`
 
 Near-identical copies of: the same three `QHash<QString,QString>` members, the
@@ -529,6 +592,21 @@ common base) owning the three maps, the wiring, `stationLabel()` and a
 `resolveCauseText()`. Both `rebuild*()` also deep-copy their whole row vector on
 every metadata arrival purely to stamp `causeText`; resolving that at model-read
 time removes the copy from both.
+
+**Fixed (2026-08-29)** with `src/FleetMetadata.h`, a non-QObject helper — but it
+owns *no* maps. Nothing ever wrote to the per-service copies: they were assigned
+wholesale from the client that owns the originals, so the helper holds the
+`DigitrafficClient *` and reads through it, and the three accessors now return
+`const &`. That deletes six members, both `stationLabel()`s, and the copy halves
+of all four handlers; each service keeps its own `fleet` property and signal
+wiring (the handlers differ in what they rebuild) and adds one
+`m_meta.setFleet()` line to it.
+
+**Not done:** resolving `causeText` at model-read time. The `rebuild*()` copy
+runs when a metadata map lands — once or twice per session — not per repaint, and
+pushing resolution into the models would couple them to the services and cut
+against the write-time denormalisation `CPP-W11` just adopted. Revisit only if a
+metadata arrival ever shows up in a profile.
 
 ---
 
@@ -797,12 +875,12 @@ Verified against the source; do not re-file these.
 3. ~~**CPP-W1**~~ — **done.** One-line `j > i`, free 2× on the 60 s hitch.
 4. ~~**CPP-W2**~~ — **done.** Startup metadata retry. Cheap, and removes a whole
    class of "why are the station names missing" reports.
-5. **CPP-W5** + **CPP-O1** together — centralise `stationLabel` while extracting
-   the shared service plumbing it lives in.
-6. **CPP-W6, CPP-W7, CPP-W8** as one pass — all three are "validate remote data at
-   the parse boundary".
-7. **CPP-W3, CPP-W9, CPP-W11** as one pass — all three are "stop invalidating the
-   whole model when a few fields changed".
+5. ~~**CPP-W5** + **CPP-O1**~~ — **done** together — centralise `stationLabel`
+   while extracting the shared service plumbing it lives in.
+6. ~~**CPP-W6, CPP-W7, CPP-W8**~~ — **done** as one pass — all three are "validate
+   remote data at the parse boundary".
+7. ~~**CPP-W3, CPP-W9, CPP-W11**~~ — **done** as one pass — all three are "stop
+   invalidating the whole model when a few fields changed".
 8. The rest as convenient.
 
 Findings below confidence 60 were suppressed entirely. No source files were

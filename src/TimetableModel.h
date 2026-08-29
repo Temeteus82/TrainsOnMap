@@ -91,7 +91,10 @@ public:
 
     /// Replaces the rows and derives journey progress. Takes its argument by
     /// value: this is rebuilt on every live MQTT update for the selected train,
-    /// so callers holding a temporary should `std::move()` into it.
+    /// so callers holding a temporary should `std::move()` into it. When the
+    /// station sequence is unchanged (the live-update case) the rows are
+    /// assigned in place with one dataChanged — no reset, so delegates and the
+    /// scroll position survive (CPP-W3).
     void setStops(QVector<TimetableStop> stops);
     void clear();
 

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "DigitrafficFormat.h"
+
 #include <QAbstractListModel>
 #include <QDateTime>
 #include <QGeoCoordinate>
@@ -19,6 +21,13 @@ struct TrainStatus {
     bool cancelled = false;
     bool running = false;   ///< runningCurrently
     bool known = false;     ///< false until /live-trains has reported this train
+
+    // Needed to detect which rows a status refresh actually changed (CPP-W9).
+    friend bool operator==(const TrainStatus &a, const TrainStatus &b)
+    {
+        return a.delayMinutes == b.delayMinutes && a.cancelled == b.cancelled
+            && a.running == b.running && a.known == b.known;
+    }
 };
 
 /// A single decoded train position from the Digitraffic train-locations feed.
@@ -72,9 +81,16 @@ inline TrainPosition parseTrainLocation(const QJsonObject &o)
     tp.departureDate = o.value(QStringLiteral("departureDate")).toString();
     const QJsonArray c = o.value(QStringLiteral("location")).toObject()
                              .value(QStringLiteral("coordinates")).toArray();
-    if (c.size() >= 2) {
+    if (c.size() >= 2 && c.at(0).isDouble() && c.at(1).isDouble()) {
         // GeoJSON order is [longitude, latitude]; QGeoCoordinate takes (lat, lon).
-        tp.coordinate = QGeoCoordinate(c.at(1).toDouble(), c.at(0).toDouble());
+        // A null/string/bool element converts to 0.0 and (0,0) is *valid* — a
+        // marker 7000 km off the network that poisons the neighbour scan — so
+        // type-check and bbox-reject here; on failure the coordinate stays
+        // invalid and both call sites already gate on isValid().
+        const double lat = c.at(1).toDouble();
+        const double lon = c.at(0).toDouble();
+        if (digitraffic::inFinlandBox(lat, lon))
+            tp.coordinate = QGeoCoordinate(lat, lon);
     }
     tp.speed = o.value(QStringLiteral("speed")).toDouble();
     tp.timestamp = QDateTime::fromString(o.value(QStringLiteral("timestamp")).toString(),
@@ -179,6 +195,15 @@ private:
         double chainage = -1.0;           ///< 1-D route position carried across fixes
         bool onRoute = false;             ///< last fix matched the scheduled route
         int outlierStreak = 0;            ///< consecutive rejected teleport fixes
+
+        // Denormalised from the side tables at write time (setTrainMetadata /
+        // setTrainStatuses / insert), so data() is a plain member read instead
+        // of ~7 TrainKey hashes per delegate repaint (CPP-W11), and so a
+        // refresh knows which rows actually changed (CPP-W9).
+        QString category;                 ///< "Commuter" / "Long-distance" / ...
+        QString trainType;                ///< "IC" / "S" / "HL" / ...
+        QString commuterLine;             ///< commuter line letter, "" if none
+        TrainStatus status;               ///< live running status
     };
 
     /// The single upsert funnel for every position update, REST or MQTT. Drops
@@ -188,6 +213,11 @@ private:
 
     /// Rebuild trainNumber -> row index after rows are removed.
     void reindex();
+
+    /// Emit dataChanged for `roles` over each contiguous run of rows flagged in
+    /// `changed` — the delta-only replacement for the whole-model bursts the
+    /// metadata/status setters used to fire (CPP-W9).
+    void emitChangedRuns(const QVector<bool> &changed, const QList<int> &roles);
 
     /// Recompute nearestNeighborMeters for every row (O(n^2) over the live
     /// fleet). Only called once per REST snapshot in updateTrains() — cheap at

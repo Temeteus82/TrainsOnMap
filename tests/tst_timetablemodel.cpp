@@ -185,6 +185,47 @@ private slots:
         QCOMPARE(model.totalStops(), 0);
         QCOMPARE(model.nextStopRow(), -1);
     }
+
+    /// A live MQTT refresh re-sends a structurally identical stop list with a
+    /// few estimate/progress fields moved. That must be an in-place update with
+    /// one dataChanged over the changed span — a model reset would destroy the
+    /// delegates and drop the scroll position on every update (CPP-W3). The
+    /// reset stays reserved for a genuinely different station sequence.
+    void liveRefreshUpdatesInPlaceWithoutReset()
+    {
+        auto stopAt = [](const char *code) {
+            TimetableStop s;
+            s.stationShortCode = QLatin1String(code);
+            s.stopping = true;
+            return s;
+        };
+        TimetableModel model;
+        model.setStops({ stopAt("HKI"), stopAt("PSL"), stopAt("TPE") });
+
+        QSignalSpy resetSpy(&model, &QAbstractItemModel::modelAboutToBeReset);
+        QSignalSpy dataSpy(&model, &QAbstractItemModel::dataChanged);
+
+        // Identical refresh: no reset, no dataChanged.
+        model.setStops({ stopAt("HKI"), stopAt("PSL"), stopAt("TPE") });
+        QCOMPARE(resetSpy.count(), 0);
+        QCOMPARE(dataSpy.count(), 0);
+
+        // One field moved on the middle stop: one dataChanged, rows 1..1.
+        auto rows = QVector<TimetableStop>{ stopAt("HKI"), stopAt("PSL"), stopAt("TPE") };
+        rows[1].estimatedArrival = QStringLiteral("12:07");
+        model.setStops(std::move(rows));
+        QCOMPARE(resetSpy.count(), 0);
+        QCOMPARE(dataSpy.count(), 1);
+        QCOMPARE(dataSpy.at(0).at(0).toModelIndex().row(), 1);
+        QCOMPARE(dataSpy.at(0).at(1).toModelIndex().row(), 1);
+        QCOMPARE(model.data(model.index(1, 0), roleFor(model, "estimatedArrival")).toString(),
+                 QStringLiteral("12:07"));
+
+        // Different station sequence (new selection): the reset path.
+        model.setStops({ stopAt("HKI"), stopAt("TKU") });
+        QCOMPARE(resetSpy.count(), 1);
+        QCOMPARE(model.rowCount(), 2);
+    }
 };
 
 QTEST_MAIN(tst_TimetableModel)

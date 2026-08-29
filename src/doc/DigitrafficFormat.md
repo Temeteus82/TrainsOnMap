@@ -98,8 +98,8 @@ project trees.
 row.timeText = digitraffic::hhmm(r.value("scheduledTime").toString());
 row.sortTime = digitraffic::parseIso(r.value("liveEstimateTime").toString());
 
-// Resolved against DigitrafficClient's metadata maps.
-row.causeText = digitraffic::causeText(row.causeCode, row.causeDetailedCode,
-                                       m_causeCategoryNames,
-                                       m_detailedCauseCategoryNames);
+// Resolved against DigitrafficClient's metadata maps. Both services reach
+// these through FleetMetadata rather than passing the maps by hand.
+row.causeText = m_meta.causeText(row.causeCode, row.causeDetailedCode);
+row.destination = m_meta.stationLabel(code);
 ```

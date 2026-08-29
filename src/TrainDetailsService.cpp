@@ -174,32 +174,23 @@ TrainDetailsService::TrainDetailsService(QObject *parent)
     netdiag::logSslErrors(m_net, "TrainDetailsService");
 }
 
-QString TrainDetailsService::stationLabel(const QString &shortCode) const
-{
-    return m_stationNames.value(shortCode, shortCode);
-}
-
 void TrainDetailsService::onStationNames()
 {
-    if (m_fleet)
-        m_stationNames = m_fleet->stationNames();
-    if (!m_stationNames.isEmpty() && !m_stops.isEmpty())
+    if (m_meta.stationsLoaded() && !m_stops.isEmpty())
         rebuildStops();   // a timetable arrived before the names did
 }
 
 void TrainDetailsService::onCauseCategoryNames()
 {
-    if (m_fleet) {
-        m_causeCategoryNames = m_fleet->causeCategoryNames();
-        m_detailedCauseCategoryNames = m_fleet->detailedCauseCategoryNames();
-    }
-    if (!m_causeCategoryNames.isEmpty() && !m_stops.isEmpty())
+    if (m_meta.causesLoaded() && !m_stops.isEmpty())
         rebuildStops();   // a timetable arrived before the cause map did
 }
 
 void TrainDetailsService::show(int trainNumber, const QString &departureDate)
 {
-    if (departureDate.isEmpty()) {
+    // Remote-sourced, spliced into two URL paths and the MQTT topic filter
+    // below — only a strict yyyy-MM-dd may pass (W8).
+    if (!digitraffic::isDepartureDate(departureDate)) {
         setStatus(QStringLiteral("No departure date for train %1").arg(trainNumber));
         return;
     }
@@ -379,7 +370,7 @@ void TrainDetailsService::handleComposition(QNetworkReply *reply)
                             .value(QStringLiteral("stationShortCode")).toString();
     m_compositionLeg = (begin.isEmpty() && end.isEmpty())
         ? QString()
-        : QStringLiteral("%1 → %2").arg(stationLabel(begin), stationLabel(end));
+        : QStringLiteral("%1 → %2").arg(m_meta.stationLabel(begin), m_meta.stationLabel(end));
 
     m_compositionSectionCount = sections.size();
     m_hasComposition = !vehicles.isEmpty();
@@ -406,8 +397,9 @@ void TrainDetailsService::onStreamTrainMessage(const QByteArray &payload)
     const QJsonDocument doc = QJsonDocument::fromJson(payload);
     // MQTT publishes a single object; tolerate an array just in case.
     const QJsonObject train = doc.isArray() ? doc.array().first().toObject() : doc.object();
-    if (train.value(QStringLiteral("trainNumber")).toInt() != m_trainNumber)
-        return;   // not the train currently shown
+    if (train.value(QStringLiteral("trainNumber")).toInt() != m_trainNumber
+        || train.value(QStringLiteral("departureDate")).toString() != m_departureDate)
+        return;   // not the run currently shown
     applyTrainObject(train, /*live=*/true);
 }
 
@@ -415,10 +407,8 @@ void TrainDetailsService::rebuildStops()
 {
     QVector<TimetableStop> resolved = m_stops;
     for (TimetableStop &s : resolved) {
-        s.stationName = m_stationNames.value(s.stationShortCode, s.stationShortCode);
-        s.causeText = digitraffic::causeText(s.causeCode, s.causeDetailedCode,
-                                             m_causeCategoryNames,
-                                             m_detailedCauseCategoryNames);
+        s.stationName = m_meta.stationLabel(s.stationShortCode);
+        s.causeText = m_meta.causeText(s.causeCode, s.causeDetailedCode);
     }
     m_model->setStops(std::move(resolved));
 }
@@ -455,6 +445,7 @@ void TrainDetailsService::setFleet(DigitrafficClient *fleet)
     if (m_fleet)
         disconnect(m_fleet, nullptr, this, nullptr);
     m_fleet = fleet;
+    m_meta.setFleet(fleet);
     if (m_fleet) {
         connect(m_fleet, &DigitrafficClient::stationNamesChanged,
                 this, &TrainDetailsService::onStationNames);

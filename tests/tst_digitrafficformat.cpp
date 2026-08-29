@@ -83,6 +83,56 @@ private slots:
         // once it lands, so an empty string here is expected, not a hole.
         QVERIFY(digitraffic::causeText(QStringLiteral("A"), QString(), {}, {}).isEmpty());
     }
+
+    /// The whole point of centralising this: three private copies disagreed on
+    /// what a *present but blank* name means. A code beats a blank (CPP-W5).
+    void stationLabelPrefersACodeOverABlankName()
+    {
+        const QHash<QString, QString> names{
+            {QStringLiteral("HKI"), QStringLiteral("Helsinki")},
+            {QStringLiteral("XXX"), QString()}};   // present, blank — the drift case
+
+        QCOMPARE(digitraffic::stationLabel(names, QStringLiteral("HKI")),
+                 QStringLiteral("Helsinki"));
+        QCOMPARE(digitraffic::stationLabel(names, QStringLiteral("XXX")),
+                 QStringLiteral("XXX"));
+        QCOMPARE(digitraffic::stationLabel(names, QStringLiteral("TKU")),
+                 QStringLiteral("TKU"));   // absent
+
+        // The caller's own name (e.g. what came with the click) beats the code,
+        // but never beats a known name.
+        QCOMPARE(digitraffic::stationLabel(names, QStringLiteral("TKU"), QStringLiteral("Turku")),
+                 QStringLiteral("Turku"));
+        QCOMPARE(digitraffic::stationLabel(names, QStringLiteral("HKI"), QStringLiteral("Turku")),
+                 QStringLiteral("Helsinki"));
+    }
+
+    void inFinlandBoxRejectsTheParseFailureSentinel()
+    {
+        QVERIFY(digitraffic::inFinlandBox(60.17, 24.94));    // Helsinki
+        QVERIFY(!digitraffic::inFinlandBox(0.0, 0.0));       // toDouble() failure value
+        QVERIFY(!digitraffic::inFinlandBox(59.33, 18.07));   // Stockholm — outside
+    }
+
+    void stationShortCodeRejectsStructuralCharacters()
+    {
+        QVERIFY(digitraffic::isStationShortCode(QStringLiteral("HKI")));
+        QVERIFY(digitraffic::isStationShortCode(QStringLiteral("ÄS")));   // codes carry Ä/Ö/Å
+        QVERIFY(!digitraffic::isStationShortCode(QString()));
+        QVERIFY(!digitraffic::isStationShortCode(QStringLiteral("HKI/..")));
+        QVERIFY(!digitraffic::isStationShortCode(QStringLiteral("HKI?x=1")));
+        QVERIFY(!digitraffic::isStationShortCode(QStringLiteral("AVERYLONGCODE")));
+    }
+
+    void departureDateIsStrictIsoOnly()
+    {
+        QVERIFY(digitraffic::isDepartureDate(QStringLiteral("2026-08-29")));
+        QVERIFY(!digitraffic::isDepartureDate(QString()));
+        QVERIFY(!digitraffic::isDepartureDate(QStringLiteral("+")));           // MQTT wildcard
+        QVERIFY(!digitraffic::isDepartureDate(QStringLiteral("#")));           // MQTT wildcard
+        QVERIFY(!digitraffic::isDepartureDate(QStringLiteral("2026-13-01")));  // no such month
+        QVERIFY(!digitraffic::isDepartureDate(QStringLiteral("2026-8-9")));    // not zero-padded
+    }
 };
 
 QTEST_MAIN(tst_DigitrafficFormat)

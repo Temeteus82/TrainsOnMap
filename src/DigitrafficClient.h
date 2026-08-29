@@ -66,20 +66,20 @@ public:
     /// /metadata/stations reply that feeds the model's coordinates. Shared with
     /// TrainDetailsService (via its `fleet` property) so the endpoint is fetched
     /// once per launch. Empty until the fetch lands (stationNamesChanged fires).
-    QHash<QString, QString> stationNames() const { return m_stationNames; }
+    const QHash<QString, QString> &stationNames() const { return m_stationNames; }
 
     /// Cause category code -> Finnish display name, from the same one-shot
     /// /metadata/cause-category-codes fetch (e.g. "A" -> "Aikataulu ja
     /// liikennöinti"). Shared with TrainDetailsService for the timetable's delay
     /// cause line. Empty until the fetch lands (causeCategoryNamesChanged fires).
-    QHash<QString, QString> causeCategoryNames() const { return m_causeCategoryNames; }
+    const QHash<QString, QString> &causeCategoryNames() const { return m_causeCategoryNames; }
 
     /// Detailed cause category code -> Finnish display name, from the one-shot
     /// /metadata/detailed-cause-category-codes fetch (e.g. "S2" -> "Sähköratavika").
     /// The top-level category alone (e.g. "Sähkörata") is too coarse to be useful;
     /// consumers combine this with causeCategoryNames() for the full reason.
     /// Empty until the fetch lands (causeCategoryNamesChanged fires).
-    QHash<QString, QString> detailedCauseCategoryNames() const { return m_detailedCauseCategoryNames; }
+    const QHash<QString, QString> &detailedCauseCategoryNames() const { return m_detailedCauseCategoryNames; }
 
 public slots:
     /// Fetch the latest positions once, immediately.

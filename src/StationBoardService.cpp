@@ -32,6 +32,7 @@ void StationBoardService::setFleet(DigitrafficClient *fleet)
     if (m_fleet)
         disconnect(m_fleet, nullptr, this, nullptr);
     m_fleet = fleet;
+    m_meta.setFleet(fleet);
     if (m_fleet) {
         connect(m_fleet, &DigitrafficClient::stationNamesChanged,
                 this, &StationBoardService::onStationNames);
@@ -45,21 +46,15 @@ void StationBoardService::setFleet(DigitrafficClient *fleet)
 
 void StationBoardService::onCauseCategoryNames()
 {
-    if (m_fleet) {
-        m_causeCategoryNames = m_fleet->causeCategoryNames();
-        m_detailedCauseCategoryNames = m_fleet->detailedCauseCategoryNames();
-    }
-    if (!m_causeCategoryNames.isEmpty() && !m_rows.isEmpty())
+    if (m_meta.causesLoaded() && !m_rows.isEmpty())
         rebuildBoard();   // the board arrived before the cause map did
 }
 
 void StationBoardService::onStationNames()
 {
-    if (m_fleet)
-        m_stationNames = m_fleet->stationNames();
     // Refresh the visible title if the code resolved to a name late.
     if (m_hasSelection) {
-        const QString resolved = stationLabel(m_stationCode);
+        const QString resolved = m_meta.stationLabel(m_stationCode);
         if (resolved != m_stationName) {
             m_stationName = resolved;
             emit selectionChanged();
@@ -67,18 +62,14 @@ void StationBoardService::onStationNames()
     }
 }
 
-QString StationBoardService::stationLabel(const QString &code) const
-{
-    const QString name = m_stationNames.value(code);
-    return name.isEmpty() ? code : name;
-}
-
 void StationBoardService::show(const QString &code, const QString &name)
 {
-    if (code.isEmpty())
+    // The code comes from remote JSON (and QML can pass any string); it is
+    // spliced into the URL path below, so reject structural characters (W8).
+    if (!digitraffic::isStationShortCode(code))
         return;
     m_stationCode = code;
-    m_stationName = m_stationNames.value(code, name.isEmpty() ? code : name);
+    m_stationName = m_meta.stationLabel(code, name);
     m_hasSelection = true;
     emit selectionChanged();
 
@@ -170,7 +161,8 @@ void StationBoardService::handleReply(QNetworkReply *reply, const QString &code)
             row.trainLabel = QString::number(number);
 
         // Destination = the train's final stop.
-        row.destination = stationLabel(tt.last().toObject().value("stationShortCode").toString());
+        row.destination = m_meta.stationLabel(
+            tt.last().toObject().value("stationShortCode").toString());
 
         const QString sched = r.value("scheduledTime").toString();
         const QString live = r.value("liveEstimateTime").toString().isEmpty()
@@ -211,9 +203,7 @@ void StationBoardService::rebuildBoard()
 {
     QVector<StationBoardRow> resolved = m_rows;
     for (StationBoardRow &row : resolved) {
-        row.causeText = digitraffic::causeText(row.causeCode, row.causeDetailedCode,
-                                               m_causeCategoryNames,
-                                               m_detailedCauseCategoryNames);
+        row.causeText = m_meta.causeText(row.causeCode, row.causeDetailedCode);
     }
     m_board->setRows(resolved);
 }
