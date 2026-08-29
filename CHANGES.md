@@ -8,6 +8,177 @@ Legend: ✨ feature · 🐛 bug fix · ♻️ change/refactor · ✅ verificatio
 
 ---
 
+## Left column: collapsible cards, type scale down a point
+
+### ♻️ The folded type scale read too large on screen, and wasn't really a scale
+- [x] U2-W2 landed on base 12 because that puts `body` exactly on the §1.2 16 px
+      desktop minimum. In the running app the overlay cards read a point heavy at
+      that size, and still heavy at base 11.
+- [x] Final values, hand-tuned against the app: caption 9 (unchanged — it is the
+      floor), body 10, subhead 12, title 15, icons 11/14.
+- [x] A `dense` role at 10 pt was added for the train-detail timetable when only
+      that panel looked heavy, then deleted a revision later once `body` came
+      down to 10 and made it redundant. Net: still four roles.
+- [x] The real lesson is that the minor-third generator was the wrong tool, not
+      the wrong base. A 1.2 ratio steps 9 → 11 → 13 → 16 and these cards want a
+      size between two rungs — which is why every re-derivation read wrong and
+      why a half-step role appeared. `TypeScale.qml` no longer claims to be
+      generated; its docstring says the values are hand-tuned, that `body` is one
+      point off `caption` on purpose (hierarchy comes from weight and colour, not
+      size), and to change them by looking at the app rather than re-deriving a
+      ratio.
+
+### ✨ The two left cards collapse to their header
+- [x] New `CollapseButton.qml`: a chevron disclosure carrying the same keyboard
+      and assistive pattern as `ToggleRow` — Tab to reach, Space/Enter to
+      operate, visible focus ring, and an `Accessible.name` that says what the
+      press does ("Expand controls" / "Collapse train list"). `AppIcon` gains a
+      `chevron`; the button rotates it 180° for the expanded state, gated on
+      `Theme.reducedMotion` like every other animation in the app.
+- [x] `InfoPanel`'s header moved *out* of the `Flickable` so the scrolling
+      content can go `visible: false`. That is not cosmetic: clipping alone would
+      leave nine focusable rows in the tab chain with nothing on screen, which is
+      U2-W3 again by another route. Layouts skip invisible items, so the card
+      falls back to header height with no separate collapsed-height branch.
+- [x] `TrainListPanel` hides its search field and list the same way.
+- [x] 🐛 That card would not shrink at first: `Main.qml` had
+      `anchors.bottom: collapsed ? undefined : parent.bottom`, and **binding an
+      anchor to `undefined` does not clear it** — the anchor stayed live and held
+      the card at full height whatever the flag said. Replaced with an explicit
+      `height` binding, the shape `InfoPanel` already uses for its own cap, which
+      leaves no anchor-reset idiom to get wrong.
+- [x] 📋 Related to **U2-W10** but does not close it: that finding wants
+      Legend/Overlays/Appearance behind a disclosure *inside* the sidebar. Whole-
+      card collapse is all-or-nothing, so reclaiming that space also costs the
+      live status and train filters. Noted in the audit.
+
+### ✅ Verification
+- [x] Builds clean, `qmllint` clean, all **7** ctest targets pass. App runs and
+      exits clean with no QML warnings — in particular no binding loop from the
+      `InfoPanel` restructure.
+- [x] Type sizes and both chevrons reviewed on screen over four passes.
+- [ ] 📋 Collapsed state does not persist across launches. `Theme`'s `QSettings`
+      plumbing would take it if the reset turns out to annoy.
+- [ ] 📋 **U2-W10 is now visible in practice**: with `InfoPanel` expanded on a
+      1080p window the train list is squeezed to roughly one row. The smaller
+      type buys a little back; the within-card disclosure that finding asks for
+      would free most of it.
+
+---
+
+## UI audit: one type scale, honest floor (U2-W2)
+
+### ♻️ The `panel*` scale broke the floor `TypeScale` documents
+- [x] `TypeScale` documented `caption` (11) as the floor — "nothing renders below
+      it" — then defined a second scale at `panelScale: 0.75` and used it for
+      almost everything, so the real floor was 8.25 pt and the real body 9.75 pt
+      (~13 px, against the §1.2 desktop minimum of 16). It also turned four
+      active roles into eight and gave one visual role two sizes: the FMI weather
+      chip at `caption` 11 next to a train marker badge at `panelCaption` 8.25,
+      both chips floating on the same map.
+- [x] Folded back to one scale rather than de-overlapping two, because a usage
+      count made it obvious: 60 of the 61 `TypeScale.*` references were `panel*`
+      — the plain scale's only live consumer was the weather chip. Keeping both
+      meant maintaining a four-role scale for one `Text`.
+- [x] `panelScale` and its seven derived roles deleted, 60 call sites renamed to
+      the plain roles. The sizes those roles carry were then settled on screen —
+      see the section above for the final values and why the base moved three
+      more times before it stopped.
+- [x] No layout changes needed at any size tried — the marker capsule, both list
+      delegates and the weather chip size to their content, and the fixed 32 px
+      control rows and 40 px train-list row clear the text throughout.
+
+### ✅ Verification
+- [x] `qmllint` clean — no new warnings across `qml/`. Builds clean, all **7**
+      ctest targets pass. Reviewed on screen (see above).
+
+---
+
+## UI audit: keyboard focus management (U2-W3, U2-W4)
+
+### 🐛 Tab could move focus to an off-screen sidebar row
+- [x] `InfoPanel` caps its height on a short window and flicks, but Tab walked
+      the whole `ColumnLayout` regardless of what was scrolled into view and
+      nothing touched `flick.contentY` — so on an 800 px window, tabbing to the
+      Weather toggle or an Appearance segment put focus on a control that was
+      not on screen, with its focus ring invisible. WCAG 2.2 2.4.11 Focus Not
+      Obscured (Minimum), Level AA.
+- [x] One `readonly property Item focusedItem: root.Window.activeFocusItem` on
+      the `Flickable`, with an `onFocusedItemChanged` that scrolls the item into
+      the viewport (4 px margin) after confirming via the parent chain that it
+      is actually inside the panel. One hook instead of a handler on each of the
+      nine focusable rows, so rows added later are covered too.
+- [x] `TrainListPanel` needed nothing — a `ListView` keeps its current item in
+      view on its own.
+
+### 🐛 Escape did nothing, and opening a panel never moved focus into it
+- [x] Zero `Key_Escape` handlers existed in `qml/`. The detail panel and station
+      board close buttons were focusable but only after tabbing past everything
+      ahead of them, and closing a panel left focus nowhere.
+- [x] Both panels now carry `Shortcut { sequence: StandardKey.Cancel }` calling
+      `clear()`, gated on the service's `hasSelection` — the `Loader`s latch
+      `everShown` and keep a closed panel alive but hidden, so an ungated
+      window-wide shortcut would have the two panels racing for one Escape.
+- [x] Both `Loader`s hand focus to the panel when it becomes visible (Tab then
+      reaches the close button, not the top of the window) and to the train list
+      when it goes.
+
+### ✅ Verification
+- [x] `qmllint` clean on the four touched files — no new warnings. Builds clean,
+      all **7** ctest targets pass.
+- [ ] 📋 Keyboard pass not run on screen: Tab through a height-capped InfoPanel
+      on a short window, and Escape out of both panels.
+
+---
+
+## C++ audit: halve the neighbour scan, retry startup metadata (CPP-W1, CPP-W2)
+
+### ♻️ The nearest-neighbour scan computed every pair twice
+- [x] `TrainListModel::recomputeNearestNeighbors()` ran its inner loop over the
+      full range with `if (j == i) continue`, so each symmetric pair cost two
+      `QGeoCoordinate::distanceTo()` haversines. On a 300–500 train fleet that is
+      90k–250k transcendental-heavy computations on the GUI thread every 60 s
+      snapshot, in one hitch.
+- [x] Inner loop now starts at `i + 1` and feeds the single distance to both
+      rows; a prologue resets every row to the `-1` sentinel first, so a pass
+      cannot leave the previous pass'''s distance behind. Same results, half the
+      work. Still O(n²) — the uniform-grid idea in `TrackService::Grid` would
+      make it near-linear, but that is a bigger change than this one.
+
+### 🐛 One failed startup fetch disabled station names for the whole session
+- [x] `fetchStations()`, `fetchCauseCategories()` and
+      `fetchDetailedCauseCategories()` were called only from the constructor,
+      and every failure path was a bare `return`. A single failure — an app
+      launched before Wi-Fi associates — permanently killed station code→name
+      resolution in both services, the clickable passenger-station layer,
+      parked-train station pinning and every delay-cause line, until restart.
+- [x] Each endpoint now carries `loaded`/`inFlight` state and `retryMetadata()`
+      re-issues whatever has not landed, driven off the existing 60 s resync in
+      `refresh()`. Attempts thin out 1, 2, 4, 8 cycles and stay capped there, so
+      a long outage is not hammered but recovery lands within ~8 min. The
+      backoff is not spent on a cycle where every outstanding attempt is still
+      in flight (startup issues all three, and `active: true` calls `refresh()`
+      in the same breath).
+- [x] The three fetches now go through `adjustPending()` like every other
+      request, so `loading` no longer under-reports while they are in flight.
+- [x] The degraded state is named rather than silent: the status line reads
+      `… • station names unavailable, retrying` while any endpoint is missing,
+      instead of leaving the user with bare short codes and no explanation.
+
+### ✅ Verified
+- [x] New `tst_trainlistmodel` target pins the neighbour contract: the lone-train
+      `-1` sentinel, every row getting its own nearest (including the last row,
+      which is only ever written as the `j` side of a pair), and a later pass
+      clearing a stale distance. Confirmed non-vacuous — reintroducing the
+      one-sided write fails `everyRowGetsItsNearest`.
+- [x] Builds clean, all **7** ctest targets pass, app starts and runs.
+- [x] **`DigitrafficClient` is still untested.** It builds its own
+      `QNetworkAccessManager` in its constructor, so there is no seam to inject
+      canned failing replies through — the same blocker recorded for CPP-C1.
+      Verified by reading and a live run, not by a test.
+
+---
+
 ## macOS deploy: strip AppleDouble sidecars before macdeployqt signs
 
 ### 🐛 The deployed .app could not be codesigned

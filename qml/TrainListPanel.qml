@@ -28,7 +28,13 @@ Rectangle {
     /// Emitted when a row is activated by pointer or keyboard.
     signal trainActivated(int trainNumber, string departureDate, var coordinate)
 
+    /// Collapsed to just the header row. Main.qml drives this card's height off
+    /// the flag, falling back to `implicitHeight` below so the map gets the space.
+    property bool collapsed: false
+
     implicitWidth: 268
+    // Only consulted while collapsed — expanded, Main.qml sets the height.
+    implicitHeight: header.implicitHeight + 24
     color: Theme.cardBg
     border.color: Theme.hairline
     border.width: 1
@@ -40,19 +46,25 @@ Rectangle {
         spacing: 8
 
         RowLayout {
+            id: header
             Layout.fillWidth: true
             Label {
                 Layout.fillWidth: true
                 text: qsTr("Trains")
                 font.bold: true
-                font.pointSize: TypeScale.panelSubhead
+                font.pointSize: TypeScale.subhead
                 color: Theme.textStrong
             }
             Label {
                 text: root.model ? qsTr("%1 of %2").arg(root.model.count).arg(root.totalCount)
                                  : ""
-                font.pointSize: TypeScale.panelCaption
+                font.pointSize: TypeScale.caption
                 color: Theme.textMuted
+            }
+            CollapseButton {
+                collapsed: root.collapsed
+                label: qsTr("train list")
+                onToggled: root.collapsed = !root.collapsed
             }
         }
 
@@ -61,8 +73,9 @@ Rectangle {
         TextField {
             id: search
             Layout.fillWidth: true
+            visible: !root.collapsed
             placeholderText: qsTr("Find a train — number, type, line")
-            font.pointSize: TypeScale.panelBody
+            font.pointSize: TypeScale.body
             color: Theme.textStrong
             placeholderTextColor: Theme.textMuted
             Accessible.role: Accessible.EditableText
@@ -87,6 +100,9 @@ Rectangle {
             id: list
             Layout.fillWidth: true
             Layout.fillHeight: true
+            // Hidden, not just clipped — an invisible item leaves the tab chain,
+            // so a collapsed card can't hand focus to a row nobody can see.
+            visible: !root.collapsed
             clip: true
             model: root.model
             currentIndex: -1
@@ -185,7 +201,7 @@ Rectangle {
                         Layout.fillWidth: true
                         text: row.label
                         elide: Text.ElideRight
-                        font.pointSize: TypeScale.panelBody
+                        font.pointSize: TypeScale.body
                         color: Theme.textStrong
                     }
 
@@ -193,13 +209,13 @@ Rectangle {
                     Label {
                         visible: row.model.delayMinutes > 0
                         text: "+" + row.model.delayMinutes
-                        font.pointSize: TypeScale.panelCaption
+                        font.pointSize: TypeScale.caption
                         color: row.model.delayMinutes >= 15 ? Theme.ringVeryLate : Theme.ringLate
                     }
 
                     Label {
                         text: row.model.speed > 0 ? Math.round(row.model.speed) + " km/h" : "—"
-                        font.pointSize: TypeScale.panelCaption
+                        font.pointSize: TypeScale.caption
                         color: Theme.textMuted
                     }
                 }
@@ -223,7 +239,7 @@ Rectangle {
                       ? qsTr("Waiting for live train data…")
                       : qsTr("No trains match this filter.")
                 color: Theme.textMuted
-                font.pointSize: TypeScale.panelCaption
+                font.pointSize: TypeScale.caption
             }
         }
     }

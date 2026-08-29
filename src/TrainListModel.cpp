@@ -421,22 +421,28 @@ void TrainListModel::reindex()
 
 void TrainListModel::recomputeNearestNeighbors()
 {
+    // distanceTo() is symmetric, so each pair only needs visiting once: the
+    // inner loop starts at i + 1 and feeds the one haversine to both rows.
+    // Scanning the full range and skipping j == i computed every pair twice.
+    for (int i = 0; i < m_rows.size(); ++i)
+        m_rows[i].nearestNeighborMeters = -1.0;   // "no valid neighbour"
+
     for (int i = 0; i < m_rows.size(); ++i) {
         const QGeoCoordinate &a = m_rows.at(i).pos.coordinate;
-        double best = -1.0;
-        if (a.isValid()) {
-            for (int j = 0; j < m_rows.size(); ++j) {
-                if (j == i)
-                    continue;
-                const QGeoCoordinate &b = m_rows.at(j).pos.coordinate;
-                if (!b.isValid())
-                    continue;
-                const double d = a.distanceTo(b);
-                if (best < 0.0 || d < best)
-                    best = d;
-            }
+        if (!a.isValid())
+            continue;
+        for (int j = i + 1; j < m_rows.size(); ++j) {
+            const QGeoCoordinate &b = m_rows.at(j).pos.coordinate;
+            if (!b.isValid())
+                continue;
+            const double d = a.distanceTo(b);
+            double &nearestA = m_rows[i].nearestNeighborMeters;
+            double &nearestB = m_rows[j].nearestNeighborMeters;
+            if (nearestA < 0.0 || d < nearestA)
+                nearestA = d;
+            if (nearestB < 0.0 || d < nearestB)
+                nearestB = d;
         }
-        m_rows[i].nearestNeighborMeters = best;
     }
     if (!m_rows.isEmpty())
         emit dataChanged(index(0), index(m_rows.size() - 1), { NearestNeighborRole });

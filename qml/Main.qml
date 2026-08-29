@@ -514,10 +514,15 @@ ApplicationWindow {
         id: trainListPanel
         anchors.left: parent.left
         anchors.top: panel.bottom
-        anchors.bottom: parent.bottom
         anchors.leftMargin: 12
         anchors.topMargin: 10
-        anchors.bottomMargin: 12
+        // No bottom anchor. Binding one to `undefined` does *not* clear it — the
+        // card stayed full height — so the height is explicit instead: its own
+        // header when collapsed, otherwise down to 12 px off the window bottom.
+        // Same shape as InfoPanel's height cap.
+        height: trainListPanel.collapsed
+                ? trainListPanel.implicitHeight
+                : Math.max(0, parent.height - trainListPanel.y - 12)
 
         model: fleetFilter
         totalCount: trainClient.model.count
@@ -544,6 +549,14 @@ ApplicationWindow {
         onActiveChanged: if (active) everShown = true
         opacity: trainDetails.hasSelection ? 1 : 0
         visible: opacity > 0
+        // U2-W4: focus enters the panel when it opens, so Tab reaches its close
+        // button instead of restarting at the top of the window — and goes back
+        // to the train list when it closes, rather than nowhere.
+        onVisibleChanged: {
+            const t = visible ? (item as Item) : trainListPanel
+            if (t)
+                t.forceActiveFocus()
+        }
         Behavior on opacity {
             enabled: !Theme.reducedMotion
             NumberAnimation { duration: 220; easing.type: Easing.OutCubic }
@@ -569,6 +582,12 @@ ApplicationWindow {
         onActiveChanged: if (active) everShown = true
         opacity: stationBoard.hasSelection ? 1 : 0
         visible: opacity > 0
+        // U2-W4: same focus entry/return as the detail panel above.
+        onVisibleChanged: {
+            const t = visible ? (item as Item) : trainListPanel
+            if (t)
+                t.forceActiveFocus()
+        }
         Behavior on opacity {
             enabled: !Theme.reducedMotion
             NumberAnimation { duration: 220; easing.type: Easing.OutCubic }

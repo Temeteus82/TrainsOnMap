@@ -37,12 +37,20 @@ Rectangle {
 
     signal refreshRequested()
 
+    /// Collapsed to just the header row. The left column carries this card *and*
+    /// the train list, and this one is seven groups tall (U2-W10) — on a short
+    /// window that is most of the screen spent on controls you set once.
+    property bool collapsed: false
+
     radius: 12
     color: Theme.cardBg
     border.color: Theme.hairline
     border.width: 1
     implicitWidth: 268
-    implicitHeight: layout.implicitHeight + 32
+    // Collapsing drops the Flickable out of `shell` entirely (layouts skip
+    // invisible items), so the header height is all that's left — no separate
+    // collapsed-height branch needed here.
+    implicitHeight: shell.implicitHeight + 32
     // Don't run off the bottom on a short window: cap to the space below the
     // top margin (y) and let the content scroll (flick) when it doesn't fit.
     height: parent ? Math.min(implicitHeight, parent.height - y - 12) : implicitHeight
@@ -58,10 +66,61 @@ Rectangle {
         color: Theme.shadow
     }
 
-    Flickable {
-        id: flick
+    ColumnLayout {
+        id: shell
         anchors.fill: parent
         anchors.margins: 16
+        spacing: 12
+
+        // ---- Header (always visible; carries the collapse control) ---------
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 10
+
+            Rectangle {
+                Layout.preferredWidth: 30
+                Layout.preferredHeight: 30
+                radius: 8
+                color: Theme.iconBadgeBg
+                AppIcon {
+                    anchors.centerIn: parent
+                    name: "train"
+                    color: Theme.accent
+                    size: TypeScale.iconMd
+                }
+            }
+
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 0
+                Label {
+                    text: qsTr("Trains on Map")
+                    font.bold: true
+                    font.pointSize: TypeScale.subhead
+                    color: Theme.textStrong
+                }
+                Label {
+                    text: qsTr("Finland · Digitraffic")
+                    font.pointSize: TypeScale.caption
+                    color: Theme.textMuted
+                }
+            }
+
+            CollapseButton {
+                collapsed: root.collapsed
+                label: qsTr("controls")
+                onToggled: root.collapsed = !root.collapsed
+            }
+        }
+
+    Flickable {
+        id: flick
+        Layout.fillWidth: true
+        Layout.fillHeight: true
+        // Carries the natural height so the card sizes to its content when there
+        // is room; `fillHeight` lets it shrink and scroll when there isn't.
+        Layout.preferredHeight: layout.implicitHeight
+        visible: !root.collapsed
         contentWidth: width
         contentHeight: layout.implicitHeight
         clip: true
@@ -80,49 +139,32 @@ Rectangle {
             }
         }
 
+        // U2-W3: Tab walks the whole column even when the card is height-capped
+        // and scrolling, so focus could land on an off-screen row with no visible
+        // ring (WCAG 2.2 2.4.11 Focus Not Obscured). One hook here covers every
+        // focusable row, present and future, instead of a handler per row.
+        readonly property Item focusedItem: root.Window.activeFocusItem
+        onFocusedItemChanged: {
+            let a = focusedItem
+            while (a && a !== layout)
+                a = a.parent
+            if (!a)
+                return   // focus is somewhere else in the window
+            const top = layout.mapFromItem(focusedItem, 0, 0).y
+            const bottom = top + focusedItem.height
+            if (top < flick.contentY)
+                flick.contentY = Math.max(0, top - 4)
+            else if (bottom > flick.contentY + flick.height)
+                flick.contentY = Math.min(flick.contentHeight - flick.height,
+                                          bottom - flick.height + 4)
+        }
+
     ColumnLayout {
         id: layout
         // Leave a gutter for the vertical ScrollBar so its thumb doesn't sit on
         // top of edge-to-edge content (fillWidth rows, wrapped attribution text).
         width: flick.width - 12
         spacing: 12
-
-        // ---- Header --------------------------------------------------------
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: 10
-
-            Rectangle {
-                Layout.preferredWidth: 30
-                Layout.preferredHeight: 30
-                radius: 8
-                color: Theme.iconBadgeBg
-                AppIcon {
-                    anchors.centerIn: parent
-                    name: "train"
-                    color: Theme.accent
-                    size: TypeScale.panelIconMd
-                }
-            }
-
-            ColumnLayout {
-                Layout.fillWidth: true
-                spacing: 0
-                Label {
-                    text: qsTr("Trains on Map")
-                    font.bold: true
-                    font.pointSize: TypeScale.panelSubhead
-                    color: Theme.textStrong
-                }
-                Label {
-                    text: qsTr("Finland · Digitraffic")
-                    font.pointSize: TypeScale.panelCaption
-                    color: Theme.textMuted
-                }
-            }
-        }
-
-        Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.hairline }
 
         // ---- Live status ---------------------------------------------------
         RowLayout {
@@ -154,14 +196,14 @@ Rectangle {
             Label {
                 Layout.fillWidth: true
                 text: qsTr("%1 live trains").arg(root.trainCount)
-                font.pointSize: TypeScale.panelBody
+                font.pointSize: TypeScale.body
                 font.bold: true
                 color: Theme.textStrong
             }
 
             Label {
                 text: root.streamConnected ? qsTr("LIVE") : root.streamStatus
-                font.pointSize: TypeScale.panelCaption
+                font.pointSize: TypeScale.caption
                 font.bold: true
                 color: root.streamConnected ? Theme.liveOnText : Theme.textMuted
             }
@@ -170,7 +212,7 @@ Rectangle {
         Label {
             Layout.fillWidth: true
             text: qsTr("%1 track segments").arg(root.trackCount)
-            font.pointSize: TypeScale.panelBody
+            font.pointSize: TypeScale.body
             color: Theme.textMuted
         }
 
@@ -179,7 +221,7 @@ Rectangle {
         Label {
             Layout.fillWidth: true
             text: root.punctuality
-            font.pointSize: TypeScale.panelCaption
+            font.pointSize: TypeScale.caption
             color: Theme.textMuted
             wrapMode: Text.WordWrap
             visible: text.length > 0
@@ -189,7 +231,7 @@ Rectangle {
             Layout.fillWidth: true
             text: root.statusText
             color: Theme.textMuted
-            font.pointSize: TypeScale.panelBody
+            font.pointSize: TypeScale.body
             wrapMode: Text.WordWrap
             visible: text.length > 0
         }
@@ -206,7 +248,7 @@ Rectangle {
             onClicked: root.refreshRequested()
             contentItem: Label {
                 text: refreshBtn.text
-                font.pointSize: TypeScale.panelBody
+                font.pointSize: TypeScale.body
                 font.bold: true
                 color: Theme.accentText
                 horizontalAlignment: Text.AlignHCenter
@@ -236,7 +278,7 @@ Rectangle {
         // ---- Train-type filter ---------------------------------------------
         Label {
             text: qsTr("Show trains")
-            font.pointSize: TypeScale.panelCaption
+            font.pointSize: TypeScale.caption
             font.bold: true
             color: Theme.textMuted
         }
@@ -262,7 +304,7 @@ Rectangle {
         // ---- Track legend + siding toggle -----------------------------------
         Label {
             text: qsTr("Track legend")
-            font.pointSize: TypeScale.panelCaption
+            font.pointSize: TypeScale.caption
             font.bold: true
             color: Theme.textMuted
         }
@@ -274,12 +316,12 @@ Rectangle {
             RowLayout {
                 spacing: 6
                 Rectangle { width: 16; height: 3; radius: 1.5; color: Theme.railColor }
-                Label { text: qsTr("Running line"); font.pointSize: TypeScale.panelCaption; color: Theme.textMuted }
+                Label { text: qsTr("Running line"); font.pointSize: TypeScale.caption; color: Theme.textMuted }
             }
             RowLayout {
                 spacing: 6
                 Rectangle { width: 16; height: 3; radius: 1.5; color: Theme.railSidingColor }
-                Label { text: qsTr("Siding"); font.pointSize: TypeScale.panelCaption; color: Theme.textMuted }
+                Label { text: qsTr("Siding"); font.pointSize: TypeScale.caption; color: Theme.textMuted }
             }
         }
 
@@ -294,7 +336,7 @@ Rectangle {
         // ---- Overlays -------------------------------------------------------
         Label {
             text: qsTr("Overlays")
-            font.pointSize: TypeScale.panelCaption
+            font.pointSize: TypeScale.caption
             font.bold: true
             color: Theme.textMuted
         }
@@ -307,7 +349,7 @@ Rectangle {
         Label {
             Layout.fillWidth: true
             text: qsTr("FMI weather stations (air °C).")
-            font.pointSize: TypeScale.panelCaption
+            font.pointSize: TypeScale.caption
             color: Theme.textMuted
             wrapMode: Text.WordWrap
             visible: root.showWeather
@@ -318,7 +360,7 @@ Rectangle {
         // ---- Theme toggle (Auto follows the desktop colour scheme) ---------
         Label {
             text: qsTr("Appearance")
-            font.pointSize: TypeScale.panelCaption
+            font.pointSize: TypeScale.caption
             font.bold: true
             color: Theme.textMuted
         }
@@ -381,7 +423,7 @@ Rectangle {
                         Label {
                             anchors.centerIn: parent
                             text: seg.label
-                            font.pointSize: TypeScale.panelCaption
+                            font.pointSize: TypeScale.caption
                             font.bold: seg.active
                             color: seg.active ? Theme.accentText : Theme.textMuted
                         }
@@ -407,9 +449,10 @@ Rectangle {
             Layout.fillWidth: true
             text: qsTr("Data © Fintraffic / Digitraffic (CC BY 4.0)\nMap © Esri, HERE, Garmin, © OpenStreetMap contributors")
             color: Theme.textMuted   // ≥ 4.5:1 on the card
-            font.pointSize: TypeScale.panelCaption
+            font.pointSize: TypeScale.caption
             wrapMode: Text.WordWrap
         }
+    }
     }
     }
 }

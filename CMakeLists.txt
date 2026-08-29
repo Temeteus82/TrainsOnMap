@@ -73,6 +73,7 @@ qt_add_qml_module(TrainsOnMap
         qml/StationBoardPanel.qml
         qml/TrainListPanel.qml
         qml/ToggleRow.qml
+        qml/CollapseButton.qml
         qml/Theme.qml
         qml/TypeScale.qml
         qml/AppIcon.qml
@@ -344,6 +345,22 @@ qt_add_executable(tst_digitrafficformat
 target_include_directories(tst_digitrafficformat PRIVATE src)
 target_link_libraries(tst_digitrafficformat PRIVATE Qt6::Core Qt6::Test)
 add_test(NAME digitrafficformat COMMAND tst_digitrafficformat)
+
+# The nearest-neighbour scan behind marker label declutter. Visiting only j > i
+# and writing the one haversine to both rows is a halving that is easy to break
+# one-sidedly, and nothing else in the suite touches TrainListModel directly.
+# Same source set as tst_trainfilter: the model pulls in TrackService (its
+# matcher) and thus RailGraph, even though no fix is ever matched here.
+qt_add_executable(tst_trainlistmodel
+    tests/tst_trainlistmodel.cpp
+    src/TrainListModel.h src/TrainListModel.cpp
+    src/TrackService.h src/TrackService.cpp
+    src/TrackListModel.h src/TrackListModel.cpp
+    src/RailGraph.h src/RailGraph.cpp)
+target_include_directories(tst_trainlistmodel PRIVATE src)
+target_link_libraries(tst_trainlistmodel PRIVATE
+    Qt6::Core Qt6::Qml Qt6::Positioning Qt6::Concurrent Qt6::Test)
+add_test(NAME trainlistmodel COMMAND tst_trainlistmodel)
 
 # Only the app gets windeployqt'd, so on Windows the test exes have no Qt DLLs
 # beside them and ctest fails them all with 0xc0000135 unless the kit happens to

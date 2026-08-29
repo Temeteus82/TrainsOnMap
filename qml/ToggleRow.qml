@@ -50,14 +50,14 @@ Item {
                 visible: root.checked
                 name: "check"
                 color: Theme.accentText
-                size: TypeScale.panelIconSm
+                size: TypeScale.iconSm
             }
         }
 
         Label {
             Layout.fillWidth: true
             text: root.label
-            font.pointSize: TypeScale.panelBody
+            font.pointSize: TypeScale.body
             color: Theme.textStrong
         }
     }

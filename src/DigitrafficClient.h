@@ -106,19 +106,32 @@ private:
     /// @param full  true for an authoritative full snapshot (accumulated maps are
     ///              reset first); false for an incremental version-delta merge.
     void handleCategories(QNetworkReply *reply, bool full);
-    /// One-shot at startup: load station short-code -> coordinate (for the model's
-    /// parked-train station pin) and -> name (shared via stationNames()).
+    /// Load station short-code -> coordinate (for the model's parked-train
+    /// station pin) and -> name (shared via stationNames()). Issued at startup
+    /// and re-issued by retryMetadata() until it succeeds; a no-op once loaded
+    /// or while a request is already in flight.
     void fetchStations();
     void handleStations(QNetworkReply *reply);
-    /// One-shot at startup: load cause-category code -> name for the timetable's
-    /// delay-cause line.
+    /// Load cause-category code -> name for the timetable's delay-cause line.
+    /// Same retry contract as fetchStations().
     void fetchCauseCategories();
     void handleCauseCategories(QNetworkReply *reply);
-    /// One-shot at startup: load detailed-cause-category code -> name, paired with
+    /// Load detailed-cause-category code -> name, paired with
     /// fetchCauseCategories() to make the delay-cause line specific rather than
-    /// just the coarse top-level category.
+    /// just the coarse top-level category. Same retry contract as fetchStations().
     void fetchDetailedCauseCategories();
     void handleDetailedCauseCategories(QNetworkReply *reply);
+    /// Re-issue whichever of the three metadata fetches has not yet succeeded.
+    /// Called from refresh(), i.e. on the resync timer. Without it a single
+    /// failure — an app launched before Wi-Fi associates, say — permanently
+    /// disables station name resolution, the passenger-station layer,
+    /// parked-train pinning and every delay-cause line for the whole process
+    /// lifetime. Attempts thin out by doubling the resync cycles skipped
+    /// between them, capped so recovery still lands within a bounded delay.
+    void retryMetadata();
+    /// True while any of the three metadata endpoints is still unloaded, i.e.
+    /// names and delay causes are degraded. Reported in status().
+    bool metadataIncomplete() const;
     void setStatus(const QString &status);
     /// Recompute the punctuality summary from the accumulated per-train status +
     /// category maps (called at the end of handleCategories).
@@ -141,6 +154,21 @@ private:
     QHash<QString, QString> m_stationNames;   ///< shortCode -> name (see stationNames())
     QHash<QString, QString> m_causeCategoryNames; ///< categoryCode -> name (see causeCategoryNames())
     QHash<QString, QString> m_detailedCauseCategoryNames; ///< detailedCategoryCode -> name (see detailedCauseCategoryNames())
+
+    // ---- one-shot metadata fetch state (see retryMetadata()) ---------------
+    /// `loaded` latches on the first reply that parses; `inFlight` stops a
+    /// retry from stacking a second request on top of a slow one.
+    struct MetadataFetch {
+        bool loaded = false;
+        bool inFlight = false;
+        /// Worth issuing a request for: not already loaded, none outstanding.
+        bool needsRequest() const { return !loaded && !inFlight; }
+    };
+    MetadataFetch m_stationsFetch;
+    MetadataFetch m_causeFetch;
+    MetadataFetch m_detailedCauseFetch;
+    int m_metadataBackoff = 1;   ///< resync cycles per retry; doubles, capped
+    int m_metadataSkips = 0;     ///< cycles left to skip before the next retry
 
     // ---- /live-trains incremental polling state ----------------------------
     // Highest Train.version seen since the last full snapshot; the next delta

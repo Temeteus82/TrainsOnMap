@@ -1,13 +1,12 @@
 # UI audit — round 2 (2026-08-26)
 
-> **Status (2026-08-27):** 11 of 20 findings are fixed and marked *Fixed*
+> **Status (2026-08-29):** 14 of 20 findings are fixed and marked *Fixed*
 > below — U2-W1, U2-C2, U2-C3 on 2026-08-26; U2-W5, U2-W7, U2-O3, U2-O5 and
-> then both Criticals (U2-C1 with U2-O1, and U2-C4 with U2-W8) on 2026-08-27.
+> then both Criticals (U2-C1 with U2-O1, and U2-C4 with U2-W8) on 2026-08-27;
+> U2-W3, U2-W4 (focus management) and U2-W2 (type scale) on 2026-08-29.
 >
-> **Still open:** U2-W2 (type scale), U2-W3 (focus scrolling), U2-W4 (Escape /
-> focus into panels), U2-W6 (localisation), U2-W9 (first-run zoom), U2-W10
-> (sidebar density), U2-O2 (map empty/error state), U2-O4 (panel-open
-> announcement).
+> **Still open:** U2-W6 (localisation), U2-W9 (first-run zoom), U2-W10 (sidebar
+> density), U2-O2 (map empty/error state), U2-O4 (panel-open announcement).
 
 Scope: the nine files in `qml/`, audited against WCAG 2.2 AA, the Laws of UX
 set, and the qt-ui-design checklist (typography, motion, keyboard/multi-input,
@@ -255,7 +254,7 @@ reason.
 Two things do change visually and are worth an eyeball: `BusyIndicator` and
 `ToolTip` in the two panels now render Basic rather than native Windows.
 
-### U2-W2 — The `panel*` scale breaks its own stated floor
+### U2-W2 — The `panel*` scale breaks its own stated floor — **Fixed**
 
 `TypeScale.qml` documents `caption` (11) as the floor: "nothing renders below
 it". `panelScale: 0.75` then puts most of the application below it:
@@ -279,7 +278,51 @@ two different sizes for the same visual role: the FMI weather chip uses
 11–12 and delete `panelScale`), or keep two scales but stop them overlapping —
 one map-chip size, one panel size. The floor should be a real floor.
 
-### U2-W3 — Keyboard focus can scroll out of view in the sidebar
+**Fixed (2026-08-29)** by the first option — fold it back — which a usage count
+settled rather than taste. Of the 61 `TypeScale.*` references in `qml/`, **60**
+were `panel*`; the plain scale had exactly one live consumer left, the FMI
+weather chip. So the "main" scale wasn't the main scale at all, and keeping two
+would have meant maintaining a four-role scale for one `Text` element.
+
+`panelScale` and the seven derived roles are deleted and the 60 call sites are
+renamed to the plain roles:
+
+| Role | Was (effective) | Now | ≈ px @96 dpi |
+|---|---|---|---|
+| `caption` | 8.25 pt | **9 pt** | ~12 |
+| `body` | 9.75 pt | **10 pt** | ~13 |
+| `subhead` | 12 pt | **12 pt** | ~16 |
+| `title` | 14.25 pt | **15 pt** | ~20 |
+| `iconSm` / `iconMd` | 10.5 / 13.5 px | **11 / 14 px** | — |
+
+**The sizes took four passes on screen to settle, and the honest conclusion is
+that this document's framing of the problem was incomplete.** The finding treated
+the scale as sound and the 0.75× multiplier as the defect. Removing the
+multiplier and re-deriving a minor third from base 12, then 11, both read a point
+heavy in the overlay cards; a `dense` half-step at 10 was added for the timetable
+and then deleted one revision later when `body` came down to 10 and made it
+redundant. What that sequence shows is that a 1.2 ratio is simply too coarse for
+this UI — it steps 9 → 11 → 13 → 16, and the size these cards want sits between
+two rungs. The four values above are hand-tuned against the running app, and
+`TypeScale.qml` now says so instead of claiming a generator it doesn't have.
+
+`body` (10) sits one point off `caption` (9) deliberately: hierarchy in the cards
+comes from weight and colour (`textStrong` vs `textMuted`, bold section headers),
+not from size alone, which is what lets the scale compress this far.
+
+So of the three complaints: `caption` (9) is a real floor with nothing below it,
+four roles are four roles, and the two map chips — FMI weather and the train
+marker badge — are one size again instead of 11 vs 8.25. `body` lands under the
+§1.2 16 px desktop minimum rather than on it. That is a knowing trade of the
+guideline for density, the same one the original 13-base made; the difference is
+that the floor no longer lies about where it is, which was the actual finding.
+
+Nothing needed a layout change at any of the sizes tried: the marker capsule,
+both list delegates and the weather chip are all content-sized
+(`implicitWidth`/`implicitHeight` from their text), and the fixed heights that do
+exist (32 px control rows, the 40 px train list row) clear the text throughout.
+
+### U2-W3 — Keyboard focus can scroll out of view in the sidebar — **Fixed**
 
 `InfoPanel.qml` caps its height on a short window and flicks. Tab order walks
 the whole `ColumnLayout` regardless of what is scrolled into view, and nothing
@@ -293,7 +336,18 @@ so it would not have been caught by a 2.1 pass.
 **Fix.** An `onActiveFocusChanged` handler on the focusable rows that scrolls
 the focused item's `y` into `[contentY, contentY + height]`.
 
-### U2-W4 — No Escape, and focus never enters an opened panel
+**Fixed (2026-08-29)** with one hook on the Flickable rather than a handler per
+row: `readonly property Item focusedItem: root.Window.activeFocusItem`, and an
+`onFocusedItemChanged` that walks the parent chain to confirm the item is inside
+`layout` (focus elsewhere in the window is ignored), then nudges `contentY` so
+the item's top and bottom sit inside the viewport with a 4 px margin. That
+covers the Refresh button, the five `ToggleRow`s and the three Appearance
+segments — and any row added later, which the per-row version would not.
+
+The train list has no such gap: its `ListView` moves `currentIndex` and keeps
+the current item in view itself.
+
+### U2-W4 — No Escape, and focus never enters an opened panel — **Fixed**
 
 `grep` finds zero `Key_Escape` handlers in `qml/`. Opening a train detail or
 station board panel does not move focus into it, and closing it does not restore
@@ -306,6 +360,27 @@ and §1.3 asks for a keyboard-accessible exit from any overlay.
 
 **Fix.** `Shortcut { sequence: StandardKey.Cancel }` on each panel calling
 `clear()`; `forceActiveFocus()` on the panel when it becomes visible.
+
+**Fixed (2026-08-29)** exactly as written, plus the return leg. Both panels carry
+a `Shortcut { sequence: StandardKey.Cancel }` gated on the service's
+`hasSelection` — the gate matters because the `Loader`s latch `everShown` and
+keep the closed panel alive but hidden, so an ungated window-wide shortcut would
+have both panels racing for one Escape.
+
+Focus entry and return live on the two `Loader`s in `Main.qml`, since the panels
+themselves don't know what to hand focus back to:
+
+```qml
+onVisibleChanged: {
+    const t = visible ? (item as Item) : trainListPanel
+    if (t)
+        t.forceActiveFocus()
+}
+```
+
+Opening moves focus to the panel root, so Tab lands on its close button instead
+of restarting at the top of the window; closing hands focus to the train list
+rather than nowhere. `Loader.item` is typed `QObject`, hence the `as Item`.
 
 ### U2-W5 — `Theme.reducedMotion` cannot be turned on from the UI — **Fixed**
 
@@ -421,6 +496,16 @@ space.
 open; collapse Legend / Overlays / Appearance / attribution behind a single
 disclosure row. The card already flicks, so the mechanism is half-built.
 
+**Partly addressed (2026-08-29), still open.** Both left cards now collapse to
+their header row via a `CollapseButton` chevron — see the U2-W10 note in
+`CHANGES.md`. That gives the user a way to reclaim the whole left column, and it
+is what was asked for, but it is a blunter instrument than this finding wants:
+the choice is all-or-nothing per card, so reclaiming the Legend/Overlays/
+Appearance space also costs the live status and the train filters, which are the
+parts worth watching. The within-card disclosure above is still the fix; the
+collapse gives it a proven mechanism (header outside the Flickable, content
+`visible: false` so it leaves the tab chain) to reuse per group.
+
 ---
 
 ## Opportunities
@@ -510,13 +595,14 @@ Recorded so a later pass doesn't re-derive it:
    `Theme` first is what gave the dark branch somewhere to live.
 4. ~~**U2-W5, U2-W7, U2-O5**~~ (and **U2-O3**) — done, all one-liners as billed.
 5. ~~**U2-C1 / U2-O1**~~ — done. The train list; the Level A failure is closed.
-6. **U2-W3, U2-W4** — focus management. Now the *next* thing to do, and cheaper
-   than when this was written: the list gives the sidebar a real focus chain, so
-   W3's scroll-into-view and W4's Escape/focus-entry have somewhere to hook.
-7. **U2-W2** (type scale), **U2-W6** (localisation), **U2-W9/W10** (sidebar) —
-   each is a deliberate design decision to make rather than a bug to fix.
-   **U2-W10 got worse**, not better: the left column now carries the sidebar
-   *and* a train list, which strengthens the case for collapsing Legend /
-   Overlays / Appearance behind a disclosure row.
+6. ~~**U2-W3, U2-W4**~~ — done. Focus management. The list did make it cheaper:
+   it gave the sidebar a real focus chain for W3's scroll-into-view to hook,
+   and gave W4 somewhere to hand focus back to on close.
+7. ~~**U2-W2**~~ (type scale) — done. **U2-W6** (localisation) and **U2-W9/W10**
+   (sidebar) remain: each is a deliberate design decision to make rather than a
+   bug to fix. **U2-W10 got worse**, not better: the left column now carries the
+   sidebar *and* a train list, which strengthens the case for collapsing Legend /
+   Overlays / Appearance behind a disclosure row — and W2's ~20% type bump costs
+   that column more vertical space again.
 8. **U2-O2** (map empty/error state), **U2-O4** (panel-open announcement) — the
    remaining Opportunities.
