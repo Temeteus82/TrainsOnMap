@@ -47,6 +47,12 @@ Suggested fix-order: **CPP-C1, CPP-C2** first (user-visible bugs), then
 > both `show()` slots, and the MQTT topic filter; live payloads now match on
 > `departureDate` as well. Pinned by four new test slots.
 >
+> **CPP-W10, CPP-W14, CPP-I1, CPP-I7 fixed** (2026-08-29, performance pass): the
+> hot matcher queries the spatial grid that already existed, the national network
+> is no longer eagerly boxed into `QVariantList`s, the viewport diff splices runs
+> in one shift, and MQTT reassembly drains linearly. New `tst_tracklistmodel`
+> target (8 ctest targets now).
+>
 > **CPP-W12, CPP-W13, CPP-I3, CPP-I6 fixed** (2026-08-29, error-handling pass):
 > one `parseArray`/`parseObject` helper pair that reports the reason, used at all
 > nine remote-JSON sites; a partial live payload can no longer blank a loaded
@@ -462,7 +468,7 @@ nothing at all when a delta poll changed nothing. Pinned by
 
 ---
 
-### CPP-W10 — The hot map-matching path ignores the spatial index that already exists
+### CPP-W10 — The hot map-matching path ignores the spatial index that already exists — **Fixed**
 `src/TrackService.cpp:151`
 
 `matchToNetwork()` linearly scans all 4,934 tracks on every fix, rejecting each
@@ -485,6 +491,15 @@ candidate ids, then run the existing per-vertex projection only on those.
 Correctness is unchanged because the exact bbox test still runs per hit — the same
 contract `loadForBounds()` already relies on. Keep the linear scan as the
 empty-grid fallback, exactly as `loadForBounds()` does.
+
+**Fixed (2026-08-29)** as written, with one correction to the finding: the grid
+ids are **not** index-parallel to `m_graph->tracks()` — `loadNetwork()` skips
+tracks with fewer than two points, so the two sequences diverge at the first such
+track. `Segment` now carries its `trackIndex` explicitly rather than resting on an
+invariant nobody was enforcing (the same field CPP-W14 needs). The ±600 m margin
+box spans well under one 0.1° cell, so a query touches one to four cells;
+duplicates across cells are deliberately not deduped, since re-running an
+idempotent projection is cheaper than sorting the candidates per fix.
 
 ---
 
@@ -586,7 +601,7 @@ left alone: local blob, not a remote feed. Pinned by two new slots in
 
 ---
 
-### CPP-W14 — The entire national network is eagerly boxed into `QVariantList`
+### CPP-W14 — The entire national network is eagerly boxed into `QVariantList` — **Fixed**
 `src/TrackService.cpp:88`
 
 `loadNetwork()` boxes all **211,054** `QGeoCoordinate` vertices across 4,934
@@ -604,6 +619,17 @@ does not follow that the boxed copy needs to exist for the whole country up fron
 first time `loadForBounds()` selects a segment, cached in a bounded LRU keyed by
 segment id (a viewport holds a few hundred at most). If the eager form is kept for
 startup simplicity, at least document the memory cost next to `m_all`.
+
+**Fixed (2026-08-29)** by the lazy-boxing half: `Segment` keeps the bbox, the
+main-track flag and the track index — no `QVariantList` — and `boxedPath()` builds
+one on first request from `loadForBounds()`, cached by segment id and dropped when
+the network reloads. `m_all` is now ~40 bytes a segment instead of holding 211k
+heap-allocated `QVariant`s.
+
+**Not done:** the LRU. The cache's ceiling is "segments the user actually panned
+over", which is at worst the old eager cost and in practice a small fraction of
+it, so an eviction policy would be machinery guarding a bound that is already
+better than what shipped. Noted in the code next to the cache.
 
 ---
 
@@ -718,7 +744,7 @@ in-place assignment pattern the `set*` methods rely on before adopting it.
 Not verified — each says why, and how to settle it. Capped at 10 by confidence;
 five further candidates in the 60–62 band were dropped by the cap.
 
-### CPP-I1 — `TrackListModel` inserts run elements one at a time (74)
+### CPP-I1 — `TrackListModel` inserts run elements one at a time (74) — **Fixed**
 `src/TrackListModel.cpp:82` — a run of `n` new segments into a model of `m` rows
 costs O(n·m) element moves across three parallel vectors. A pan into a dense
 region (Helsinki, Tampere) can insert hundreds into a model holding thousands, on
@@ -727,6 +753,18 @@ the GUI thread. `QSet<int> wanted(...)` is also rebuilt per call.
 viewport is debounced in QML, so it may sit inside the frame budget.
 **Verify:** log `ids.size()`, `oldCount` and the insertion phase's wall time while
 panning across Helsinki at several zoom levels; batch if it exceeds ~2 ms.
+
+**Fixed (2026-08-29)** without the measurement, on the same reasoning as CPP-I8:
+the fix is smaller than the rig. The run is now spliced by making room with one
+`insert(i, n, value)` per vector and filling it, instead of n element-wise inserts
+each memmoving the tail; the `QSet` rebuild is gone too, replaced by a binary
+search over the already-ascending `ids` (an ordering both phases relied on
+anyway). Note Qt 6's `QList` has **no** iterator-range insert — the declaration in
+`qlist.h` is inside `#if 0` — which is why the count-overload spelling is used.
+
+Pinned by a new `tst_tracklistmodel` target: three viewport transitions under
+`QAbstractItemModelTester`, plus the no-op and mid-run-insert cases. Confirmed
+non-vacuous by mutating the fill index and watching it fail.
 
 ### CPP-I2 — `ringState` ages with wall-clock time but emits no `dataChanged` (72)
 `src/TrainListModel.cpp:467`, consumed at `:86` — `ringStateFor()` compares
@@ -815,7 +853,7 @@ ordering by construction whatever Qt does with invalid operands, which is the
 cheaper answer than proving the current form safe. The comparator is a lambda
 inside `handleReply` and is not covered by a test.
 
-### CPP-I7 — MQTT frame reassembly drains quadratically (68)
+### CPP-I7 — MQTT frame reassembly drains quadratically (68) — **Fixed**
 `src/DigitrafficMqttClient.cpp:204` — `m_rxBuffer.remove(0, total)` after each
 decoded packet memmoves the whole remainder, and `mid()` at `:202` deep-copies
 each body. Draining a frame of `k` packets is O(k²) in buffer bytes plus `k`
@@ -825,6 +863,14 @@ can hold a backlog when the GUI thread stalls — e.g. during `CPP-W1`'s 60 s pa
 for typical single-packet frames the current code is fine.
 **Verify:** log `message.size()` and packets-decoded per `onBinaryMessage` over a
 few minutes of live traffic.
+
+**Fixed (2026-08-29)**, again cheaper than measuring: the drain loop walks a
+cursor and erases once at the end, so a frame of k packets costs one memmove
+rather than k. The `mid()` copy per body is left as it is — it feeds
+`dispatchPacket(const QByteArray &)`, and a view would ripple through the codec
+for a copy that is bounded by one packet. The cursor is advanced *before*
+dispatch and the final erase is clamped, because a publish can reach QML and from
+there `closeConnection()`, which clears the buffer under the loop.
 
 ### CPP-I8 — `routeKey` computed twice per route per pass (66) — **Fixed**
 `src/TrackService.cpp:266` — `kickPrecompute()` builds each route's key once for

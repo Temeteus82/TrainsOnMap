@@ -108,9 +108,11 @@ signals:
     void routesReady();
 
 private:
-    /// One render segment: a WGS84 polyline plus a lat/lon bbox for viewport cull.
+    /// One render segment: a lat/lon bbox for viewport cull plus the index of the
+    /// graph track holding the geometry. The QML-facing QVariantList is *not*
+    /// stored here — see boxedPath() for why (CPP-W14).
     struct Segment {
-        QVariantList path;
+        int trackIndex = -1;      ///< index into m_graph->tracks(); geometry lives there
         bool mainTrack = false;   ///< paaraide: running line (true) vs siding (false)
         double minLat = 0.0;
         double maxLat = 0.0;
@@ -155,8 +157,24 @@ private:
     void setLoading(bool loading);
     void setStatus(const QString &status);
 
+    /// The QML-facing boxed polyline for segment `id`, built on first request and
+    /// cached.
+    ///
+    /// loadNetwork() used to box all 211k QGeoCoordinates across the whole country
+    /// into permanently-resident QVariantLists, on top of the unboxed copy
+    /// RailGraph already keeps — and QVariant cannot hold a QGeoCoordinate inline,
+    /// so that is one heap allocation per vertex for geometry the viewport will
+    /// mostly never ask for (CPP-W14). Now nothing is boxed until a viewport
+    /// selects it.
+    ///
+    /// The cache is unbounded, but its ceiling is "segments the user actually
+    /// panned over", which is at worst the old eager cost and in practice a small
+    /// fraction of it. An LRU is the upgrade if that ever stops being true.
+    const QVariantList &boxedPath(int id) const;
+
     TrackListModel *m_model = nullptr;
     QVector<Segment> m_all;                 ///< render segments (viewport cull only)
+    mutable QHash<int, QVariantList> m_boxed;   ///< segment id -> boxed path; see boxedPath()
     Grid m_grid;                            ///< spatial index over m_all (by id)
     std::shared_ptr<RailGraph> m_graph;     ///< Tier-2 network; null until loaded
     QHash<QString, RailGraph::RoutePolyline> m_routePolys;  ///< routeKey -> polyline

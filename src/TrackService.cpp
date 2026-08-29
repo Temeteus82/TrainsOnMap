@@ -46,6 +46,7 @@ TrackService::TrackService(QObject *parent)
         m_all = loaded.segments;
         m_grid = loaded.grid;
         m_graph = loaded.graph;
+        m_boxed.clear();   // ids refer to the previous network
         setLoading(false);
         // On success, clear status rather than reporting the total network size:
         // the sidebar's live "N track segments" label already shows the current
@@ -74,21 +75,25 @@ TrackService::Loaded TrackService::loadNetwork()
     if (raw.isEmpty() || !out.graph->loadFromJson(raw))
         return out;
 
-    // Flatten the graph's tracks into render segments (bind path to MapPolyline).
+    // Index the graph's tracks as render segments: bbox for the viewport cull, and
+    // the track index so the geometry can be boxed on demand (boxedPath, W14) and
+    // reached from a grid hit (matchToNetwork, W10). Note the segment ids are NOT
+    // parallel to the track indices — tracks with fewer than two points are
+    // skipped — which is exactly why the index is stored rather than assumed.
     const QVector<RailGraph::Track> &tracks = out.graph->tracks();
     out.segments.reserve(tracks.size());
-    for (const RailGraph::Track &t : tracks) {
+    for (int i = 0; i < tracks.size(); ++i) {
+        const RailGraph::Track &t = tracks.at(i);
+        if (t.path.size() < 2)
+            continue;
         Segment seg;
+        seg.trackIndex = i;
         seg.mainTrack = t.paaraide;
-        seg.path.reserve(t.path.size());
         seg.minLat = t.minLat;
         seg.maxLat = t.maxLat;
         seg.minLon = t.minLon;
         seg.maxLon = t.maxLon;
-        for (const QGeoCoordinate &c : t.path)
-            seg.path.append(QVariant::fromValue(c));
-        if (seg.path.size() >= 2)
-            out.segments.push_back(std::move(seg));
+        out.segments.push_back(seg);
     }
 
     // Build the spatial grid over the segment bboxes so loadForBounds() can query
@@ -145,13 +150,13 @@ TrackMatch TrackService::matchToNetwork(const QGeoCoordinate &fix, double headin
     double bestEast = 0.0, bestNorth = 0.0;
     bool found = false;
 
-    // Match against the graph's plain-QGeoCoordinate tracks (with their bbox),
-    // not the boxed QVariantList render segments — no per-vertex QVariant unbox
-    // on this hot path, and the geometry isn't resident twice for matching.
-    for (const RailGraph::Track &t : m_graph->tracks()) {
+    // Project against the graph's plain-QGeoCoordinate tracks, never the boxed
+    // render geometry — no per-vertex QVariant unbox on this hot path.
+    const QVector<RailGraph::Track> &tracks = m_graph->tracks();
+    const auto project = [&](const RailGraph::Track &t) {
         if (fix.latitude()  < t.minLat - latMargin || fix.latitude()  > t.maxLat + latMargin
             || fix.longitude() < t.minLon - lonMargin || fix.longitude() > t.maxLon + lonMargin)
-            continue;
+            return;
 
         for (int i = 1; i < t.path.size(); ++i) {
             const tm35fin::SegmentHit h =
@@ -170,6 +175,36 @@ TrackMatch TrackService::matchToNetwork(const QGeoCoordinate &fix, double headin
                 found = true;
             }
         }
+    };
+
+    if (!m_grid.isEmpty()) {
+        // Broadphase through the same grid loadForBounds() uses — it indexes
+        // exactly these bounding boxes, and this is the far hotter path: every
+        // fix with no resolved route, the whole warm-up window, and every Tier-2
+        // miss used to walk all ~4,900 tracks instead (CPP-W10). The ±600 m
+        // margin box spans well under one 0.1° cell, so this is one to four
+        // cells. Duplicates across cells are left alone deliberately: re-running
+        // a projection is idempotent and cheaper than sorting the candidates.
+        const int c0 = std::clamp(m_grid.colOf(fix.longitude() - lonMargin), 0, m_grid.cols - 1);
+        const int c1 = std::clamp(m_grid.colOf(fix.longitude() + lonMargin), 0, m_grid.cols - 1);
+        const int r0 = std::clamp(m_grid.rowOf(fix.latitude()  - latMargin), 0, m_grid.rows - 1);
+        const int r1 = std::clamp(m_grid.rowOf(fix.latitude()  + latMargin), 0, m_grid.rows - 1);
+        for (int ry = r0; ry <= r1; ++ry) {
+            for (int cx = c0; cx <= c1; ++cx) {
+                const auto it = m_grid.cells.constFind(ry * m_grid.cols + cx);
+                if (it == m_grid.cells.constEnd())
+                    continue;
+                for (int id : *it) {
+                    const int ti = m_all.at(id).trackIndex;
+                    if (ti >= 0 && ti < tracks.size())
+                        project(tracks.at(ti));
+                }
+            }
+        }
+    } else {
+        // No grid (network not loaded yet): the linear scan, as loadForBounds does.
+        for (const RailGraph::Track &t : tracks)
+            project(t);
     }
 
     if (!found)
@@ -333,6 +368,23 @@ QVariantList TrackService::routePolyline(const QStringList &stationCodes) const
     return out;
 }
 
+const QVariantList &TrackService::boxedPath(int id) const
+{
+    const auto cached = m_boxed.constFind(id);
+    if (cached != m_boxed.constEnd())
+        return *cached;
+
+    QVariantList path;
+    const int ti = m_all.at(id).trackIndex;
+    if (m_graph && ti >= 0 && ti < m_graph->tracks().size()) {
+        const QVector<QGeoCoordinate> &pts = m_graph->tracks().at(ti).path;
+        path.reserve(pts.size());
+        for (const QGeoCoordinate &c : pts)
+            path.append(QVariant::fromValue(c));
+    }
+    return *m_boxed.insert(id, std::move(path));
+}
+
 void TrackService::loadForBounds(double west, double south, double east, double north)
 {
     QVector<int> ids;
@@ -377,7 +429,7 @@ void TrackService::loadForBounds(double west, double south, double east, double 
     paths.reserve(ids.size());
     mains.reserve(ids.size());
     for (int id : ids) {
-        paths.push_back(m_all.at(id).path);
+        paths.push_back(boxedPath(id));
         mains.push_back(m_all.at(id).mainTrack);
     }
 

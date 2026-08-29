@@ -13,6 +13,8 @@
 #include <QWebSocket>
 #include <QWebSocketHandshakeOptions>
 
+#include <algorithm>
+
 #if QT_CONFIG(ssl)
 #include <QSslError>
 #endif
@@ -180,10 +182,16 @@ void DigitrafficMqttClient::onBinaryMessage(const QByteArray &message)
     // accumulate and parse as many complete packets as are available.
     m_rxBuffer += message;
 
-    while (m_rxBuffer.size() >= 2) {
+    // Consume with a cursor and erase once at the end. Removing each packet from
+    // the front instead memmoves the whole remainder, so draining a frame of k
+    // packets was O(k^2) in buffer bytes — and the buffer is only cleared on a
+    // malformed stream or a disconnect, so it can hold a real backlog when the GUI
+    // thread has stalled (I7).
+    qsizetype pos = 0;
+    while (m_rxBuffer.size() - pos >= 2) {
         int remaining = 0;
         int lengthBytes = 0;
-        if (!mqttwire::decodeRemainingLength(m_rxBuffer, 1, remaining, lengthBytes))
+        if (!mqttwire::decodeRemainingLength(m_rxBuffer, int(pos) + 1, remaining, lengthBytes))
             break; // length field not fully arrived yet
 
         const int total = 1 + lengthBytes + remaining;
@@ -196,14 +204,20 @@ void DigitrafficMqttClient::onBinaryMessage(const QByteArray &message)
             m_socket->close();   // → onSocketDisconnected → reconnect while active
             return;
         }
-        if (m_rxBuffer.size() < total)
+        if (m_rxBuffer.size() - pos < total)
             break; // packet body not fully arrived yet
 
-        const quint8 first = static_cast<quint8>(m_rxBuffer.at(0));
-        const QByteArray body = m_rxBuffer.mid(1 + lengthBytes, remaining);
+        const quint8 first = static_cast<quint8>(m_rxBuffer.at(pos));
+        const QByteArray body = m_rxBuffer.mid(pos + 1 + lengthBytes, remaining);
+        pos += total;
+        // Dispatch last: it can run arbitrary downstream code (a publish reaches
+        // the detail panel and QML), which may reach closeConnection() and clear
+        // the buffer under us. Advancing `pos` first keeps the erase below
+        // consistent with what was actually consumed, and it is clamped anyway.
         dispatchPacket((first >> 4) & 0x0F, first & 0x0F, body);
-        m_rxBuffer.remove(0, total);
     }
+    if (pos > 0)
+        m_rxBuffer.remove(0, std::min(pos, m_rxBuffer.size()));
 }
 
 void DigitrafficMqttClient::dispatchPacket(quint8 type, quint8 flags, const QByteArray &body)
