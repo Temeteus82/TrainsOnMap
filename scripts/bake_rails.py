@@ -68,7 +68,9 @@ graph disconnected. Both failures are otherwise silent; see their docstrings.
 
 Usage: python3 scripts/bake_rails.py
 """
+import contextlib
 import gzip
+import io
 import json
 import math
 import struct
@@ -128,6 +130,17 @@ GEO_MATCH_MAX_M = 1500.0
 # flag them here rather than waiting for someone to spot the break on the map.
 GAP_MIN_M = 30.0      # below this RailGraph's 10 m node grid still welds the ends
 GAP_MAX_M = 5000.0    # beyond this it's a genuine line end (buffer stop, border)
+# A dangling tip is only a hole if the network resumes *ahead* of it. On a
+# dead-end spur -- an industrial branch, a harbour stub, a dismantled line --
+# the tip juts into open space by design and the nearest other rail is back at
+# its own root, i.e. behind it. Comparing the track's outward tangent against
+# the bearing to that nearest rail separates the two cleanly: measured over the
+# 2026-07 network the real Karjaa-Inkoo hole read 6 deg and 11 deg, while all
+# seven spurs read 157-180 deg. Anything at or beyond a right angle is behind.
+GAP_AHEAD_DEG = 90.0
+# Sample the tangent this far back along the track, so one short final segment
+# can't set the direction.
+TANGENT_BACK_M = 25.0
 
 OUT = Path(__file__).resolve().parent.parent / "resources" / "rails.geojson.qz"
 
@@ -342,11 +355,16 @@ def report_gaps(features):
 
     Builds a 100 m spatial hash of every vertex, then asks of each main track's
     two endpoints: how far is the nearest vertex belonging to a *different*
-    line? A running line is a chain, so that distance is normally ~0. Anything
-    between GAP_MIN_M and GAP_MAX_M is a hole in the network; further than that
-    (or nothing found at all) is a real terminus and is not reported.
+    line? A running line is a chain, so that distance is normally ~0. A distance
+    between GAP_MIN_M and GAP_MAX_M is a candidate hole; further than that (or
+    nothing found at all) is a real terminus and is not reported.
 
-    Returns the number of suspicious gaps.
+    A candidate is only reported when that nearest rail lies *ahead* of the tip
+    (see GAP_AHEAD_DEG) -- i.e. the line genuinely resumes across the gap. A
+    dead-end spur otherwise reports its own tip every single bake, which buries
+    the one finding that matters.
+
+    Returns the suspicious gaps as (metres, oid, easting, northing) tuples.
     """
     cell = 100.0
     grid = {}
@@ -365,8 +383,9 @@ def report_gaps(features):
                     .append((pt[0], pt[1], idx))
 
     def nearest_other(x, y, idx):
-        """Distance to the closest vertex not on line `idx`, or None if none near."""
-        best = None
+        """(distance, point) of the closest vertex not on line `idx`; (None, None)
+        when nothing is within GAP_MAX_M."""
+        best = (None, None)
         for r in range(1, int(GAP_MAX_M // cell) + 2):
             cx, cy = int(x // cell), int(y // cell)
             for dx in range(-r, r + 1):
@@ -378,32 +397,94 @@ def report_gaps(features):
                         if qi == idx:
                             continue
                         d = math.hypot(qx - x, qy - y)
-                        if best is None or d < best:
-                            best = d
+                        if best[0] is None or d < best[0]:
+                            best = (d, (qx, qy))
             # Everything beyond this ring is at least r*cell away, so we're done.
-            if best is not None and best < r * cell:
+            if best[0] is not None and best[0] < r * cell:
                 break
         return best
+
+    def points_ahead(pts, tip, other):
+        """True when `other` lies beyond the tip rather than back down the track."""
+        back = tip
+        for cand in reversed(pts) if tip is pts[-1] else pts:
+            back = cand
+            if math.hypot(cand[0] - tip[0], cand[1] - tip[1]) >= TANGENT_BACK_M:
+                break
+        if back is tip:
+            return True                       # too short to orient; don't hide it
+        outward = math.atan2(tip[0] - back[0], tip[1] - back[1])
+        toward = math.atan2(other[0] - tip[0], other[1] - tip[1])
+        off = abs((math.degrees(outward - toward) + 180) % 360 - 180)
+        return off < GAP_AHEAD_DEG
 
     gaps = []
     for idx, (props, pts) in enumerate(lines):
         if not props.get("paaraide"):
             continue
         for pt in (pts[0], pts[-1]):
-            d = nearest_other(pt[0], pt[1], idx)
-            if d is not None and GAP_MIN_M < d <= GAP_MAX_M:
+            d, other = nearest_other(pt[0], pt[1], idx)
+            if d is not None and GAP_MIN_M < d <= GAP_MAX_M \
+                    and points_ahead(pts, pt, other):
                 gaps.append((d, props.get("tunniste"), pt[0], pt[1]))
 
     gaps.sort(reverse=True)
     if not gaps:
         print("  continuity: no main-track gaps")
-        return 0
+        return gaps
     print(f"  continuity: {len(gaps)} dangling main-track endpoint(s) -- each is a "
           f"visible break in the map and a disconnected routing graph:")
     for d, oid, x, y in gaps[:10]:
         lat, lon = tm35fin_to_wgs84(x, y)
         print(f"    {d:8.0f} m  {lat:.5f},{lon:.5f}  {oid}")
-    return len(gaps)
+    return gaps
+
+
+def _line(oid, pts, main=True):
+    return {"type": "Feature",
+            "geometry": {"type": "MultiLineString", "coordinates": [pts]},
+            "properties": {"tunniste": oid, "paaraide": main}}
+
+
+def selftest():
+    """Check report_gaps against synthetic geometry. Run: bake_rails.py --selftest
+
+    Covers the distinction the check exists to make: a hole in a running line
+    (report it) versus the tip of a dead-end spur (don't), plus the two
+    thresholds. No network and no blob needed.
+    """
+    def span(e0, e1, n0, n1, step=100):
+        steps = max(abs(e1 - e0), abs(n1 - n0)) // step
+        return [[e0 + (e1 - e0) * i / steps, n0 + (n1 - n0) * i / steps]
+                for i in range(steps + 1)]
+
+    # A running line broken by a 500 m hole, plus a 600 m spur branching off A.
+    a = _line("A", span(300_000, 302_000, 6_700_000, 6_700_000))
+    b = _line("B", span(302_500, 304_500, 6_700_000, 6_700_000))
+    spur = _line("SPUR", span(301_000, 301_000, 6_700_000, 6_700_600))
+
+    found = {oid for _, oid, _, _ in _gaps_of([a, b, spur])}
+    assert found == {"A", "B"}, f"expected the hole's two ends, got {found}"
+
+    # The spur's tip dangles 600 m from any other rail but points away from the
+    # network, so on its own it is not a hole.
+    assert _gaps_of([a, spur]) == [], "dead-end spur reported as a hole"
+
+    # Below GAP_MIN_M the 10 m node grid still welds the ends: not a hole.
+    near = _line("B", span(302_010, 304_010, 6_700_000, 6_700_000))
+    assert _gaps_of([a, near]) == [], "sub-threshold gap reported"
+
+    # Beyond GAP_MAX_M it is a genuine terminus, not a hole.
+    far = _line("B", span(310_000, 312_000, 6_700_000, 6_700_000))
+    assert _gaps_of([a, far]) == [], "beyond-range terminus reported"
+
+    print("selftest: ok")
+
+
+def _gaps_of(features):
+    """report_gaps' findings, with its printing muted. Used by selftest()."""
+    with contextlib.redirect_stdout(io.StringIO()):
+        return report_gaps(features)
 
 
 def main():
@@ -430,4 +511,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    if "--selftest" in sys.argv:
+        selftest()
+    else:
+        main()
