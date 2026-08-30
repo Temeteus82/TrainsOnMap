@@ -60,6 +60,12 @@ path (urllib follows it automatically; a curl probe needs `-L`). gzip is
 mandatory on both the infra-api and `/metadata/stations` — every request below
 sends `Accept-Encoding: gzip` and decompresses the reply.
 
+Sanity checks (printed, non-fatal): report_extent() flags geometry crossing the
+tiled extent -- proof the tiling is cutting the network, so something beyond the
+cut was never requested -- and report_gaps() flags main-track endpoints dangling
+in open space, which draw as a break on the map and leave RailGraph's routing
+graph disconnected. Both failures are otherwise silent; see their docstrings.
+
 Usage: python3 scripts/bake_rails.py
 """
 import gzip
@@ -81,7 +87,13 @@ USER_AGENT = "TrainsOnMap/0.1 (rail-geometry bake)"
 # Rail-relevant extent of Finland in EPSG:3067 metres, tiled at 150 km. Tiles
 # over sea / the far north simply come back empty.
 E_MIN, E_MAX = 60_000, 740_000
-N_MIN, N_MAX = 6_640_000, 7_780_000
+# N_MIN must clear Finland's southernmost rail -- the Hanko harbour branch at
+# N 6_638_363. It used to be 6_640_000, which cut 1.6 km off the Hanko peninsula:
+# the yard and station throat at Hanko asema lie entirely below that line, so no
+# tile ever requested them and they were silently absent from the bake (only the
+# one track straddling the boundary came back, leaving a visible stub-end short
+# of the station). report_extent() below guards against this recurring.
+N_MIN, N_MAX = 6_620_000, 7_780_000
 STEP = 150_000
 
 # Track properties kept per feature (everything Tier-2 matching needs; the bulky
@@ -106,6 +118,16 @@ TRACK_PROPS = (
 # Geo crosswalk fallback: accept a nearest operating point only within this many
 # metres of the timetable station's coordinate.
 GEO_MATCH_MAX_M = 1500.0
+
+# Continuity check thresholds. A snapshot with a hole in a running line is
+# silently wrong: the map draws a visible break, and because RailGraph welds
+# tracks into nodes on a 10 m grid, the routing graph is left *disconnected*
+# there, so Tier-2 route matching can't build a through-route across the hole.
+# Upstream has shipped such holes (the Karjaa-Inkoo stretch of the Rantarata was
+# split into two OIDs with a 1.8 km gap between them in the 2026-07-01 bake), so
+# flag them here rather than waiting for someone to spot the break on the map.
+GAP_MIN_M = 30.0      # below this RailGraph's 10 m node grid still welds the ends
+GAP_MAX_M = 5000.0    # beyond this it's a genuine line end (buffer stop, border)
 
 OUT = Path(__file__).resolve().parent.parent / "resources" / "rails.geojson.qz"
 
@@ -284,8 +306,110 @@ def build_crosswalk(track_ids):
     return out
 
 
+def report_extent(features):
+    """Warn when baked geometry pokes outside the tiled extent.
+
+    A feature straddling the boundary is returned whole, so any vertex outside
+    the extent is proof that the tiling cuts through the network -- and whatever
+    lies *entirely* beyond the cut was never requested at all, so it is missing
+    without any error to notice. Widen E_MIN/E_MAX/N_MIN/N_MAX until this is
+    quiet. Returns the number of straddling tracks.
+    """
+    out = []
+    for feat in features:
+        geom = feat["geometry"]
+        strands = geom["coordinates"] if geom["type"] == "MultiLineString" \
+            else [geom["coordinates"]]
+        pts = [p for strand in strands for p in strand]
+        if not pts:
+            continue
+        xs = [p[0] for p in pts]
+        ys = [p[1] for p in pts]
+        if min(xs) < E_MIN or max(xs) > E_MAX or min(ys) < N_MIN or max(ys) > N_MAX:
+            out.append((feat["properties"].get("tunniste"), min(xs), min(ys)))
+    if not out:
+        print("  extent: all geometry inside the tiled extent")
+        return 0
+    print(f"  extent: {len(out)} track(s) cross the tiled extent -- widen it, "
+          f"geometry fully beyond the edge was never requested:")
+    for oid, x, y in out[:10]:
+        print(f"    E{x:.0f} N{y:.0f}  {oid}")
+    return len(out)
+
+
+def report_gaps(features):
+    """Warn about main-track endpoints that dangle in open space.
+
+    Builds a 100 m spatial hash of every vertex, then asks of each main track's
+    two endpoints: how far is the nearest vertex belonging to a *different*
+    line? A running line is a chain, so that distance is normally ~0. Anything
+    between GAP_MIN_M and GAP_MAX_M is a hole in the network; further than that
+    (or nothing found at all) is a real terminus and is not reported.
+
+    Returns the number of suspicious gaps.
+    """
+    cell = 100.0
+    grid = {}
+    lines = []
+    for feat in features:
+        geom = feat["geometry"]
+        strands = geom["coordinates"] if geom["type"] == "MultiLineString" \
+            else [geom["coordinates"]]
+        for pts in strands:
+            if len(pts) < 2:
+                continue
+            idx = len(lines)
+            lines.append((feat["properties"], pts))
+            for pt in pts:
+                grid.setdefault((int(pt[0] // cell), int(pt[1] // cell)), []) \
+                    .append((pt[0], pt[1], idx))
+
+    def nearest_other(x, y, idx):
+        """Distance to the closest vertex not on line `idx`, or None if none near."""
+        best = None
+        for r in range(1, int(GAP_MAX_M // cell) + 2):
+            cx, cy = int(x // cell), int(y // cell)
+            for dx in range(-r, r + 1):
+                for dy in range(-r, r + 1):
+                    # Only the newly added ring; inner cells were scanned already.
+                    if r > 1 and max(abs(dx), abs(dy)) != r:
+                        continue
+                    for qx, qy, qi in grid.get((cx + dx, cy + dy), ()):
+                        if qi == idx:
+                            continue
+                        d = math.hypot(qx - x, qy - y)
+                        if best is None or d < best:
+                            best = d
+            # Everything beyond this ring is at least r*cell away, so we're done.
+            if best is not None and best < r * cell:
+                break
+        return best
+
+    gaps = []
+    for idx, (props, pts) in enumerate(lines):
+        if not props.get("paaraide"):
+            continue
+        for pt in (pts[0], pts[-1]):
+            d = nearest_other(pt[0], pt[1], idx)
+            if d is not None and GAP_MIN_M < d <= GAP_MAX_M:
+                gaps.append((d, props.get("tunniste"), pt[0], pt[1]))
+
+    gaps.sort(reverse=True)
+    if not gaps:
+        print("  continuity: no main-track gaps")
+        return 0
+    print(f"  continuity: {len(gaps)} dangling main-track endpoint(s) -- each is a "
+          f"visible break in the map and a disconnected routing graph:")
+    for d, oid, x, y in gaps[:10]:
+        lat, lon = tm35fin_to_wgs84(x, y)
+        print(f"    {d:8.0f} m  {lat:.5f},{lon:.5f}  {oid}")
+    return len(gaps)
+
+
 def main():
     tracks = collect_tracks()
+    report_extent(tracks.values())
+    report_gaps(tracks.values())
     track_ids = set(tracks.keys())
     stations = build_crosswalk(track_ids)
 
