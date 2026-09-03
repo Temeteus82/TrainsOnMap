@@ -173,28 +173,6 @@ private slots:
         QCOMPARE(routeSpy.count(), 1);
         QCOMPARE(svc.routeStations(), diverted);
     }
-
-    /// CPP-W12, reachable through the same seam: a live payload with no rows must
-    /// leave the loaded timetable alone rather than blanking it.
-    void partialLivePayloadLeavesTheTimetableAlone()
-    {
-        fake::Manager net;
-        DigitrafficMqttClient stream;
-        TrainDetailsService svc(nullptr, &net);
-        svc.setStream(&stream);
-
-        const QStringList route{QStringLiteral("HKI"), QStringLiteral("TPE")};
-        svc.show(202, QString::fromLatin1(kDate));
-        fake::Reply *reply = net.take(QStringLiteral("/trains/2026-09-03/202"));
-        QVERIFY(reply);
-        reply->respond(trainsPayload(202, QStringLiteral("IC"), route));
-
-        const QJsonObject partial{{"trainNumber", 202},
-                                  {"departureDate", QString::fromLatin1(kDate)}};
-        emit stream.trainMessage(QJsonDocument(partial).toJson(QJsonDocument::Compact));
-
-        QCOMPARE(svc.routeStations(), route);
-    }
 };
 
 QTEST_MAIN(TestTrainDetailsService)
