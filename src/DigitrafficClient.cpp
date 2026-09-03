@@ -46,9 +46,9 @@ constexpr qint64 kFullCategoriesIntervalMs = 5 * 60 * 1000;
 constexpr int kMetadataBackoffMax = 8;
 }
 
-DigitrafficClient::DigitrafficClient(QObject *parent)
+DigitrafficClient::DigitrafficClient(QObject *parent, QNetworkAccessManager *net)
     : QObject(parent)
-    , m_net(new QNetworkAccessManager(this))
+    , m_net(net ? net : new QNetworkAccessManager(this))
     , m_model(new TrainListModel(this))
     , m_stations(new StationListModel(this))
 {

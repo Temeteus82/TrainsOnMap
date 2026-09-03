@@ -51,7 +51,11 @@ class TrainDetailsService : public QObject
     Q_PROPERTY(DigitrafficClient *fleet READ fleet WRITE setFleet NOTIFY fleetChanged)
 
 public:
-    explicit TrainDetailsService(QObject *parent = nullptr);
+    /// `net` is the manager every request is issued through. Defaulted to
+    /// nullptr — and then owned — so QML's `TrainDetailsService {}` still works;
+    /// tests pass their own to drive replies in a chosen order (C1).
+    explicit TrainDetailsService(QObject *parent = nullptr,
+                                 QNetworkAccessManager *net = nullptr);
 
     TimetableModel *model() const { return m_model; }
     CompositionModel *composition() const { return m_composition; }

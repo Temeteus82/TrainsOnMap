@@ -374,6 +374,44 @@ target_link_libraries(tst_trainlistmodel PRIVATE
     Qt6::Core Qt6::Qml Qt6::Positioning Qt6::Concurrent Qt6::Test)
 add_test(NAME trainlistmodel COMMAND tst_trainlistmodel)
 
+# The two network-facing services, driven through tests/FakeNetwork.h — a
+# QNetworkAccessManager whose replies the test finishes by hand. Both services
+# take their manager as a constructor argument for exactly this; nothing else in
+# the app passes one. These pin CPP-C1/C2 and CPP-W2, the three fixes the
+# 2026-08-28 review shipped without a regression test because there was no seam.
+qt_add_executable(tst_traindetailsservice
+    tests/tst_traindetailsservice.cpp
+    tests/FakeNetwork.h
+    src/TrainDetailsService.h src/TrainDetailsService.cpp
+    src/TimetableModel.h src/TimetableModel.cpp
+    src/CompositionModel.h src/CompositionModel.cpp
+    src/DigitrafficMqttClient.h src/DigitrafficMqttClient.cpp
+    src/DigitrafficClient.h src/DigitrafficClient.cpp
+    src/StationListModel.h src/StationListModel.cpp
+    src/TrainListModel.h src/TrainListModel.cpp
+    src/TrackService.h src/TrackService.cpp
+    src/TrackListModel.h src/TrackListModel.cpp
+    src/RailGraph.h src/RailGraph.cpp)
+target_include_directories(tst_traindetailsservice PRIVATE src)
+target_link_libraries(tst_traindetailsservice PRIVATE
+    Qt6::Core Qt6::Qml Qt6::Network Qt6::WebSockets Qt6::Positioning
+    Qt6::Concurrent Qt6::Test)
+add_test(NAME traindetailsservice COMMAND tst_traindetailsservice)
+
+qt_add_executable(tst_digitrafficclient
+    tests/tst_digitrafficclient.cpp
+    tests/FakeNetwork.h
+    src/DigitrafficClient.h src/DigitrafficClient.cpp
+    src/StationListModel.h src/StationListModel.cpp
+    src/TrainListModel.h src/TrainListModel.cpp
+    src/TrackService.h src/TrackService.cpp
+    src/TrackListModel.h src/TrackListModel.cpp
+    src/RailGraph.h src/RailGraph.cpp)
+target_include_directories(tst_digitrafficclient PRIVATE src)
+target_link_libraries(tst_digitrafficclient PRIVATE
+    Qt6::Core Qt6::Qml Qt6::Network Qt6::Positioning Qt6::Concurrent Qt6::Test)
+add_test(NAME digitrafficclient COMMAND tst_digitrafficclient)
+
 # Only the app gets windeployqt'd, so on Windows the test exes have no Qt DLLs
 # beside them and ctest fails them all with 0xc0000135 unless the kit happens to
 # be on PATH. Prepend it for every registered test rather than deploying each
