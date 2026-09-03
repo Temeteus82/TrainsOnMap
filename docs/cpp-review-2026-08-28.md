@@ -41,6 +41,15 @@ Suggested fix-order: **CPP-C1, CPP-C2** first (user-visible bugs), then
 > **not covered by a regression test** — see the note under CPP-C1, which
 > applies to `DigitrafficClient` for the same reason.
 >
+> **The seam landed, and all three are now pinned** (2026-09-03). Both services
+> take their `QNetworkAccessManager` as a defaulted constructor argument, so a
+> test can hand them one whose replies it finishes by hand (`tests/FakeNetwork.h`);
+> nothing else in the app passes one, and QML's `DigitrafficClient {}` form is
+> unaffected. New `tst_traindetailsservice` and `tst_digitrafficclient` targets
+> (**10** ctest targets now). Each new slot was verified to fail with its fix
+> reverted — the C1 revert reproduces the reported defect exactly, applying
+> train A's `trainType` to train B's number ("IC 202").
+>
 > **CPP-W6, CPP-W7, CPP-W8 fixed** (2026-08-29, parse-boundary pass): shared
 > validators `inFinlandBox` / `isStationShortCode` / `isDepartureDate` in
 > `DigitrafficFormat.h`, applied at the FMI `<pos>` parse, `parseTrainLocation`,
@@ -103,12 +112,21 @@ selection — the same shape `fetchComposition` already used. Because a stale re
 no longer reaches `handleTrain`, nothing lowers `loading` after a `clear()` that
 happens mid-flight, so `clear()` now calls `setLoading(false)` itself.
 
-> **No regression test.** `TrainDetailsService` builds its own
-> `QNetworkAccessManager` in its constructor, so there is no seam to inject a
-> canned out-of-order reply pair through. Pinning this would mean taking the
-> manager (or a small request-issuing interface) as a constructor dependency —
-> worth doing, but a design change beyond the fix itself. Tracked as a follow-up
-> rather than done silently.
+> ~~**No regression test.**~~ **Pinned (2026-09-03)** by
+> `tst_traindetailsservice`, once the follow-up below was done: the service now
+> takes its `QNetworkAccessManager` as a defaulted constructor argument, which is
+> the seam an out-of-order reply pair needs. `staleTimetableReplyIsDropped`
+> selects A, selects B, then lands A's reply and asserts the panel still shows B
+> **and is still loading** — B's request is the one in flight. Reverting the
+> guard fails it with `title() == "IC 202"`: A's train type on B's number, the
+> defect as reported. `clearWhileInFlightStopsTheSpinner` covers the other half.
+>
+> The original note, for the record: `TrainDetailsService` built its own
+> `QNetworkAccessManager` in its constructor, so there was no seam to inject a
+> canned out-of-order reply pair through. Pinning it meant taking the manager (or
+> a small request-issuing interface) as a constructor dependency — worth doing,
+> but a design change beyond the fix itself. Tracked as a follow-up rather than
+> done silently.
 
 The timetable request's lambda captures only `reply` — no run identity. Select
 train A, then train B before A's reply lands, and `handleTrain(replyA)` applies
@@ -228,9 +246,18 @@ All three now go through `adjustPending()`, closing the `loading` under-report,
 and the status line reads `… • station names unavailable, retrying` while any
 endpoint is missing, so the degraded state is named rather than silent.
 
-> **No regression test**, for the reason given under CPP-C1: `DigitrafficClient`
-> constructs its own `QNetworkAccessManager`, so there is no seam to inject a
-> canned failing reply through. Verified by reading and a live run.
+> ~~**No regression test**, for the reason given under CPP-C1.~~ **Pinned
+> (2026-09-03)** by `tst_digitrafficclient`, on the same seam: the constructor
+> takes the manager, which is the only way to reach the three fetches it issues.
+> `failedMetadataIsRetriedUntilItLands` fails every startup fetch and asserts the
+> resync re-issues them, and that an endpoint which has since landed is not
+> fetched again; `retryBacksOffAfterRepeatedFailures` pins the doubling.
+>
+> That second one is worth a note: an earlier draft asserted the backoff by
+> leaving replies outstanding between cycles, and passed with the backoff deleted
+> — the "nothing to re-issue" guard was suppressing the request instead. It now
+> fails every outstanding reply before each cycle, and the runs of skipped cycles
+> are 1, 3, 7 (`skips = backoff - 1`), not the 1, 2, 4 the doubling reads like.
 
 `fetchStations()`, `fetchCauseCategories()` and `fetchDetailedCauseCategories()`
 are called only from the constructor, and every failure path is a bare `return`

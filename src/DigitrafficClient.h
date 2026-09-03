@@ -41,7 +41,12 @@ class DigitrafficClient : public QObject
     Q_PROPERTY(TrackService *matcher READ matcher WRITE setMatcher NOTIFY matcherChanged)
 
 public:
-    explicit DigitrafficClient(QObject *parent = nullptr);
+    /// `net` is the manager every request is issued through. Defaulted to
+    /// nullptr — and then owned — so QML's `DigitrafficClient {}` still works;
+    /// tests pass their own, which is the only way to reach the three metadata
+    /// fetches this constructor issues (W2).
+    explicit DigitrafficClient(QObject *parent = nullptr,
+                               QNetworkAccessManager *net = nullptr);
 
     TrainListModel *model() const { return m_model; }
     StationListModel *stations() const { return m_stations; }

@@ -158,9 +158,9 @@ QVector<CompositionVehicle> buildVehicles(const QJsonObject &section)
 }
 }
 
-TrainDetailsService::TrainDetailsService(QObject *parent)
+TrainDetailsService::TrainDetailsService(QObject *parent, QNetworkAccessManager *net)
     : QObject(parent)
-    , m_net(new QNetworkAccessManager(this))
+    , m_net(net ? net : new QNetworkAccessManager(this))
     , m_model(new TimetableModel(this))
     , m_composition(new CompositionModel(this))
 {
