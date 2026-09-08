@@ -5,8 +5,11 @@
 > its licensing check out; the *renderer* does not. `maplibre-native-qt` v4.0.0
 > (unreleased) builds against our Qt 6.11.2 and its QtLocation plugin loads and
 > attaches, but renders nothing on either graphics backend on Apple Silicon —
-> Metal is explicitly unsupported by the bindings, and the OpenGL path throws on
-> the first vertex-buffer upload. See [The MapLibre spike](#the-maplibre-spike).
+> Metal draws a blank silently (a known open upstream bug,
+> [#300](https://github.com/maplibre/maplibre-native-qt/issues/300), that its
+> maintainer cannot reproduce), and the OpenGL path throws on the first
+> vertex-buffer upload (unreported upstream). See
+> [The MapLibre spike](#the-maplibre-spike).
 >
 > Nothing in `qml/`, `src/` or `CMakeLists.txt` was touched. The whole spike ran
 > in a scratch directory and is reproducible from
@@ -181,15 +184,47 @@ templates, so a CARTO key has to be carried in the style URL ourselves.
 
 ### What blocks it
 
-**Metal backend — renders nothing.** The map paints only Positron's background
-colour and requests **zero** vector tiles (`select count(*) from tiles` = 0 in the
-ambient cache, while the style and sprites are cached). The cause is stated in
-the project's own documentation, `docs/Usage.md:79`:
+**Metal backend — renders nothing, silently.** The map paints only the style's
+background colour and requests **zero** vector tiles (`select count(*) from
+tiles` = 0 in the ambient cache, while the style and sprites are cached). No
+crash, no warning, and `mapReady` goes true.
 
-> Only OpenGL backend is supported for now!
+Tested through a C++ harness that calls
+`QQuickWindow::setGraphicsApi(QSGRendererInterface::Metal)` *before* constructing
+the `QGuiApplication`, the way `examples/quick/main.cpp` does — an earlier run
+via the bare `qml` runtime skipped that call, and the result is the same either
+way. Reproduced against **two unrelated tile sources**, CARTO Positron and
+MapLibre's own `demotiles.maplibre.org` style, so the failure is not
+source-specific.
+
+The limitation is stated in the project's own documentation,
+`docs/Usage.md:79` — *"Only OpenGL backend is supported for now!"* — but it sits
+under the QML setup instructions, and upstream
+[#243](https://github.com/maplibre/maplibre-native-qt/issues/243) (open since
+2025-10-21, no maintainer reply, milestone *4.0 - Drawables renderer*) is an
+unanswered request to clarify whether that warning covers Widgets too. For our
+path — QML via the QtLocation plugin — it plainly applies.
 
 This matters because Qt Quick on macOS defaults to Metal, and their own macOS
-CMake preset defaults to `MLN_WITH_METAL=ON`.
+CMake preset defaults to `MLN_WITH_METAL=ON`. For a Metal build,
+`QMapLibre::supportedRendererType()` does return Metal, so an app following the
+example's pattern will select the backend that does not work.
+
+**We do not reproduce upstream
+[#300](https://github.com/maplibre/maplibre-native-qt/issues/300)** ("[macOS]
+[Metal] Segmentation Fault in `QtMetalRenderableResource::bind()` during QML Map
+Instantiation", open since 2026-08-12), which is otherwise a near-identical
+configuration — macOS 26.5.2 / M1 Pro / Qt 6.11.1 Homebrew / MapLibre 4.0.0
+`origin/main` / `-DMLN_WITH_METAL=ON -DMLN_WITH_OPENGL=OFF`. That reporter gets a
+segfault; we get a silent blank. In that thread the maintainer states macOS is
+their primary development platform with no such issue, and the reporter confirms
+the failure persists with the official Qt binaries rather than Homebrew's.
+
+Their `examples/quick` app could not be used as a control: it builds and links,
+but its deployed bundle fails to load QML before reaching any rendering
+(`Type MapView unavailable` → `PinchHandler is not a type`, and with the system
+QML modules forced onto the import path instead, `Item is not a type`). That is a
+deployment defect in the example, unrelated to the renderer.
 
 **OpenGL backend — crashes on the first frame.** Rebuilt with
 `-DMLN_WITH_METAL=OFF -DMLN_WITH_OPENGL=ON` and run with
@@ -232,15 +267,25 @@ v4.0.0 feature in their `CHANGELOG.md`, this is on the upstream path — it is n
 finished.
 
 **The blocker is the renderer, not CARTO.** Any MVT source — OpenFreeMap,
-MapTiler, self-hosted — hits the identical wall. The CARTO decision, the key and
-the terms analysis above all remain valid and can be picked straight back up.
+MapTiler, self-hosted — hits the identical wall, as the demotiles run above
+shows directly. The CARTO decision, the key and the terms analysis all remain
+valid and can be picked straight back up.
+
+**Upstream state.** The Metal failure is a known, open, actively-triaged problem
+(#300) that the maintainer cannot reproduce; our machine is a third data point
+with a *different* symptom (silent blank rather than segfault). The OpenGL
+`bad_alloc` appears to be **unreported** — searching the tracker for `bad_alloc`,
+`UploadPass` and `OpenGL macOS` returns only #300, which is Metal-only.
 
 ## Where this leaves us
 
-1. **File the upstream issue.** The backtrace above plus "Metal unsupported via
-   the Location plugin; OpenGL ES backend on macOS throws at the first
-   `glBufferData`; Qt 6.11.2, Apple M5" is a specific, actionable report.
-   Revisit when v4.0.0 actually ships.
+1. **Report upstream**, in two parts. Add our Metal data point to
+   [#300](https://github.com/maplibre/maplibre-native-qt/issues/300) — a third
+   machine, a differing symptom, and confirmation that it is not source-specific,
+   against a maintainer who cannot reproduce. Then open a **new** issue for the
+   OpenGL `bad_alloc`, which is not on the tracker: it has a clean backtrace, an
+   obvious proximate cause (`upload_pass.cpp:40` rethrowing a GL error), and is
+   independent of the Metal bug. Revisit when v4.0.0 ships.
 2. **Stay on Esri raster** in the meantime — it works, it is keyless, and it is
    already deployed.
 3. **Or start option B**, the baked basemap, which needs no new dependency, no
