@@ -162,7 +162,7 @@ presets build **Debug** (override with `-DCMAKE_BUILD_TYPE=…` if needed).
 ### Linux (Clang)
 
 ```bash
-export CMAKE_PREFIX_PATH="$HOME/Qt/6.11.1/gcc_64"   # ABI-compatible with Clang
+export CMAKE_PREFIX_PATH="$HOME/Qt/6.11.2/gcc_64"   # ABI-compatible with Clang
 cmake --preset linux-clang
 cmake --build --preset linux-clang
 ./build/linux-clang/bin/TrainsOnMap
@@ -170,12 +170,35 @@ cmake --build --preset linux-clang
 
 ### macOS (Clang)
 
+The **`macos-clang-qt611`** preset is pinned to the stable Qt 6.11.2 kit and needs
+no `CMAKE_PREFIX_PATH` export; `macos-clang-qt612` is the same but pinned to the
+6.12 beta kit, for checking the app against it. Edit the pinned path in
+[`CMakePresets.json`](CMakePresets.json) if your kit lives somewhere else.
+
 ```bash
-export CMAKE_PREFIX_PATH="$HOME/Qt/6.11.1/macos"   # or /opt/homebrew for a Homebrew Qt
+cmake --preset macos-clang-qt611
+cmake --build --preset macos-clang-qt611
+open ./build/macos-clang-qt611/bin/TrainsOnMap.app
+```
+
+The plain **`macos-clang`** preset works with any Qt kit (official or a Homebrew
+one) via `CMAKE_PREFIX_PATH`:
+
+```bash
+export CMAKE_PREFIX_PATH="$HOME/Qt/6.11.2/macos"   # or /opt/homebrew for a Homebrew Qt
 cmake --preset macos-clang
 cmake --build --preset macos-clang
 open ./build/macos-clang/bin/TrainsOnMap.app
 ```
+
+> The official Qt installer doesn't tick **Positioning**, **Location**,
+> **WebSockets**, or **SerialPort** by default for the macOS kit. The first
+> three are required directly; `SerialPort` is pulled in because macdeployqt
+> bundles the Qt Positioning `nmea` plugin, which links against it — without it,
+> the build still succeeds but the deployed `.app` is missing
+> `QtSerialPort.framework` and the plugin's rpath can't resolve. Add all four
+> via the Qt Maintenance Tool (or re-run the online installer and tick them) if
+> configure fails on `Could NOT find Qt6Positioning` or similar.
 
 > The build produces a relocatable **`TrainsOnMap.app`** and runs **macdeployqt**
 > automatically, copying the Qt frameworks and the needed plugins (the QML imports,
@@ -223,7 +246,7 @@ open ./build/macos-clang/bin/TrainsOnMap.app
 ### Windows (MSVC 2022, PowerShell)
 
 ```powershell
-$env:CMAKE_PREFIX_PATH = "C:/Qt/6.11.1/msvc2022_64"
+$env:CMAKE_PREFIX_PATH = "C:/Qt/6.11.2/msvc2022_64"
 cmake --preset windows-msvc
 cmake --build --preset windows-msvc        # Release
 ./build/windows-msvc/bin/Release/TrainsOnMap.exe
@@ -237,7 +260,7 @@ Uses Qt's bundled **llvm-mingw** toolchain (Clang + `lld`). Put its `bin` on
 
 ```powershell
 $env:PATH = "C:/Qt/Tools/llvm-mingw1706_64/bin;$env:PATH"
-$env:CMAKE_PREFIX_PATH = "C:/Qt/6.11.1/llvm-mingw_64"
+$env:CMAKE_PREFIX_PATH = "C:/Qt/6.11.2/llvm-mingw_64"
 cmake --preset windows-llvm
 cmake --build --preset windows-llvm        # Release
 ./build/windows-llvm/bin/TrainsOnMap.exe

@@ -5,7 +5,7 @@
     {
       "name": "linux-clang",
       "displayName": "Linux (Clang)",
-      "description": "Clang + Ninja. Set CMAKE_PREFIX_PATH to your Qt kit (e.g. ~/Qt/6.11.1/gcc_64).",
+      "description": "Clang + Ninja. Set CMAKE_PREFIX_PATH to your Qt kit (e.g. ~/Qt/6.11.2/gcc_64).",
       "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" },
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/linux-clang",
@@ -19,7 +19,7 @@
     {
       "name": "macos-clang",
       "displayName": "macOS (Clang)",
-      "description": "Apple Clang + Ninja. Set CMAKE_PREFIX_PATH to your Qt kit (e.g. ~/Qt/6.11.1/macos).",
+      "description": "Apple Clang + Ninja. Set CMAKE_PREFIX_PATH to your Qt kit (e.g. ~/Qt/6.11.2/macos). Use the pinned macos-clang-qt611 / macos-clang-qt612 presets to skip the env var. A Homebrew Qt (/opt/homebrew) also works, but the official kits are what CI and the other presets use.",
       "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" },
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/macos-clang",
@@ -28,6 +28,26 @@
         "CMAKE_CXX_COMPILER": "clang++",
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_PREFIX_PATH": "$penv{CMAKE_PREFIX_PATH}"
+      }
+    },
+    {
+      "name": "macos-clang-qt611",
+      "displayName": "macOS (Clang) -- Qt 6.11 stable",
+      "description": "Same Apple Clang toolchain as macos-clang, pinned to the stable Qt 6.11.2 kit (~/Qt/6.11.2/macos) with its own build dir. This is the default macOS build. The official 6.11.2 kit ships without Positioning/Location/WebSockets/SerialPort ticked by default -- macdeployqt needs SerialPort too, to bundle the Positioning module's NMEA plugin -- so add all four via the Qt Maintenance Tool if this preset fails to configure or the built app is missing QtSerialPort.framework.",
+      "inherits": "macos-clang",
+      "binaryDir": "${sourceDir}/build/macos-clang-qt611",
+      "cacheVariables": {
+        "CMAKE_PREFIX_PATH": "$env{HOME}/Qt/6.11.2/macos"
+      }
+    },
+    {
+      "name": "macos-clang-qt612",
+      "displayName": "macOS (Clang) -- Qt 6.12 beta [EXPERIMENTAL]",
+      "description": "Same Apple Clang toolchain as macos-clang, but pinned to the locally installed Qt 6.12 beta kit (~/Qt/6.12.0/macos) with an isolated build dir so beta artifacts never mix with the stable build. For day-to-day work prefer macos-clang-qt611 (stable); use this one to check the app against the beta. The kit path is pinned here; edit it if the beta version changes.",
+      "inherits": "macos-clang",
+      "binaryDir": "${sourceDir}/build/macos-clang-qt612",
+      "cacheVariables": {
+        "CMAKE_PREFIX_PATH": "$env{HOME}/Qt/6.12.0/macos"
       }
     },
     {
@@ -79,6 +99,8 @@
   "buildPresets": [
     { "name": "linux-clang",       "configurePreset": "linux-clang" },
     { "name": "macos-clang",       "configurePreset": "macos-clang" },
+    { "name": "macos-clang-qt611", "configurePreset": "macos-clang-qt611" },
+    { "name": "macos-clang-qt612", "configurePreset": "macos-clang-qt612" },
     { "name": "windows-msvc",      "configurePreset": "windows-msvc", "configuration": "Release" },
     { "name": "windows-llvm",      "configurePreset": "windows-llvm" },
     { "name": "windows-llvm-qt611", "configurePreset": "windows-llvm-qt611" },
