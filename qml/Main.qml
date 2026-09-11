@@ -204,7 +204,9 @@ ApplicationWindow {
                 mapLoader.savedCenterLat = center.latitude
                 mapLoader.savedCenterLon = center.longitude
             }
-            onZoomLevelChanged: mapLoader.savedZoom = zoomLevel
+            // Qualified: zoomLevelChanged carries a `zoomLevel` parameter, and a
+            // bare name here resolves to that injected parameter (Qt 6.12 warns).
+            onZoomLevelChanged: mapLoader.savedZoom = map.zoomLevel
 
             // Anchor point captured when a pinch starts, so the gesture zooms
             // around the fingers rather than the map centre.
@@ -312,7 +314,7 @@ ApplicationWindow {
                 line.color: Theme.accent
                 opacity: 0.45
                 path: {
-                    map.routeTick   // dependency: refresh when routes finish resolving
+                    void map.routeTick   // dependency: refresh when routes finish resolving
                     return trainDetails.hasSelection
                         ? trackService.routePolyline(trainDetails.routeStations) : []
                 }

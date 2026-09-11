@@ -8,6 +8,38 @@ Legend: ✨ feature · 🐛 bug fix · ♻️ change/refactor · ✅ verificatio
 
 ---
 
+## Qt 6.12 LTS compatibility check (against 6.12.0-beta4, macOS)
+
+### ✅ Builds, tests and runs on 6.12
+- [x] Clean from-scratch build with the `macos-clang-qt612` preset: zero compiler
+      warnings under `-Wall -Wextra`, and still zero with
+      `QT_DISABLE_DEPRECATED_UP_TO=0x060C00`, so no C++ API deprecated as of 6.12 is used.
+- [x] All 10 ctest suites pass. The app runs normally: basemap tiles, live MQTT
+      trains, track segments.
+- [x] `qmlimportscanner` resolves the same QML modules on 6.11.2 and 6.12.0.
+
+### 🐛 Two QML nits 6.12 surfaced
+- [x] `Main.qml` `onZoomLevelChanged` read a bare `zoomLevel`, which resolves to
+      the injected signal parameter (`Map.zoomLevelChanged(zoomLevel)`). The 6.12 engine
+      now warns at runtime ("Injection of parameters into signal handlers is
+      deprecated"). Now reads `map.zoomLevel`.
+- [x] The `routeOverlay` binding's bare `map.routeTick` dependency trips 6.12
+      qmllint's new `confusing-expression-statement` check. It is now written as `void map.routeTick`,
+      which was checked to still re-evaluate the binding.
+
+### 📋 Not 6.12-specific, noted while comparing
+- [ ] macdeployqt copies the whole `qml/QtQuick/` tree, so the bundle carries
+      Qt3D, Multimedia plus FFmpeg, VirtualKeyboard, Timeline and (new on 6.12) QtPdf and the
+      native Controls styles: about 257 MB on 6.11.2 and 286 MB on 6.12, against about 170 MB
+      for what the app actually imports. Also true on 6.11.2 from a clean build.
+- [ ] macdeployqt's `ERROR: no file at ...libpq/libiodbc/libmimerapi` lines come
+      from the unused SQL driver plugins, on both 6.11.2 and 6.12. They are harmless.
+- [ ] Five pre-existing qmllint warnings (unqualified `model` in the weather and
+      station delegates, `activate` on `QQuickItem` in `TrainListPanel.qml`) are
+      the same on both versions.
+
+---
+
 ## Left column: collapsible cards, type scale down a point
 
 ### ♻️ The folded type scale read too large on screen, and wasn't really a scale
