@@ -2,7 +2,7 @@
 cmake_minimum_required(VERSION 3.22)
 
 project(TrainsOnMap
-    VERSION 0.1.0
+    VERSION 0.1.1
     DESCRIPTION "Live Finnish train positions and track geometry on a Qt6 map"
     LANGUAGES CXX)
 
