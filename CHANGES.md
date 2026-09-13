@@ -8,6 +8,30 @@ Legend: ✨ feature · 🐛 bug fix · ♻️ change/refactor · ✅ verificatio
 
 ---
 
+## Bake the rails as WGS84 GeoJSON (vector-basemap prerequisite)
+
+### ✨ Second bake output
+- [x] `scripts/bake_rails.py` also writes `resources/rails.wgs84.geojson`: the same
+      tracks as RFC 7946 GeoJSON in WGS84 `[lon, lat]` (6 decimals), carrying only
+      `paaraide`. This is what a MapLibre GeoJSON source needs; the embedded
+      `rails.geojson.qz` stays EPSG:3067 because RailGraph matches in metres.
+- [x] `--wgs84-only` re-derives it from the committed blob without touching the
+      network, so both files stay one snapshot (`bakedAt` is copied across). The
+      committed file was produced this way from the 2026-08-30 bake; the blob is
+      unchanged.
+
+### ✅ Verification
+- [x] `--selftest` now also checks `[lon, lat]` order, `paaraide` carry-over, and
+      one point against the app's own conversion in `src/Projection.h`.
+- [x] Whole file against the blob: 4,962 features and 212,627 vertices, max 0.13 m from
+      `tm35fin::toWgs84`, zero `paaraide` mismatches.
+
+### 📋 Not done here
+- [ ] Not embedded in the app or referenced by `CMakeLists.txt`: nothing reads it
+      until a MapLibre basemap lands (`docs/vector-basemap-exploration.md`).
+
+---
+
 ## v0.1.1 patch release
 
 ### ♻️ Version bump
