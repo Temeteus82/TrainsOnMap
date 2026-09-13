@@ -55,6 +55,14 @@ Output: resources/rails.geojson.qz
   only — no zlib/find_package or build-time gunzip needed). A `schemaVersion`
   field lets the loader detect (and reject/ignore) an old geometry-only blob.
 
+Output: resources/rails.wgs84.geojson
+  The same tracks as plain RFC 7946 GeoJSON in WGS84 [lon, lat] (6 decimals,
+  ~0.1 m), carrying only `paaraide`, for a MapLibre GeoJSON source -- the app's
+  blob stays EPSG:3067 because RailGraph matches in metres. A GeoJSON source needs
+  lon/lat; fed EPSG:3067 metres, MapLibre accepts it silently and draws the rails
+  off-screen (docs/vector-basemap-exploration.md). Not embedded in the app yet.
+  `bakedAt` matches the blob it was derived from.
+
 Network gotchas: infra-api `latest` 307-redirects to a versioned, build-numbered
 path (urllib follows it automatically; a curl probe needs `-L`). gzip is
 mandatory on both the infra-api and `/metadata/stations` — every request below
@@ -66,7 +74,10 @@ cut was never requested -- and report_gaps() flags main-track endpoints dangling
 in open space, which draw as a break on the map and leave RailGraph's routing
 graph disconnected. Both failures are otherwise silent; see their docstrings.
 
-Usage: python3 scripts/bake_rails.py
+Usage: python3 scripts/bake_rails.py                bake both outputs
+       python3 scripts/bake_rails.py --wgs84-only   re-derive the WGS84 GeoJSON
+                                                    from the committed blob (no network)
+       python3 scripts/bake_rails.py --selftest
 """
 import contextlib
 import gzip
@@ -143,6 +154,7 @@ GAP_AHEAD_DEG = 90.0
 TANGENT_BACK_M = 25.0
 
 OUT = Path(__file__).resolve().parent.parent / "resources" / "rails.geojson.qz"
+WGS84_OUT = OUT.with_name("rails.wgs84.geojson")
 
 
 def fetch_json(url):
@@ -161,8 +173,9 @@ def fetch_json(url):
 def tm35fin_to_wgs84(e, n):
     """Inverse ETRS-TM35FIN (EPSG:3067) -> WGS84 (lat, lon) in degrees.
 
-    Used only for the nearest-point crosswalk fallback, so a few-metre accuracy
-    (verified against /metadata/stations coordinates) is plenty.
+    Used for the nearest-point crosswalk fallback and for the WGS84 GeoJSON
+    output. It agrees with the app's own conversion (src/Projection.h) within
+    0.25 m across the baked extent; see selftest().
     """
     f = 1.0 / 298.257222101
     a = 6378137.0
@@ -440,6 +453,46 @@ def report_gaps(features):
     return gaps
 
 
+def wgs84_geojson(features, baked_at):
+    """EPSG:3067 track features -> a WGS84 FeatureCollection for MapLibre.
+
+    Coordinates come out [lon, lat] -- GeoJSON order, the reverse of what
+    tm35fin_to_wgs84 returns. Only `paaraide` is kept: it is what the line layer
+    styles on.
+    """
+    def strand(pts):
+        out = []
+        for pt in pts:
+            lat, lon = tm35fin_to_wgs84(pt[0], pt[1])
+            out.append([round(lon, 6), round(lat, 6)])
+        return out
+
+    out = []
+    for feat in features:
+        geom = feat["geometry"]
+        coords = [strand(pts) for pts in geom["coordinates"]] \
+            if geom["type"] == "MultiLineString" else strand(geom["coordinates"])
+        out.append({"type": "Feature",
+                    "geometry": {"type": geom["type"], "coordinates": coords},
+                    "properties": {"paaraide": bool(feat["properties"].get("paaraide"))}})
+    return {"type": "FeatureCollection", "bakedAt": baked_at, "features": out}
+
+
+def write_wgs84(features, baked_at):
+    raw = json.dumps(wgs84_geojson(features, baked_at),
+                     separators=(",", ":")).encode("utf-8")
+    WGS84_OUT.write_bytes(raw)
+    print(f"wrote {WGS84_OUT}  ({len(raw)/1e6:.1f} MB)")
+
+
+def wgs84_from_blob():
+    """Re-derive the WGS84 GeoJSON from the committed blob, so both outputs stay
+    one snapshot without re-fetching (and silently refreshing) the network."""
+    blob = OUT.read_bytes()
+    fc = json.loads(zlib.decompress(blob[4:]))      # skip qCompress' length prefix
+    write_wgs84(fc["features"], fc["bakedAt"])
+
+
 def _line(oid, pts, main=True):
     return {"type": "Feature",
             "geometry": {"type": "MultiLineString", "coordinates": [pts]},
@@ -478,6 +531,19 @@ def selftest():
     far = _line("B", span(310_000, 312_000, 6_700_000, 6_700_000))
     assert _gaps_of([a, far]) == [], "beyond-range terminus reported"
 
+    # WGS84 output: [lon, lat] order (the reverse of tm35fin_to_wgs84), inside
+    # Finland, and matching the app's own, independent conversion: Snyder's
+    # series in src/Projection.h puts E 385 800 N 6 672 300 at 60.1715825 N,
+    # 24.9416961 E (the two formulas agree within 0.25 m over the baked extent).
+    fc = wgs84_geojson([_line("HKI", [[385_800, 6_672_300], [385_900, 6_672_400]]),
+                        _line("S", [[300_000, 6_700_000], [300_100, 6_700_000]], main=False)],
+                       "2026-01-01T00:00:00Z")
+    lon, lat = fc["features"][0]["geometry"]["coordinates"][0][0]
+    assert 19 < lon < 32 and 59 < lat < 71, f"not [lon, lat] in Finland: {lon}, {lat}"
+    assert haversine_m(lat, lon, 60.1715825, 24.9416961) < 1.0, f"off Projection.h: {lat}, {lon}"
+    assert [f["properties"] for f in fc["features"]] == \
+        [{"paaraide": True}, {"paaraide": False}], "paaraide not carried"
+
     print("selftest: ok")
 
 
@@ -508,10 +574,13 @@ def main():
     OUT.write_bytes(blob)
     print(f"wrote {OUT}  schema v{SCHEMA_VERSION}  "
           f"({len(raw)/1e6:.1f} MB raw -> {len(blob)/1e6:.1f} MB compressed)")
+    write_wgs84(out_fc["features"], out_fc["bakedAt"])
 
 
 if __name__ == "__main__":
     if "--selftest" in sys.argv:
         selftest()
+    elif "--wgs84-only" in sys.argv:
+        wgs84_from_blob()
     else:
         main()

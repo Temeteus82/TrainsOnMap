@@ -451,7 +451,9 @@ OpenStreetMap credits, so the app would have to draw them.
 4. **Whichever way this goes, plan the rails as one layer.** The per-item
    conversion is what makes MapLibre unusable with our network on Linux, and it is
    platform-independent. A WGS84 GeoJSON emitted by `scripts/bake_rails.py` next to
-   the existing `.qz` is the prerequisite for any MapLibre build.
+   the existing `.qz` is the prerequisite for any MapLibre build. *Done:*
+   `resources/rails.wgs84.geojson` (`bake_rails.py --wgs84-only` re-derives it
+   from the blob).
 5. **A Linux-only vector basemap is possible today** but splits the basemap code
    by platform, and our only published artifact is the Windows zip. Windows waits
    on #285 and #302 (or on carrying #302's patch).
