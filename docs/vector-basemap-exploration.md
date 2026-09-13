@@ -11,14 +11,15 @@
 > vertex-buffer upload (unreported upstream). See
 > [The MapLibre spike](#the-maplibre-spike).
 >
-> **Update 2026-09-13 — Linux renders, Windows is plausible.** The same upstream
-> commit, built for OpenGL on Linux, renders the CARTO styles inside the real app
-> with every overlay intact. It is only usable once the rail network moves from
-> per-segment `MapPolyline`s to a single GeoJSON style layer: the plugin turns each
-> `MapPolyline` into its own MapLibre source and layer on the GUI thread, which
-> froze the UI for up to 7.4 s. Windows was not run (no Windows kit on the test
-> machine); upstream CI is green there on MSVC, but two open Windows-only bugs hit
-> this app directly. See [Linux and Windows](#linux-and-windows-2026-09-13).
+> **Update 2026-09-13 — Linux and Windows render.** The same upstream commit,
+> built for OpenGL, renders the CARTO styles inside the real app with every
+> overlay intact on Linux and on Windows (MSVC). It is only usable once the rail
+> network moves from per-segment `MapPolyline`s to a single GeoJSON style layer:
+> the plugin turns each `MapPolyline` into its own MapLibre source and layer on
+> the GUI thread, which froze the UI for up to 7.4 s. On Windows the whole UI has
+> to run on OpenGL instead of Direct3D 11. The two open Windows-only upstream bugs
+> (exit hang, teardown crash) did not reproduce. See
+> [Linux and Windows](#linux-and-windows-2026-09-13).
 >
 > Nothing in `qml/`, `src/` or `CMakeLists.txt` was touched. The whole spike ran
 > in a scratch directory and is reproducible from
@@ -396,41 +397,93 @@ change (the probe used literal colours), and the selected-route and connector
 **Attribution.** The plugin shows none; CARTO's terms require CARTO and
 OpenStreetMap credits, so the app would have to draw them.
 
-### Windows — not run, upstream evidence only
+### Windows — verified on MSVC
 
-- **Toolchain.** Upstream CI builds Windows on **MSVC 2022** (x64 and arm64), Qt
-  6.11.2, OpenGL and Vulkan, green on `ed7cc1d`; tests run on x64 OpenGL.
-  **llvm-mingw — our release toolchain (`windows-llvm-qt611`) — is not in their
-  matrix.** The `windows-msvc` preset is the lower-risk base for a MapLibre build.
-- **Graphics API.** Qt Quick defaults to Direct3D 11 on Windows, and an OpenGL
-  build of the plugin needs a current `QOpenGLContext` — without one
+Verified on: Windows 11 Pro (10.0.26200), AMD Radeon RX 6900 XT, official Qt
+6.11.2 `msvc2022_64` kit (which ships the `QtLocation` private headers), MSVC
+19.44 (VS 2022 Build Tools), CMake 4.4.3 + Ninja, against a clean `main` at
+`970bf42`. Same upstream commit, `ed7cc1d`.
+
+`maplibre-native-qt` builds unmodified with its `Windows-OpenGL` preset from a
+`vcvars64` shell, and all three upstream suites pass. Configure again prints
+"Configuring OpenGL **ES** backend", which is harmless here too. The app builds
+with our own `windows-msvc` preset. **llvm-mingw, our release toolchain
+(`windows-llvm-qt611`), was not tried**; it is not in upstream's CI matrix
+either, and the plugin DLLs must match the app's ABI, so a MapLibre build means
+an MSVC app build.
+
+As on Linux, the test was the app itself in a throwaway worktree: the `maplibre`
+plugin with both CARTO styles registered, rails as the single GeoJSON layer from
+`resources/rails.wgs84.geojson` (the per-segment `MapItemView` removed), and a
+scripted ~90 s run. The script grabbed the map in light, flipped to dark,
+grabbed, flipped back, zoomed to Helsinki at z10, grabbed, then called
+`Qt.quit()`, with a 50 ms timer measuring GUI-thread stalls. A wrapper recorded
+CPU, peak RSS and whether the process exited within 130 s.
+
+| | OpenGL, flip by `activeMapType` | OpenGL, flip by `Loader` rebuild (today's code) | Direct3D 11 (Qt default) |
+|---|---|---|---|
+| Basemap | ✅ Positron + Dark Matter, labels | ✅ same | ❌ blank, `QOpenGLContext is NULL!` |
+| Rails layer, overlays | ✅ all drawn; rails layer survives each style switch | ✅ same | only `MapQuickItem`s |
+| Exit | clean, code 0 | clean, code 0 (4 `Map` teardowns) | clean, code 0 |
+| CPU (user+sys) / wall | 21 s / 89 s | 24 s / 89 s | 30 s / 89 s |
+| Peak working set | 531 MB | 505 MB | 220 MB |
+| Worst GUI-thread stall | 392 ms (startup) | 877 ms (during a rebuild) | 252 ms |
+
+No raster baseline was taken on Windows, so the CPU and memory columns compare
+against each other, not against today's `osm` build.
+
+**What works:**
+
+- Both styles render with labels, and every overlay draws on top: trains,
+  stations and the rails layer, with the main/siding split still coming from
+  `paaraide`.
+- **An in-place style switch keeps the custom layer.** Flipping the theme by
+  setting `activeMapType` (no `Loader`, no rebuild) re-applies the attached
+  `Style`'s `SourceParameter`/`LayerParameter` on the new style, because
+  `QGeoMapMapLibre::onMapChanged` re-queues them when a style finishes loading
+  (`src/location/qgeomap.cpp:467`). This confirms on real hardware that
+  light/dark can become a map-type switch.
+- The only log noise is the same CARTO warning as on Linux,
+  `line dasharray requires at least two elements`.
+
+**The two open Windows-only upstream bugs did not reproduce:**
+
+- [#285](https://github.com/maplibre/maplibre-native-qt/issues/285), where Release
+  builds **never exit** after the window closes (reported with Qt 6.11.1 / MSVC /
+  OpenGL, the GUI thread blocked in `mbgl::util::Thread<MainResourceLoaderThread>`'s
+  destructor). Every run here exited with code 0 in about 89 s, right after
+  `Qt.quit()`.
+- [#302](https://github.com/maplibre/maplibre-native-qt/issues/302), a **crash on
+  `Map` teardown** (`mbgl::gl::Context::~Context` calling GL with no current
+  context). The rebuild run destroyed and re-created the `Map` three times (once
+  at start, once per flip), plus once at exit, logged from
+  `Component.onDestruction`, and did not crash. The community patch in that
+  thread is still unmerged. Not seeing either bug on one machine with a real GPU
+  driver is not proof they are gone; it means they are not a blocker we can
+  demonstrate.
+
+**What remains:**
+
+- **The whole UI has to move to OpenGL.** Qt Quick defaults to Direct3D 11 on
+  Windows, and the OpenGL plugin needs a current `QOpenGLContext`. Without one,
   `updateSceneGraph` logs `QOpenGLContext is NULL!` and draws nothing
-  (`src/location/qgeomap.cpp:78`). `main.cpp` would have to call
-  `QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL)` before the
-  `QGuiApplication` exists, moving the *whole* UI to OpenGL; machines without a
-  real GL driver (VMs, RDP) then fall back to software GL.
-- **Open Windows-only bugs that hit this app directly:**
-  - [#285](https://github.com/maplibre/maplibre-native-qt/issues/285) — Release
-    builds **never exit** after the window closes; a Debug build segfaults
-    instead. Most recently reproduced with Qt 6.11.1 / MSVC / OpenGL, the GUI
-    thread blocked in `mbgl::util::Thread<MainResourceLoaderThread>`'s destructor.
-    The reporter confirms Ubuntu works, matching the clean exits above.
-  - [#302](https://github.com/maplibre/maplibre-native-qt/issues/302) — **crash
-    on `Map` teardown**: `mbgl::gl::Context::~Context` calls GL with no current
-    context, because nothing calls `Map::destroyRenderer()`. The current theme flip
-    destroys the `Map`, so it would crash on every flip. A community patch is in
-    the thread, not merged.
-
-  A vector basemap removes the rebuild (light/dark becomes an `activeMapType`
-  switch, see [What works](#what-works)), which sidesteps #302 on a flip but not
-  at exit.
+  (`src/location/qgeomap.cpp:78`), as the D3D11 column shows. The probe used
+  `QSG_RHI_BACKEND=opengl`; shipping would mean
+  `QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL)` in `main.cpp`
+  before the `QGuiApplication` exists. Machines without a real GL driver (VMs,
+  RDP) were not tried and would fall back to software GL.
+- **Leaving llvm-mingw** for the Windows release, or proving MapLibre on it.
+- **Deployment.** The probe ran with `QT_PLUGIN_PATH`/`QML_IMPORT_PATH` pointed
+  at the MapLibre build tree; `windeployqt` does not know about the three
+  `QMapLibre*.dll`s or the two plugin directories, so the release zip would need
+  them copied in explicitly.
 
 ### Verdict by platform
 
 | | Renders? | What stands between it and shipping |
 |---|---|---|
 | **Linux** | ✅ verified in-app | Rails as one GeoJSON layer (WGS84 bake); MapLibre built from unreleased source |
-| **Windows** | Likely (upstream CI green, MSVC) | #285 exit hang, #302 teardown crash, forcing OpenGL, leaving llvm-mingw |
+| **Windows** | ✅ verified in-app (MSVC, OpenGL) | Same as Linux, plus forcing the UI onto OpenGL, an MSVC release build, deploying the MapLibre DLLs; #285/#302 not reproduced |
 | **macOS** | ❌ | Unchanged — see [What blocks it](#what-blocks-it) |
 
 ## Where this leaves us
@@ -454,9 +507,11 @@ OpenStreetMap credits, so the app would have to draw them.
    the existing `.qz` is the prerequisite for any MapLibre build. *Done:*
    `resources/rails.wgs84.geojson` (`bake_rails.py --wgs84-only` re-derives it
    from the blob).
-5. **A Linux-only vector basemap is possible today** but splits the basemap code
-   by platform, and our only published artifact is the Windows zip. Windows waits
-   on #285 and #302 (or on carrying #302's patch).
+5. **A Linux + Windows vector basemap is possible today**, leaving macOS on the
+   Esri raster. That splits the basemap code by platform. On Windows it also
+   means switching the release build from llvm-mingw to MSVC and forcing OpenGL.
+   #285 and #302 did not reproduce, so they no longer block; keep an eye on
+   both upstream.
 
 Trying the released v3.0.0 tag is **not** recommended: it targets Qt 6.5–6.7
 against our 6.11 private headers, and it is the same macOS GL path that is
@@ -515,3 +570,32 @@ QT_FORCE_STDERR_LOGGING=1 \
 `QT_FORCE_STDERR_LOGGING=1` matters when stderr is not a terminal: Qt on Linux
 otherwise sends `console.log` and the MapLibre log to journald, and the run looks
 silent.
+
+Windows (2026-09-13), MSVC, from a `cmd` shell. Clone to a short path such as
+`F:\mlq`: the submodule tree is deep, and with `LongPathsEnabled` off a clone
+under a long directory is fragile. The preset's `binaryDir` is
+`${sourceParentDir}/build`, so the build lands next to the clone.
+
+```bat
+call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
+set QT_ROOT_DIR=D:\Qt\6.11.2\msvc2022_64
+set PATH=%QT_ROOT_DIR%\bin;%PATH%
+cmake --preset Windows-OpenGL -DBUILD_TESTING=ON
+cmake --build --preset Windows-OpenGL --parallel
+ctest --test-dir ..\build\qt6-Windows-OpenGL -C Release
+```
+
+The app has to be an MSVC build too (`cmake --preset windows-msvc` with
+`CMAKE_PREFIX_PATH=D:/Qt/6.11.2/msvc2022_64`). Run it against the plugin with:
+
+```bat
+set B=F:\build\qt6-Windows-OpenGL
+set PATH=D:\Qt\6.11.2\msvc2022_64\bin;%B%\src\core\Release;%B%\src\location\Release;%B%\src\quick\Release;%PATH%
+set QT_PLUGIN_PATH=%B%\src\location\plugins
+set QML_IMPORT_PATH=%B%\src\location\plugins
+set QSG_RHI_BACKEND=opengl
+set QT_FORCE_STDERR_LOGGING=1
+build\windows-msvc\bin\Release\TrainsOnMap.exe
+```
+
+Drop `QSG_RHI_BACKEND` to see the Direct3D 11 blank.
