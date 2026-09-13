@@ -11,6 +11,15 @@
 > vertex-buffer upload (unreported upstream). See
 > [The MapLibre spike](#the-maplibre-spike).
 >
+> **Update 2026-09-13 — Linux renders, Windows is plausible.** The same upstream
+> commit, built for OpenGL on Linux, renders the CARTO styles inside the real app
+> with every overlay intact. It is only usable once the rail network moves from
+> per-segment `MapPolyline`s to a single GeoJSON style layer: the plugin turns each
+> `MapPolyline` into its own MapLibre source and layer on the GUI thread, which
+> froze the UI for up to 7.4 s. Windows was not run (no Windows kit on the test
+> machine); upstream CI is green there on MSVC, but two open Windows-only bugs hit
+> this app directly. See [Linux and Windows](#linux-and-windows-2026-09-13).
+>
 > Nothing in `qml/`, `src/` or `CMakeLists.txt` was touched. The whole spike ran
 > in a scratch directory and is reproducible from
 > [Appendix: reproduction](#appendix-reproduction).
@@ -277,6 +286,153 @@ with a *different* symptom (silent blank rather than segfault). The OpenGL
 `bad_alloc` appears to be **unreported** — searching the tracker for `bad_alloc`,
 `UploadPass` and `OpenGL macOS` returns only #300, which is Metal-only.
 
+## Linux and Windows (2026-09-13)
+
+Question asked: the macOS spike was blocked by the renderer, so can the Linux and
+Windows builds use the vector basemap instead?
+
+Upstream had not moved since the spike: `main` is still `ed7cc1d`, v4.0.0 is
+still unreleased, and #300 / #243 are unchanged.
+
+### Linux — verified
+
+Verified on: CachyOS (Linux 7.2.4), AMD Radeon RX 6900 XT (Mesa 26.2.2, radeonsi,
+GL 4.6 core / GLES 3.2), KDE Plasma on Wayland, system Qt 6.11.2 (which ships the
+`QtLocation` private headers), clang, against a clean `main` at `15b0e96`.
+
+`maplibre-native-qt` `ed7cc1d` builds unmodified with its `Linux-OpenGL` preset
+(`QT_ROOT_DIR=/usr`), and all three upstream suites pass (`test_mln_quick`,
+`test_mln_location`, `test_mln_widgets`). Configure again prints "Configuring
+OpenGL **ES** backend" — which is harmless here, because Mesa provides GLES 3.2,
+and consistent with it being the likely root of the macOS `bad_alloc`.
+
+The test was **the app itself**, not a probe QML: `Plugin { name: "maplibre" }`
+swapped in for `osm` in a throwaway worktree, style URL chosen by `Theme.isDark`,
+and the theme-flip `Loader` left in place so the teardown path is exercised. A
+scripted timer grabbed `mapLoader` to PNG, flipped the theme, grabbed again and
+called `Qt.quit()`; a 50 ms timer measured GUI-thread stalls.
+
+**What works:**
+
+- Positron and Dark Matter both render, labels included. Tiles are fetched and
+  cached (the ambient cache holds `carto.streets/v1` MVTs), which is exactly what
+  macOS never got to.
+- Every overlay still draws: `MapQuickItem` trains and stations, the selected
+  route `MapPolyline`, weather chips.
+- The `Loader` destroying and re-creating the `Map` on a theme flip did not crash
+  on any run, and the process exited cleanly (exit 0) every time.
+- The only log noise is one CARTO style warning, `line dasharray requires at
+  least two elements`.
+
+**What does not, as-is — the rail layer.** Under this plugin the four shape
+items are not drawn by Qt Quick. `QGeoMapMapLibrePrivate::supportedMapItemTypes()`
+claims `MapRectangle | MapCircle | MapPolygon | MapPolyline`, and `addMapItem()`
+turns each one into a MapLibre GeoJSON source plus a layer
+(`src/location/qgeomap.cpp:257`, `StyleChange::addFeature`). `MapQuickItem` is
+left to Qt. Our rails are thousands of `MapPolyline` delegates through
+`MapItemView` ([`qml/Main.qml`](../qml/Main.qml)), so every one of them becomes a
+style source and layer, built on the GUI thread.
+
+Same machine, same scripted ~100 s run:
+
+| | `osm` raster (today) | `maplibre`, rails as `MapPolyline`s | `maplibre`, rails disabled | `maplibre`, rails as one GeoJSON layer |
+|---|---|---|---|---|
+| CPU (user) | 32.7 s / 101 s | 101.4 s / 101 s | 6.7 s / 100 s | 17.7 s / 60 s |
+| Peak RSS | 483 MB | 1.64 GB | 433 MB | 633 MB |
+| Worst GUI-thread stall | 191 ms | **7,374 ms** | 84 ms | 147 ms |
+
+With the per-item rails the GUI thread is saturated for the whole run, and train
+markers visibly take ~40 s to reappear after a theme flip because live position
+updates cannot get through. With rails disabled, MapLibre is *lighter* than the
+raster basemap. The renderer is not the cost; the conversion is.
+
+**The fix that was verified:** hand the network to MapLibre as one source and one
+layer, through the plugin's attached style (it attaches to a plain `Map`, not
+only `MapView`):
+
+```qml
+import MapLibre.Location 4.0
+
+Map {
+    MapLibre.style: Style {
+        SourceParameter {
+            styleId: "rails"
+            type: "geojson"
+            property string data: ":/data/rails.geojson"
+        }
+        LayerParameter {
+            styleId: "rails-line"
+            type: "line"
+            property string source: "rails"
+            layout: { "line-join": "round", "line-cap": "round" }
+            paint: {
+                "line-color": ["case", ["get", "paaraide"], "#a8b0b9", "#8994a3"],
+                "line-width": ["case", ["get", "paaraide"], 2.2, 1.3]
+            }
+        }
+    }
+}
+```
+
+That drew all 4,962 features, beneath the markers, with the main/siding split
+driven by the baked `paaraide` property, and brought the numbers back to parity
+(last column above). Two traps on the way, both silent or misleading:
+
+1. **CRS.** `rails.geojson.qz` is EPSG:3067 metres — `TrackService` reprojects on
+   load via [`src/Projection.h`](../src/Projection.h). A GeoJSON source must be
+   WGS84 lon/lat; fed the baked coordinates, MapLibre accepts the source without
+   error and draws the rails far off-screen. The probe used a WGS84 copy
+   (`tm35fin::toWgs84` ported to Python, `paaraide` kept, 5.2 MB).
+2. **`data` must be a `:`-prefixed resource path.**
+   `src/core/style/source_style_change.cpp:52` reads the file only when the string
+   starts with `:`; anything else — a `file://` URL included — is parsed as inline
+   GeoJSON, failing with `Unable to add source with id "rails" : Invalid value. at
+   offset 1`.
+
+Not verified in the probe: whether `paint` re-evaluates when `Theme` colours
+change (the probe used literal colours), and the selected-route and connector
+`MapPolyline`s stayed per-item — one each, which is harmless.
+
+**Attribution.** The plugin shows none; CARTO's terms require CARTO and
+OpenStreetMap credits, so the app would have to draw them.
+
+### Windows — not run, upstream evidence only
+
+- **Toolchain.** Upstream CI builds Windows on **MSVC 2022** (x64 and arm64), Qt
+  6.11.2, OpenGL and Vulkan, green on `ed7cc1d`; tests run on x64 OpenGL.
+  **llvm-mingw — our release toolchain (`windows-llvm-qt611`) — is not in their
+  matrix.** The `windows-msvc` preset is the lower-risk base for a MapLibre build.
+- **Graphics API.** Qt Quick defaults to Direct3D 11 on Windows, and an OpenGL
+  build of the plugin needs a current `QOpenGLContext` — without one
+  `updateSceneGraph` logs `QOpenGLContext is NULL!` and draws nothing
+  (`src/location/qgeomap.cpp:78`). `main.cpp` would have to call
+  `QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL)` before the
+  `QGuiApplication` exists, moving the *whole* UI to OpenGL; machines without a
+  real GL driver (VMs, RDP) then fall back to software GL.
+- **Open Windows-only bugs that hit this app directly:**
+  - [#285](https://github.com/maplibre/maplibre-native-qt/issues/285) — Release
+    builds **never exit** after the window closes; a Debug build segfaults
+    instead. Most recently reproduced with Qt 6.11.1 / MSVC / OpenGL, the GUI
+    thread blocked in `mbgl::util::Thread<MainResourceLoaderThread>`'s destructor.
+    The reporter confirms Ubuntu works, matching the clean exits above.
+  - [#302](https://github.com/maplibre/maplibre-native-qt/issues/302) — **crash
+    on `Map` teardown**: `mbgl::gl::Context::~Context` calls GL with no current
+    context, because nothing calls `Map::destroyRenderer()`. The current theme flip
+    destroys the `Map`, so it would crash on every flip. A community patch is in
+    the thread, not merged.
+
+  A vector basemap removes the rebuild (light/dark becomes an `activeMapType`
+  switch, see [What works](#what-works)), which sidesteps #302 on a flip but not
+  at exit.
+
+### Verdict by platform
+
+| | Renders? | What stands between it and shipping |
+|---|---|---|
+| **Linux** | ✅ verified in-app | Rails as one GeoJSON layer (WGS84 bake); MapLibre built from unreleased source |
+| **Windows** | Likely (upstream CI green, MSVC) | #285 exit hang, #302 teardown crash, forcing OpenGL, leaving llvm-mingw |
+| **macOS** | ❌ | Unchanged — see [What blocks it](#what-blocks-it) |
+
 ## Where this leaves us
 
 1. **Report upstream**, in two parts. Add our Metal data point to
@@ -292,6 +448,13 @@ with a *different* symptom (silent blank rather than segfault). The OpenGL
    key and no upstream fix. Cheapest probe: extend the bake to emit a Natural
    Earth 10m coastline + lakes blob, render as `MapPolygon` over `itemsoverlay`,
    and judge it at zoom 4–9 before committing to roads and urban areas.
+4. **Whichever way this goes, plan the rails as one layer.** The per-item
+   conversion is what makes MapLibre unusable with our network on Linux, and it is
+   platform-independent. A WGS84 GeoJSON emitted by `scripts/bake_rails.py` next to
+   the existing `.qz` is the prerequisite for any MapLibre build.
+5. **A Linux-only vector basemap is possible today** but splits the basemap code
+   by platform, and our only published artifact is the Windows zip. Windows waits
+   on #285 and #302 (or on carrying #302's patch).
 
 Trying the released v3.0.0 tag is **not** recommended: it targets Qt 6.5–6.7
 against our 6.11 private headers, and it is the same macOS GL path that is
@@ -326,3 +489,27 @@ Tile traffic is verifiable from the ambient cache set by
 sqlite3 <cachedir>/maplibre.db "select count(*) from tiles;"
 sqlite3 <cachedir>/maplibre.db "select substr(url,1,80), length(data) from resources;"
 ```
+
+Linux (2026-09-13), system Qt:
+
+```bash
+QT_ROOT_DIR=/usr cmake --preset Linux-OpenGL -DBUILD_TESTING=ON
+cmake --build ../build/qt6-Linux-OpenGL --parallel
+ctest --test-dir ../build/qt6-Linux-OpenGL
+```
+
+Run TrainsOnMap against it (after swapping the `Plugin` in `qml/Main.qml`) with:
+
+```bash
+B=<mlq>/../build/qt6-Linux-OpenGL
+QT_PLUGIN_PATH=$B/src/location/plugins \
+QML_IMPORT_PATH=$B/src/location/plugins \
+LD_LIBRARY_PATH=$B/src/core:$B/src/location:$B/src/quick \
+QT_FORCE_STDERR_LOGGING=1 \
+./build/linux-release/bin/TrainsOnMap
+```
+
+`QML_IMPORT_PATH` is needed only for `import MapLibre.Location`.
+`QT_FORCE_STDERR_LOGGING=1` matters when stderr is not a terminal: Qt on Linux
+otherwise sends `console.log` and the MapLibre log to journald, and the run looks
+silent.
