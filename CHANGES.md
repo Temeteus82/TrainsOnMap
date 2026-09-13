@@ -8,6 +8,20 @@ Legend: ✨ feature · 🐛 bug fix · ♻️ change/refactor · ✅ verificatio
 
 ---
 
+## v0.1.1 patch release
+
+### ♻️ Version bump
+- [x] `project(VERSION)` 0.1.0 → 0.1.1. Since v0.1.0: the Qt 6.12 LTS QML fixes
+      (below), pinned macOS Qt kits (#76), and the vector-basemap exploration
+      doc (#74, #75).
+- [x] README: the DMG example no longer hardcodes a version; the basemap knob
+      links the vector-basemap exploration.
+
+### ✅ Verification
+- [x] Clean `linux-release` build; `ctest` 10/10; app launches with no QML warnings.
+
+---
+
 ## Qt 6.12 LTS compatibility check (against 6.12.0-beta4, macOS)
 
 ### ✅ Builds, tests and runs on 6.12

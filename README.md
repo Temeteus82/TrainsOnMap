@@ -214,7 +214,7 @@ open ./build/macos-clang/bin/TrainsOnMap.app
 >
 > ```bash
 > cmake --build --preset macos-clang --target dmg
-> # -> build/macos-clang/bin/TrainsOnMap-0.1.0.dmg
+> # -> build/macos-clang/bin/TrainsOnMap-<version>.dmg
 > ```
 >
 > After macdeployqt, [`scripts/seal_bundle_rpaths.sh`](scripts/seal_bundle_rpaths.sh)
@@ -296,6 +296,8 @@ matching compiler, and Run.
   provider manifest) and every overlay colour follow it — all defined in
   `Theme.qml`. To change tile source, edit the `UrlTemplate` in
   `resources/basemap/{light,dark}/street`; for colours, edit the palette tokens.
+  Vector tiles were evaluated and are on hold: see
+  [`docs/vector-basemap-exploration.md`](docs/vector-basemap-exploration.md).
 
   > The `osm` plugin's simpler `osm.mapping.custom.host` is deliberately **not**
   > used: Qt builds tile URLs by concatenating `%z/%x/%y.png` onto the host
