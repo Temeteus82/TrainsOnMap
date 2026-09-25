@@ -109,7 +109,7 @@ private:
     void onCauseCategoryNames();   ///< pull the fleet's cause-category map; re-resolve loaded stops
     void handleTrain(QNetworkReply *reply);
     void applyTrainObject(const QJsonObject &train, bool live);  ///< header + stops
-    void fetchComposition(int trainNumber, const QString &departureDate);
+    void fetchComposition(int trainNumber, const QString &departureDate, quint64 request);
     void handleComposition(QNetworkReply *reply);
     void clearComposition();             ///< reset carriage state + notify
     void onStreamTrainMessage(const QByteArray &payload);        ///< live MQTT update
@@ -134,6 +134,10 @@ private:
     int m_trainNumber = 0;
     QString m_departureDate;
     bool m_cancelled = false;
+    /// Bumped by show() and clear(); a reply is current only if it carries the
+    /// latest value. Matching by (trainNumber, departureDate) let a re-tap of the
+    /// same train, or show/clear/show, land the first reply early (CPP2-I9).
+    quint64 m_request = 0;
 
     // ---- Carriage composition (fetched once per selection) ------------------
     bool m_hasComposition = false;

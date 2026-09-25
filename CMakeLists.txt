@@ -374,7 +374,7 @@ target_link_libraries(tst_trainlistmodel PRIVATE
     Qt6::Core Qt6::Qml Qt6::Positioning Qt6::Concurrent Qt6::Test)
 add_test(NAME trainlistmodel COMMAND tst_trainlistmodel)
 
-# The two network-facing services, driven through tests/FakeNetwork.h — a
+# The network-facing services, driven through tests/FakeNetwork.h — a
 # QNetworkAccessManager whose replies the test finishes by hand. Both services
 # take their manager as a constructor argument for exactly this; nothing else in
 # the app passes one. These pin CPP-C1/C2 and CPP-W2, the three fixes the
@@ -397,6 +397,25 @@ target_link_libraries(tst_traindetailsservice PRIVATE
     Qt6::Core Qt6::Qml Qt6::Network Qt6::WebSockets Qt6::Positioning
     Qt6::Concurrent Qt6::Test)
 add_test(NAME traindetailsservice COMMAND tst_traindetailsservice)
+
+# CPP2-C1: the station board's stale-reply guard, same FakeNetwork seam.
+qt_add_executable(tst_stationboardservice
+    tests/tst_stationboardservice.cpp
+    tests/FakeNetwork.h
+    src/StationBoardService.h src/StationBoardService.cpp
+    src/StationBoardModel.h src/StationBoardModel.cpp
+    src/DigitrafficMqttClient.h src/DigitrafficMqttClient.cpp
+    src/DigitrafficClient.h src/DigitrafficClient.cpp
+    src/StationListModel.h src/StationListModel.cpp
+    src/TrainListModel.h src/TrainListModel.cpp
+    src/TrackService.h src/TrackService.cpp
+    src/TrackListModel.h src/TrackListModel.cpp
+    src/RailGraph.h src/RailGraph.cpp)
+target_include_directories(tst_stationboardservice PRIVATE src)
+target_link_libraries(tst_stationboardservice PRIVATE
+    Qt6::Core Qt6::Qml Qt6::Network Qt6::WebSockets Qt6::Positioning
+    Qt6::Concurrent Qt6::Test)
+add_test(NAME stationboardservice COMMAND tst_stationboardservice)
 
 qt_add_executable(tst_digitrafficclient
     tests/tst_digitrafficclient.cpp
