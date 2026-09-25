@@ -6,9 +6,7 @@
 
 #include <QGeoCoordinate>
 #include <QJsonArray>
-#include <QJsonDocument>
 #include <QJsonObject>
-#include <QJsonParseError>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
@@ -418,15 +416,17 @@ void DigitrafficClient::handleReply(QNetworkReply *reply)
         return;
     }
 
-    const QByteArray body = reply->readAll();
-    QJsonParseError perr{};
-    const QJsonDocument doc = QJsonDocument::fromJson(body, &perr);
-    if (perr.error != QJsonParseError::NoError || !doc.isArray()) {
-        setStatus(QStringLiteral("Unexpected response (%1)").arg(perr.errorString()));
+    // parseArray logs the cause; a bad body (HTML error page, truncated JSON,
+    // non-array root) is a failed poll too, so refresh the rings as above
+    // (CPP2-W1).
+    const auto parsed = digitraffic::parseArray(reply->readAll(), "train-locations/latest");
+    if (!parsed) {
+        setStatus(QStringLiteral("Unexpected response from server"));
+        m_model->refreshRingStates();
         return;
     }
 
-    const QJsonArray arr = doc.array();
+    const QJsonArray arr = *parsed;
     QVector<TrainPosition> trains;
     trains.reserve(arr.size());
 

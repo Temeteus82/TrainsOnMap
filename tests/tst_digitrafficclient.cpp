@@ -5,6 +5,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QRegularExpression>
 #include <QTest>
 
 /// Pins CPP-W2: the three /metadata fetches issued from the constructor are
@@ -184,6 +185,32 @@ private slots:
         QCOMPARE(net.pending(QString::fromLatin1(kStations)), 0);
         QCOMPARE(net.pending(causesNeedle()), 0);
         QCOMPARE(net.pending(QString::fromLatin1(kDetailed)), 0);
+    }
+
+    /// CPP2-W1. A 200 whose body isn't a JSON array is a failed poll: it gets a
+    /// real status (not "Unexpected response (no error occurred)") and a log
+    /// line. The ring refresh it now also runs is the same call as the
+    /// network-error path; the model has no clock seam to observe it here.
+    void badPositionBodyIsReportedAndLogged()
+    {
+        fake::Manager net;
+        DigitrafficClient client(nullptr, &net);
+        const QString latest = QStringLiteral("train-locations/latest");
+
+        client.refresh();
+        fake::Reply *reply = net.take(latest);
+        QVERIFY(reply);
+        QTest::ignoreMessage(QtWarningMsg, "train-locations/latest: expected a JSON array root");
+        reply->respond(QByteArrayLiteral("{}"));   // valid JSON, wrong root
+        QCOMPARE(client.status(), QStringLiteral("Unexpected response from server"));
+
+        client.refresh();
+        reply = net.take(latest);
+        QVERIFY(reply);
+        QTest::ignoreMessage(QtWarningMsg,
+                             QRegularExpression(QStringLiteral("^train-locations/latest: JSON parse failed")));
+        reply->respond(QByteArrayLiteral("<html>502</html>"));
+        QCOMPARE(client.status(), QStringLiteral("Unexpected response from server"));
     }
 };
 
