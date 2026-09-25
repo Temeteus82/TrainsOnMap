@@ -237,8 +237,9 @@ private:
     /// (the case this matters for, e.g. a terminus) enough to need it live.
     void recomputeNearestNeighbors();
 
-    /// Bearing from the train's previous coordinate; also records the new one.
-    double bearingFor(const TrainKey &key, const QGeoCoordinate &coordinate);
+    /// Bearing from `prev` (the row's last coordinate) to `coordinate`; 0 when
+    /// either is invalid or the train barely moved.
+    static double bearingFor(const QGeoCoordinate &prev, const QGeoCoordinate &coordinate);
 
     /// Short code of the nearest scheduled station to `fix` within the snap radius
     /// (for platform snapping and the off-network station pin), or "" when the
@@ -248,7 +249,6 @@ private:
 
     QVector<Row> m_rows;
     QHash<TrainKey, int> m_indexByKey;        ///< (date,number) -> row index
-    QHash<TrainKey, QGeoCoordinate> m_previous;  ///< (date,number) -> last coord (for bearing)
     QHash<TrainKey, QString> m_categoryByNumber; ///< (date,number) -> category
     QHash<TrainKey, QString> m_typeByNumber;     ///< (date,number) -> train type
     QHash<TrainKey, QString> m_lineByNumber;     ///< (date,number) -> commuter line letter

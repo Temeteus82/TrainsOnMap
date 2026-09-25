@@ -77,15 +77,13 @@ TrackService::Loaded TrackService::loadNetwork()
 
     // Index the graph's tracks as render segments: bbox for the viewport cull, and
     // the track index so the geometry can be boxed on demand (boxedPath, W14) and
-    // reached from a grid hit (matchToNetwork, W10). Note the segment ids are NOT
-    // parallel to the track indices — tracks with fewer than two points are
-    // skipped — which is exactly why the index is stored rather than assumed.
+    // reached from a grid hit (matchToNetwork, W10). RailGraph::loadFromJson
+    // already drops tracks with fewer than two points, so every track becomes a
+    // segment and the grid below is non-empty whenever the graph is (CPP2-W4).
     const QVector<RailGraph::Track> &tracks = out.graph->tracks();
     out.segments.reserve(tracks.size());
     for (int i = 0; i < tracks.size(); ++i) {
         const RailGraph::Track &t = tracks.at(i);
-        if (t.path.size() < 2)
-            continue;
         Segment seg;
         seg.trackIndex = i;
         seg.mainTrack = t.paaraide;
@@ -201,10 +199,6 @@ TrackMatch TrackService::matchToNetwork(const QGeoCoordinate &fix, double headin
                 }
             }
         }
-    } else {
-        // No grid (network not loaded yet): the linear scan, as loadForBounds does.
-        for (const RailGraph::Track &t : tracks)
-            project(t);
     }
 
     if (!found)
@@ -414,15 +408,7 @@ void TrackService::loadForBounds(double west, double south, double east, double 
         }
         std::sort(ids.begin(), ids.end());
         ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
-    } else {
-        // No grid (network not loaded yet): fall back to the linear scan.
-        for (int i = 0; i < m_all.size(); ++i) {
-            const Segment &s = m_all.at(i);
-            if (s.maxLat < south || s.minLat > north || s.maxLon < west || s.minLon > east)
-                continue;
-            ids.push_back(i);
-        }
-    }
+    }   // no grid = network not loaded yet (m_all is empty too): nothing visible
 
     QVector<QVariantList> paths;
     QVector<bool> mains;
