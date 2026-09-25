@@ -40,6 +40,7 @@ public:
     // available. See TimetableStop::causeCode / causeDetailedCode.
     QString causeCode;
     QString causeDetailedCode;
+    QString destinationCode;   ///< final stop's short code, resolved to `destination`
 };
 
 // Named roles on one item (Qt 6.11+), as the other QRangeModel gadgets do.

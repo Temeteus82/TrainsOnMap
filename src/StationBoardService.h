@@ -65,7 +65,7 @@ private:
     void onStationNames();                       ///< pull the fleet's name map
     void onCauseCategoryNames();                  ///< pull the fleet's cause code -> name map
     void handleReply(QNetworkReply *reply, const QString &code);
-    void rebuildBoard();                          ///< re-resolve causeText for m_rows, push to the model
+    void rebuildBoard();                          ///< re-resolve destination + causeText for m_rows, push to the model
     void setLoading(bool loading);
     void setStatus(const QString &status);
 
@@ -73,7 +73,7 @@ private:
     StationBoardModel *m_board = nullptr;
     DigitrafficClient *m_fleet = nullptr;
     FleetMetadata m_meta;                     ///< reads `fleet`'s shared name/cause maps
-    QVector<StationBoardRow> m_rows;          ///< last fetched rows, with unresolved causeCode
+    QVector<StationBoardRow> m_rows;          ///< last fetched rows, with unresolved destination/cause codes
 
     QString m_stationCode;
     QString m_stationName;
