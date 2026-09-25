@@ -132,6 +132,81 @@ private slots:
         QVERIFY(!svc.hasSelection());
     }
 
+    /// CPP2-I9. Two taps on the same train issue two requests for the same run.
+    /// The first reply must not end the wait for the second: replies are matched
+    /// per request, not per run.
+    void sameTrainRetapWaitsForLatestRequest()
+    {
+        fake::Manager net;
+        TrainDetailsService svc(nullptr, &net);
+        const QString path = QStringLiteral("/trains/2026-09-03/101");
+
+        svc.show(101, QString::fromLatin1(kDate));
+        fake::Reply *first = net.take(path);
+        svc.show(101, QString::fromLatin1(kDate));
+        fake::Reply *second = net.take(path);
+        QVERIFY(first && second);
+
+        first->respond(trainsPayload(101, QStringLiteral("IC"), {QStringLiteral("HKI")}));
+        QVERIFY(svc.isLoading());
+        QCOMPARE(svc.title(), QStringLiteral("Train 101"));   // not applied
+
+        second->respond(trainsPayload(101, QStringLiteral("IC"), {QStringLiteral("HKI")}));
+        QVERIFY(!svc.isLoading());
+        QCOMPARE(svc.title(), QStringLiteral("IC 101"));
+    }
+
+    /// CPP2-I9, the show/clear/show form: the reply from before clear() is stale
+    /// even though it names the run now selected again.
+    void showClearShowDropsTheFirstReply()
+    {
+        fake::Manager net;
+        TrainDetailsService svc(nullptr, &net);
+        const QString path = QStringLiteral("/trains/2026-09-03/101");
+
+        svc.show(101, QString::fromLatin1(kDate));
+        fake::Reply *first = net.take(path);
+        svc.clear();
+        svc.show(101, QString::fromLatin1(kDate));
+        QVERIFY(first);
+
+        first->respond(trainsPayload(101, QStringLiteral("IC"), {QStringLiteral("HKI")}));
+        QVERIFY(svc.isLoading());
+    }
+
+    /// CPP2-C2. QML reads routeStations on selectionChanged to pin and draw the
+    /// route, so by then the previous train's stops must be gone. If the new
+    /// timetable then fails, the old route must not stay behind.
+    void newSelectionNeverExposesThePreviousRoute()
+    {
+        fake::Manager net;
+        TrainDetailsService svc(nullptr, &net);
+
+        svc.show(101, QString::fromLatin1(kDate));
+        fake::Reply *replyA = net.take(QStringLiteral("/trains/2026-09-03/101"));
+        QVERIFY(replyA);
+        replyA->respond(trainsPayload(101, QStringLiteral("IC"),
+                                      {QStringLiteral("HKI"), QStringLiteral("TPE")}));
+        QVERIFY(!svc.routeStations().isEmpty());
+
+        // Capture what a QML handler would see at the moment each signal fires.
+        QList<QStringList> seenOnSelection;
+        connect(&svc, &TrainDetailsService::selectionChanged, &svc,
+                [&] { seenOnSelection << svc.routeStations(); });
+        QSignalSpy routeSpy(&svc, &TrainDetailsService::routeStationsChanged);
+
+        svc.show(202, QString::fromLatin1(kDate));
+        QCOMPARE(seenOnSelection.size(), 1);
+        QVERIFY(seenOnSelection.first().isEmpty());
+        QCOMPARE(routeSpy.count(), 1);   // the old route went away: re-pin/redraw
+
+        fake::Reply *replyB = net.take(QStringLiteral("/trains/2026-09-03/202"));
+        QVERIFY(replyB);
+        replyB->fail();
+        QVERIFY(svc.routeStations().isEmpty());
+        QVERIFY(!svc.isLoading());
+    }
+
     /// CPP-C2. A live refresh carrying the same header and route must be silent
     /// on both signals, or the trail resets and the overlay rebuilds every few
     /// seconds. A refresh that genuinely changes them must still speak up.

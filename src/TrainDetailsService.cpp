@@ -195,10 +195,17 @@ void TrainDetailsService::show(int trainNumber, const QString &departureDate)
     m_title = QStringLiteral("Train %1").arg(trainNumber);
     m_subtitle.clear();
     m_cancelled = false;
-    emit selectionChanged();
-
+    // Drop the old stops *before* announcing the new selection: QML re-pins and
+    // redraws routeStations on selectionChanged, and would otherwise pick up the
+    // previous train's route. If this timetable then fails, nothing would
+    // correct it (CPP2-C2).
+    const bool hadRoute = !m_stops.isEmpty();
     m_stops.clear();
     m_model->clear();
+    emit selectionChanged();
+    if (hadRoute)
+        emit routeStationsChanged();
+
     setLoading(true);
     setStatus(QStringLiteral("Loading timetable…"));
 
@@ -208,14 +215,16 @@ void TrainDetailsService::show(int trainNumber, const QString &departureDate)
     QNetworkRequest req{url};
     req.setRawHeader("Digitraffic-User", digitraffic::kUserAgent);
     QNetworkReply *reply = m_net->get(req);
-    // Tag the reply with the run it was issued for, exactly as fetchComposition
+    // Tag the reply with the request it was issued for, as fetchComposition
     // does below: two GETs on one manager can finish out of order, so a slow
-    // timetable reply for a previously-selected train must not overwrite the
-    // panel now on screen — nor clear the spinner for the request still in
-    // flight (C1).
+    // timetable reply for a superseded selection must not overwrite the panel
+    // now on screen — nor clear the spinner for the request still in flight
+    // (C1). Per request, not per run, so a re-tap of the same train counts too
+    // (CPP2-I9).
+    const quint64 request = ++m_request;
     connect(reply, &QNetworkReply::finished, this,
-            [this, reply, trainNumber, departureDate] {
-                if (trainNumber == m_trainNumber && departureDate == m_departureDate)
+            [this, reply, request] {
+                if (request == m_request)
                     handleTrain(reply);
                 else
                     reply->deleteLater();   // stale selection — drop it
@@ -223,7 +232,7 @@ void TrainDetailsService::show(int trainNumber, const QString &departureDate)
 
     // Carriage order is static per run — fetch it once alongside the timetable.
     clearComposition();
-    fetchComposition(trainNumber, departureDate);
+    fetchComposition(trainNumber, departureDate, request);
 
     // Also stream live updates for this train (delays/estimates) over MQTT.
     if (m_stream)
@@ -294,7 +303,8 @@ void TrainDetailsService::applyTrainObject(const QJsonObject &train, bool live)
                    : QStringLiteral("%1 stops").arg(stopCount));
 }
 
-void TrainDetailsService::fetchComposition(int trainNumber, const QString &departureDate)
+void TrainDetailsService::fetchComposition(int trainNumber, const QString &departureDate,
+                                           quint64 request)
 {
     const QUrl url(QStringLiteral("https://rata.digitraffic.fi/api/v1/compositions/%1/%2")
                        .arg(departureDate)
@@ -302,11 +312,11 @@ void TrainDetailsService::fetchComposition(int trainNumber, const QString &depar
     QNetworkRequest req{url};
     req.setRawHeader("Digitraffic-User", digitraffic::kUserAgent);
     QNetworkReply *reply = m_net->get(req);
-    // Tag the reply with the run it was issued for: a slow composition reply for a
-    // previously-selected train must not overwrite the consist now on screen.
+    // Tag the reply with the request it was issued for: a slow composition reply
+    // for a superseded selection must not overwrite the consist now on screen.
     connect(reply, &QNetworkReply::finished, this,
-            [this, reply, trainNumber, departureDate] {
-                if (trainNumber == m_trainNumber && departureDate == m_departureDate)
+            [this, reply, request] {
+                if (request == m_request)
                     handleComposition(reply);
                 else
                     reply->deleteLater();   // stale selection — drop it
@@ -423,6 +433,7 @@ void TrainDetailsService::clear()
     if (!m_hasSelection)
         return;
     m_hasSelection = false;
+    ++m_request;   // any in-flight reply is now stale
     m_trainNumber = 0;
     m_departureDate.clear();
     m_title.clear();

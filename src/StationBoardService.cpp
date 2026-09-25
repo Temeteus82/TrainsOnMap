@@ -13,12 +13,9 @@
 #include "DigitrafficFormat.h"
 #include "NetworkDiagnostics.h"
 
-namespace {
-}   // namespace
-
-StationBoardService::StationBoardService(QObject *parent)
+StationBoardService::StationBoardService(QObject *parent, QNetworkAccessManager *net)
     : QObject(parent)
-    , m_net(new QNetworkAccessManager(this))
+    , m_net(net ? net : new QNetworkAccessManager(this))
     , m_board(new StationBoardModel(this))
 {
     m_net->setTransferTimeout(digitraffic::kRequestTimeout);
@@ -84,7 +81,17 @@ void StationBoardService::show(const QString &code, const QString &name)
     QNetworkRequest req{QUrl(url)};
     req.setRawHeader("Digitraffic-User", digitraffic::kUserAgent);
     QNetworkReply *reply = m_net->get(req);
-    connect(reply, &QNetworkReply::finished, this, [this, reply, code] { handleReply(reply, code); });
+    // Drop a superseded reply *before* it touches `loading`: otherwise station
+    // A's late reply lowers the spinner while B's request is still in flight
+    // (CPP2-C1). Tagging by request rather than by code also covers
+    // show(A)/clear()/show(A) and a double click on the same station.
+    const quint64 request = ++m_request;
+    connect(reply, &QNetworkReply::finished, this, [this, reply, code, request] {
+        if (request == m_request)
+            handleReply(reply, code);
+        else
+            reply->deleteLater();   // stale — drop it
+    });
 }
 
 void StationBoardService::clear()
@@ -94,6 +101,7 @@ void StationBoardService::clear()
     m_stationCode.clear();
     m_stationName.clear();
     m_hasSelection = false;
+    ++m_request;   // any in-flight reply is now stale
     m_rows.clear();
     m_board->clear();
     setLoading(false);
@@ -105,9 +113,6 @@ void StationBoardService::handleReply(QNetworkReply *reply, const QString &code)
 {
     reply->deleteLater();
     setLoading(false);
-    // Drop a late reply for a station we've since navigated away from.
-    if (code != m_stationCode || !m_hasSelection)
-        return;
     if (reply->error() != QNetworkReply::NoError) {
         setStatus(QStringLiteral("Board unavailable"));
         return;

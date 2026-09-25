@@ -36,7 +36,8 @@ class StationBoardService : public QObject
     Q_PROPERTY(DigitrafficClient *fleet READ fleet WRITE setFleet NOTIFY fleetChanged)
 
 public:
-    explicit StationBoardService(QObject *parent = nullptr);
+    explicit StationBoardService(QObject *parent = nullptr,
+                                 QNetworkAccessManager *net = nullptr);
 
     StationBoardModel *board() const { return m_board; }
     QString stationName() const { return m_stationName; }
@@ -79,4 +80,5 @@ private:
     bool m_hasSelection = false;
     bool m_loading = false;
     QString m_status;
+    quint64 m_request = 0;   ///< bumped by show()/clear(); older replies are stale (CPP2-C1)
 };
