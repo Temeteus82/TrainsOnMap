@@ -10,6 +10,17 @@ Findings are ranked most severe first. Everything above the investigation target
 
 **Suggested fix order:** fix **CPP2-C1** and **CPP2-C2** first, since both are user-visible. They share a root cause with **CPP2-I9**, so fix all three in one pass. Then do **CPP2-W1** and **CPP2-W2**, then the rest.
 
+## Status (2026-09-25)
+
+| Finding | Status |
+|---|---|
+| CPP2-C1, CPP2-C2, CPP2-I9 | **Fixed** in #83: a request-generation counter in both services; stops cleared before `selectionChanged`. New `tst_stationboardservice` added. |
+| CPP2-W1 | **Fixed** in #84: the position poll now uses `parseArray`, and a parse failure refreshes the rings. |
+| CPP2-W2 | **Fixed** in #85: board destinations are resolved in `rebuildBoard()` and rebuilt on `stationNamesChanged`. |
+| CPP2-W3, CPP2-W4 | **Fixed** in #86: `m_previous` and the unreachable no-grid scans are deleted. The W3 fix idea below said `tst_trainlistmodel` covered bearing. It did not, so #86 adds `bearingFollowsSuccessiveFixes`. |
+| CPP2-I1, I5, I6, I10 + `MqttCodec` test | **Next.** These are the MQTT robustness targets. None has been checked against the source yet. |
+| CPP2-I2, I3, I4, I7, I8 and the items below the target cap | Open. |
+
 ---
 
 ## Critical: user-visible defects
