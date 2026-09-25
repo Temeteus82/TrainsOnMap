@@ -49,6 +49,10 @@ void StationBoardService::onCauseCategoryNames()
 
 void StationBoardService::onStationNames()
 {
+    // Station names can land after the board did (the metadata fetch retries
+    // with a backoff of up to ~8 min), so re-resolve the destinations (CPP2-W2).
+    if (m_meta.stationsLoaded() && !m_rows.isEmpty())
+        rebuildBoard();
     // Refresh the visible title if the code resolved to a name late.
     if (m_hasSelection) {
         const QString resolved = m_meta.stationLabel(m_stationCode);
@@ -164,9 +168,8 @@ void StationBoardService::handleReply(QNetworkReply *reply, const QString &code)
         else
             row.trainLabel = QString::number(number);
 
-        // Destination = the train's final stop.
-        row.destination = m_meta.stationLabel(
-            tt.last().toObject().value("stationShortCode").toString());
+        // Destination = the train's final stop; resolved to a name in rebuildBoard.
+        row.destinationCode = tt.last().toObject().value("stationShortCode").toString();
 
         const QString sched = r.value("scheduledTime").toString();
         const QString live = r.value("liveEstimateTime").toString().isEmpty()
@@ -215,6 +218,7 @@ void StationBoardService::rebuildBoard()
 {
     QVector<StationBoardRow> resolved = m_rows;
     for (StationBoardRow &row : resolved) {
+        row.destination = m_meta.stationLabel(row.destinationCode);
         row.causeText = m_meta.causeText(row.causeCode, row.causeDetailedCode);
     }
     m_board->setRows(resolved);
