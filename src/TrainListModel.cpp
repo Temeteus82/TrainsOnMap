@@ -124,16 +124,11 @@ QHash<int, QByteArray> TrainListModel::roleNames() const
     return roles;
 }
 
-double TrainListModel::bearingFor(const TrainKey &key, const QGeoCoordinate &coordinate)
+double TrainListModel::bearingFor(const QGeoCoordinate &prev, const QGeoCoordinate &coordinate)
 {
-    double bearing = 0.0;
-    const auto prev = m_previous.constFind(key);
-    if (prev != m_previous.constEnd() && prev->isValid() && coordinate.isValid()
-        && prev->distanceTo(coordinate) > 1.0) {
-        bearing = prev->azimuthTo(coordinate);
-    }
-    m_previous.insert(key, coordinate);
-    return bearing;
+    if (prev.isValid() && coordinate.isValid() && prev.distanceTo(coordinate) > 1.0)
+        return prev.azimuthTo(coordinate);
+    return 0.0;
 }
 
 QString TrainListModel::nearestRouteStationCode(const TrainKey &key,
@@ -217,11 +212,6 @@ void TrainListModel::updateTrains(const QVector<TrainPosition> &trains)
     // row: applyOne only restamps the trains the snapshot actually carried (I2).
     refreshRingStates();
 
-    // Garbage-collect bearing history down to currently-live trains so it can't
-    // grow unbounded over a long session.
-    for (auto it = m_previous.begin(); it != m_previous.end();)
-        it = m_indexByKey.contains(it.key()) ? std::next(it) : m_previous.erase(it);
-
     if (removed)
         emit countChanged();
 }
@@ -252,8 +242,6 @@ void TrainListModel::pruneAbandonedRows()
     if (!removed)
         return;
     reindex();
-    for (auto it = m_previous.begin(); it != m_previous.end();)
-        it = m_indexByKey.contains(it.key()) ? std::next(it) : m_previous.erase(it);
     emit countChanged();
 }
 
@@ -338,16 +326,17 @@ void TrainListModel::applyOne(const TrainPosition &train)
     // mis-advance a genuinely diverted train that isn't on the booked route.
     double prevChainage = -1.0;
     bool wasOnRoute = false;
+    QGeoCoordinate prevCoord;   // the row's last (matched) position, for heading + bearing
     const auto rit = m_indexByKey.constFind(key);
     if (rit != m_indexByKey.constEnd()) {
         prevChainage = m_rows.at(rit.value()).chainage;
         wasOnRoute = m_rows.at(rit.value()).onRoute;
+        prevCoord = m_rows.at(rit.value()).pos.coordinate;
     }
     double newChainage = prevChainage;
 
     if (m_matcher && raw.isValid()) {
-        const auto prev = m_previous.constFind(key);
-        const bool havePrev = prev != m_previous.constEnd() && prev->isValid();
+        const bool havePrev = prevCoord.isValid();
         const bool stopped = train.speed < kStoppedSpeedKmh;
 
         // Estimate the direction of travel from the last stored position so the
@@ -355,8 +344,8 @@ void TrainListModel::applyOne(const TrainPosition &train)
         // stopped or barely moved (the azimuth would be noise).
         double heading = -1.0;
         if (havePrev && train.speed >= kHeadingMinSpeedKmh
-            && prev->distanceTo(raw) > kHeadingMinMoveMeters)
-            heading = prev->azimuthTo(raw);
+            && prevCoord.distanceTo(raw) > kHeadingMinMoveMeters)
+            heading = prevCoord.azimuthTo(raw);
 
         // Estimate the progress since the last fix (speed·Δt) so the route matcher
         // can window its search around the carried chainage.
@@ -416,8 +405,8 @@ void TrainListModel::applyOne(const TrainPosition &train)
             offset = m.distanceMeters;
             snapped = (m.onTrack && m.snapped.isValid()) ? m.snapped : raw;
             if (stopped) {
-                if (havePrev && prev->distanceTo(raw) < kStoppedHoldMeters) {
-                    snapped = *prev;
+                if (havePrev && prevCoord.distanceTo(raw) < kStoppedHoldMeters) {
+                    snapped = prevCoord;
                 } else if (!m.onTrack) {
                     // Pin to the nearest scheduled station, if one is in range
                     // (value() of a missing/"" code is an invalid coordinate).
@@ -436,7 +425,7 @@ void TrainListModel::applyOne(const TrainPosition &train)
         const int rowIndex = it.value();
         Row &row = m_rows[rowIndex];
         // Staleness was already rejected at the top of applyOne (#11).
-        row.bearing = bearingFor(key, matched.coordinate);
+        row.bearing = bearingFor(prevCoord, matched.coordinate);
         row.pos = matched;
         row.trackOffsetMeters = offset;
         row.rawCoordinate = raw;
@@ -454,7 +443,7 @@ void TrainListModel::applyOne(const TrainPosition &train)
     const int newRow = m_rows.size();
     beginInsertRows(QModelIndex(), newRow, newRow);
     Row row;
-    row.bearing = bearingFor(key, matched.coordinate);
+    row.bearing = bearingFor(prevCoord, matched.coordinate);
     row.pos = matched;
     row.trackOffsetMeters = offset;
     row.rawCoordinate = raw;

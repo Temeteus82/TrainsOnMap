@@ -198,6 +198,34 @@ private slots:
         m.refreshRingStates();
         QCOMPARE(dataSpy.count(), 0);
     }
+
+    /// BearingRole is the azimuth from the row's previous coordinate. CPP2-W3
+    /// dropped the separate m_previous history in favour of the row's own
+    /// position, so pin what that history produced: 0 on the first fix,
+    /// north/east on moves, 0 for sub-metre jitter, and an out-of-order fix
+    /// leaving the bearing untouched.
+    void bearingFollowsSuccessiveFixes()
+    {
+        TrainListModel m;
+        const QDateTime t0 = QDateTime::currentDateTimeUtc().addSecs(-60);
+        auto fix = [&](double lat, double lon, qint64 secs) {
+            TrainPosition p;
+            p.trainNumber = 100;
+            p.departureDate = QStringLiteral("2026-09-25");
+            p.coordinate = QGeoCoordinate(lat, lon);
+            p.speed = 40;
+            p.timestamp = t0.addSecs(secs);
+            m.upsertTrain(p);
+            return m.data(m.index(0, 0), TrainListModel::BearingRole).toDouble();
+        };
+
+        QCOMPARE(fix(60.0, 24.9, 0), 0.0);                       // first fix: no history
+        QVERIFY(qAbs(fix(60.001, 24.9, 10)) < 0.5);              // ~111 m north
+        QVERIFY(qAbs(fix(60.001, 24.902, 20) - 90.0) < 1.0);     // ~111 m east
+        QCOMPARE(fix(60.001, 24.902001, 30), 0.0);               // < 1 m: jitter
+        QCOMPARE(fix(60.0, 24.9, 5), 0.0);                       // older fix: dropped
+        QVERIFY(qAbs(fix(60.0, 24.902, 40) - 180.0) < 0.5);      // back south
+    }
 };
 
 QTEST_MAIN(TestTrainListModel)
