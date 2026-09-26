@@ -10,7 +10,6 @@
 #include <memory>
 
 #include "RailGraph.h"
-#include "TrackListModel.h"
 
 /// Result of map-matching one GPS fix against the rail network.
 struct TrackMatch {
@@ -41,8 +40,8 @@ struct RouteMatchRequest {
 /// fetched from the Digitraffic infra-api on every launch. The schema-v2 blob is
 /// parsed into a RailGraph (geometry + identity + topology + station crosswalk)
 /// once on a worker thread at startup (geometryReady fires when done). The whole
-/// network is also flattened into render Segments; loadForBounds() then filters
-/// them to the current viewport.
+/// tracks' bounding boxes are indexed in a spatial grid for matchToNetwork().
+/// The map draws the network itself, from `:/data/rails.wgs84.geojson`.
 ///
 /// Tier 2: matchOnRoute() constrains a fix to a train's scheduled route polyline
 /// (resolved off-thread by precomputeRoutes()), and platform-snaps a stopped
@@ -51,7 +50,6 @@ class TrackService : public QObject
 {
     Q_OBJECT
     QML_ELEMENT
-    Q_PROPERTY(TrackListModel *model READ model CONSTANT)
     Q_PROPERTY(bool loading READ isLoading NOTIFY loadingChanged)
     Q_PROPERTY(QString status READ status NOTIFY statusChanged)
     Q_PROPERTY(int segmentCount READ segmentCount NOTIFY geometryReady)
@@ -59,7 +57,6 @@ class TrackService : public QObject
 public:
     explicit TrackService(QObject *parent = nullptr);
 
-    TrackListModel *model() const { return m_model; }
     bool isLoading() const { return m_loading; }
     QString status() const { return m_status; }
     int segmentCount() const { return m_all.size(); }
@@ -88,10 +85,6 @@ public:
     void precomputeRoutes(const QVector<QStringList> &routes);
 
 public slots:
-    /// Show only tracks intersecting the given WGS84 bounding box.
-    /// Arguments follow the GeoJSON/OGC convention: west, south, east, north.
-    void loadForBounds(double west, double south, double east, double north);
-
     /// The resolved route polyline for an ordered station sequence, as a
     /// QVariantList of QGeoCoordinate ready to bind to a MapPolyline.path. Empty
     /// until precomputeRoutes() has resolved it. Used by the debug route overlay.
@@ -110,20 +103,18 @@ signals:
     void routesReady();
 
 private:
-    /// One render segment: a lat/lon bbox for viewport cull plus the index of the
-    /// graph track holding the geometry. The QML-facing QVariantList is *not*
-    /// stored here — see boxedPath() for why (CPP-W14).
+    /// One indexed segment: a lat/lon bbox for the grid plus the index of the
+    /// graph track holding the geometry.
     struct Segment {
         int trackIndex = -1;      ///< index into m_graph->tracks(); geometry lives there
-        bool mainTrack = false;   ///< paaraide: running line (true) vs siding (false)
         double minLat = 0.0;
         double maxLat = 0.0;
         double minLon = 0.0;
         double maxLon = 0.0;
     };
 
-    /// Uniform spatial grid over the render segments' bounding boxes, so a
-    /// viewport query touches only the overlapping cells instead of scanning the
+    /// Uniform spatial grid over the segments' bounding boxes, so a query
+    /// around a fix touches only the overlapping cells instead of scanning the
     /// whole network. Cell size is in degrees; cells are keyed by a row-major
     /// index into a sparse hash (most of the country's bbox is empty). Each
     /// segment is registered in every cell its bbox overlaps. Built once, off the
@@ -159,24 +150,7 @@ private:
     void setLoading(bool loading);
     void setStatus(const QString &status);
 
-    /// The QML-facing boxed polyline for segment `id`, built on first request and
-    /// cached.
-    ///
-    /// loadNetwork() used to box all 211k QGeoCoordinates across the whole country
-    /// into permanently-resident QVariantLists, on top of the unboxed copy
-    /// RailGraph already keeps — and QVariant cannot hold a QGeoCoordinate inline,
-    /// so that is one heap allocation per vertex for geometry the viewport will
-    /// mostly never ask for (CPP-W14). Now nothing is boxed until a viewport
-    /// selects it.
-    ///
-    /// The cache is unbounded, but its ceiling is "segments the user actually
-    /// panned over", which is at worst the old eager cost and in practice a small
-    /// fraction of it. An LRU is the upgrade if that ever stops being true.
-    const QVariantList &boxedPath(int id) const;
-
-    TrackListModel *m_model = nullptr;
-    QVector<Segment> m_all;                 ///< render segments (viewport cull only)
-    mutable QHash<int, QVariantList> m_boxed;   ///< segment id -> boxed path; see boxedPath()
+    QVector<Segment> m_all;                 ///< indexed segments, one per graph track
     Grid m_grid;                            ///< spatial index over m_all (by id)
     std::shared_ptr<RailGraph> m_graph;     ///< Tier-2 network; null until loaded
     QHash<QString, RailGraph::RoutePolyline> m_routePolys;  ///< routeKey -> polyline

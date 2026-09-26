@@ -78,13 +78,6 @@ QtObject {
     readonly property color cancelledBg: isDark ? "#b53030" : "#c62828"
 
     // ---- Map --------------------------------------------------------------
-    // Esri Gray Canvas, described by a provider manifest embedded in resources
-    // (see CMakeLists.txt "basemap"). basemapStyle only names the disk cache
-    // directory now — it deliberately no longer matches the old CARTO
-    // "light_all"/"dark_all" ids, so a stale cache of watermarked CARTO tiles is
-    // never served to a build that has moved on.
-    readonly property string basemapStyle: isDark ? "esri-dark-gray" : "esri-light-gray"
-    readonly property url basemapRepo: isDark ? "qrc:/basemap/dark/" : "qrc:/basemap/light/"
     // Track strands. Both were well under 1.4.11's 3:1 on the Esri ground
     // (running 1.54 / siding 1.06 dark, 2.81 / 1.55 light) and were lifted to
     // clear it. On the dark ground they had to go *lighter*: #474749 is midtone
