@@ -54,6 +54,7 @@ class TrackService : public QObject
     Q_PROPERTY(TrackListModel *model READ model CONSTANT)
     Q_PROPERTY(bool loading READ isLoading NOTIFY loadingChanged)
     Q_PROPERTY(QString status READ status NOTIFY statusChanged)
+    Q_PROPERTY(int segmentCount READ segmentCount NOTIFY geometryReady)
 
 public:
     explicit TrackService(QObject *parent = nullptr);
@@ -61,6 +62,7 @@ public:
     TrackListModel *model() const { return m_model; }
     bool isLoading() const { return m_loading; }
     QString status() const { return m_status; }
+    int segmentCount() const { return m_all.size(); }
 
     /// Nearest point on the network to `fix`. `headingDeg` is the train's
     /// direction of travel (0 = north, clockwise) or < 0 when unknown; when

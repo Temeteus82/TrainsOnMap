@@ -133,6 +133,10 @@ works in a local metric frame (no full EPSG:3067 round-trip per fix).
   `Positioning`, `Location`, `WebSockets`, and `Concurrent` modules (Qt Location
   ships the `osm` map plugin; the *Auto* theme follows the desktop colour scheme,
   and the reduced-motion setting persists via `QtCore`'s `Settings`).
+- **[maplibre-native-qt](https://github.com/maplibre/maplibre-native-qt) 4.x**
+  (the vector basemap), built and installed (`cmake --install … --prefix <dir>`)
+  against the same Qt kit. Add `<dir>` to `CMAKE_PREFIX_PATH`, or pass
+  `-DQMapLibre_DIR=<dir>/lib/cmake/QMapLibre` with presets that pin the Qt path.
 - **CMake ≥ 3.21**, **Ninja**, and a C++17 compiler (MSVC 2022 or the bundled
   llvm-mingw / MinGW on Windows; GCC or Clang on Linux/macOS).
 
