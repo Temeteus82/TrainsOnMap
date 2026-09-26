@@ -32,7 +32,6 @@ constexpr double kPlatformAcceptMeters = 250.0;
 
 TrackService::TrackService(QObject *parent)
     : QObject(parent)
-    , m_model(new TrackListModel(this))
 {
     // Parse + project the network off the GUI thread so the startup cost doesn't
     // block the first frame. The result is applied back on the GUI thread.
@@ -46,11 +45,10 @@ TrackService::TrackService(QObject *parent)
         m_all = loaded.segments;
         m_grid = loaded.grid;
         m_graph = loaded.graph;
-        m_boxed.clear();   // ids refer to the previous network
         setLoading(false);
         // On success, clear status rather than reporting the total network size:
-        // the sidebar's live "N track segments" label already shows the current
-        // viewport count, and a permanent "ready" message would otherwise block
+        // the sidebar's "N track segments" label already shows it (segmentCount),
+        // and a permanent "ready" message would otherwise block
         // the statusText fallback to the live train-fetch status forever.
         setStatus(m_all.isEmpty() ? QStringLiteral("Rail geometry could not be loaded")
                                   : QString());
@@ -75,9 +73,8 @@ TrackService::Loaded TrackService::loadNetwork()
     if (raw.isEmpty() || !out.graph->loadFromJson(raw))
         return out;
 
-    // Index the graph's tracks as render segments: bbox for the viewport cull, and
-    // the track index so the geometry can be boxed on demand (boxedPath, W14) and
-    // reached from a grid hit (matchToNetwork, W10). RailGraph::loadFromJson
+    // Index the graph's tracks as segments: bbox for the grid, and the track index
+    // so the geometry can be reached from a grid hit (matchToNetwork, W10). RailGraph::loadFromJson
     // already drops tracks with fewer than two points, so every track becomes a
     // segment and the grid below is non-empty whenever the graph is (CPP2-W4).
     const QVector<RailGraph::Track> &tracks = out.graph->tracks();
@@ -86,7 +83,6 @@ TrackService::Loaded TrackService::loadNetwork()
         const RailGraph::Track &t = tracks.at(i);
         Segment seg;
         seg.trackIndex = i;
-        seg.mainTrack = t.paaraide;
         seg.minLat = t.minLat;
         seg.maxLat = t.maxLat;
         seg.minLon = t.minLon;
@@ -94,8 +90,8 @@ TrackService::Loaded TrackService::loadNetwork()
         out.segments.push_back(seg);
     }
 
-    // Build the spatial grid over the segment bboxes so loadForBounds() can query
-    // by viewport without scanning the whole network. Cell ~0.1 deg (~11 km in
+    // Build the spatial grid over the segment bboxes so matchToNetwork() can
+    // query around a fix without scanning the whole network. Cell ~0.1 deg (~11 km in
     // latitude) is a broadphase only — the exact bbox test still runs per hit, so
     // the cell size trades cell-lookup count against false positives, not result
     // correctness.
@@ -148,8 +144,7 @@ TrackMatch TrackService::matchToNetwork(const QGeoCoordinate &fix, double headin
     double bestEast = 0.0, bestNorth = 0.0;
     bool found = false;
 
-    // Project against the graph's plain-QGeoCoordinate tracks, never the boxed
-    // render geometry — no per-vertex QVariant unbox on this hot path.
+    // Project against the graph's plain-QGeoCoordinate tracks.
     const QVector<RailGraph::Track> &tracks = m_graph->tracks();
     const auto project = [&](const RailGraph::Track &t) {
         if (fix.latitude()  < t.minLat - latMargin || fix.latitude()  > t.maxLat + latMargin
@@ -176,10 +171,9 @@ TrackMatch TrackService::matchToNetwork(const QGeoCoordinate &fix, double headin
     };
 
     if (!m_grid.isEmpty()) {
-        // Broadphase through the same grid loadForBounds() uses — it indexes
-        // exactly these bounding boxes, and this is the far hotter path: every
-        // fix with no resolved route, the whole warm-up window, and every Tier-2
-        // miss used to walk all ~4,900 tracks instead (CPP-W10). The ±600 m
+        // Broadphase through the grid over exactly these bounding boxes. This is
+        // the hot path: every fix with no resolved route, the whole warm-up
+        // window, and every Tier-2 miss used to walk all ~4,900 tracks (CPP-W10). The ±600 m
         // margin box spans well under one 0.1° cell, so this is one to four
         // cells. Duplicates across cells are left alone deliberately: re-running
         // a projection is idempotent and cheaper than sorting the candidates.
@@ -360,69 +354,6 @@ QVariantList TrackService::routePolyline(const QStringList &stationCodes) const
     for (const QGeoCoordinate &c : it->points)
         out.append(QVariant::fromValue(c));
     return out;
-}
-
-const QVariantList &TrackService::boxedPath(int id) const
-{
-    const auto cached = m_boxed.constFind(id);
-    if (cached != m_boxed.constEnd())
-        return *cached;
-
-    QVariantList path;
-    const int ti = m_all.at(id).trackIndex;
-    if (m_graph && ti >= 0 && ti < m_graph->tracks().size()) {
-        const QVector<QGeoCoordinate> &pts = m_graph->tracks().at(ti).path;
-        path.reserve(pts.size());
-        for (const QGeoCoordinate &c : pts)
-            path.append(QVariant::fromValue(c));
-    }
-    return *m_boxed.insert(id, std::move(path));
-}
-
-void TrackService::loadForBounds(double west, double south, double east, double north)
-{
-    QVector<int> ids;
-    if (!m_grid.isEmpty()) {
-        // Broadphase: gather segment ids from the grid cells the viewport rect
-        // overlaps, then apply the exact bbox test. A segment straddling cells
-        // can be gathered more than once, so sort + unique afterwards; that also
-        // restores the ascending-id order setVisibleSegments() requires for its
-        // incremental diff.
-        const int c0 = std::clamp(m_grid.colOf(west),  0, m_grid.cols - 1);
-        const int c1 = std::clamp(m_grid.colOf(east),  0, m_grid.cols - 1);
-        const int r0 = std::clamp(m_grid.rowOf(south), 0, m_grid.rows - 1);
-        const int r1 = std::clamp(m_grid.rowOf(north), 0, m_grid.rows - 1);
-        for (int ry = r0; ry <= r1; ++ry) {
-            for (int cx = c0; cx <= c1; ++cx) {
-                const auto it = m_grid.cells.constFind(ry * m_grid.cols + cx);
-                if (it == m_grid.cells.constEnd())
-                    continue;
-                for (int id : *it) {
-                    const Segment &s = m_all.at(id);
-                    if (s.maxLat < south || s.minLat > north
-                        || s.maxLon < west || s.minLon > east)
-                        continue;
-                    ids.push_back(id);
-                }
-            }
-        }
-        std::sort(ids.begin(), ids.end());
-        ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
-    }   // no grid = network not loaded yet (m_all is empty too): nothing visible
-
-    QVector<QVariantList> paths;
-    QVector<bool> mains;
-    paths.reserve(ids.size());
-    mains.reserve(ids.size());
-    for (int id : ids) {
-        paths.push_back(boxedPath(id));
-        mains.push_back(m_all.at(id).mainTrack);
-    }
-
-    m_model->setVisibleSegments(ids, paths, mains);
-    // Not setStatus() here: the sidebar already shows this figure live via the
-    // dedicated track-count label (model.count), so repeating it in status on
-    // every viewport pan just duplicated it (UI audit).
 }
 
 void TrackService::setLoading(bool loading)

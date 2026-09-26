@@ -28,7 +28,6 @@ binds to.
 | Class | Description |
 |-------|-------------|
 | [TrainListModel](TrainListModel.md) | `QAbstractListModel` of live trains; merges REST + MQTT, derives bearing, map-matches fixes, computes the status ring. |
-| [TrackListModel](TrackListModel.md) | `QAbstractListModel` of visible track segments; diffs viewport changes for incremental map updates. |
 | [TimetableModel](TimetableModel.md) | `QRangeModel` over `TimetableStop` gadgets — one stop per row, with derived journey progress. |
 | [TimetableFilterModel](TimetableFilterModel.md) | `QSortFilterProxyModel` hiding non-stopping timing points so the timetable `ListView` virtualises. |
 | [CompositionModel](CompositionModel.md) | `QRangeModel` over `CompositionVehicle` gadgets — the carriage-order strip. |
@@ -37,7 +36,7 @@ binds to.
 
 | Class / File | Description |
 |--------------|-------------|
-| [TrackService](TrackService.md) | GUI-facing owner of the baked rail network; provides viewport-filtered render geometry and the Tier-1/Tier-2 map-matching (`matchToNetwork` / `matchOnRoute`, plus the `TrackMatch` / `RouteMatchRequest` value types). |
+| [TrackService](TrackService.md) | GUI-facing owner of the baked rail network; provides the Tier-1/Tier-2 map-matching (`matchToNetwork` / `matchOnRoute`, plus the `TrackMatch` / `RouteMatchRequest` value types). |
 | [RailGraph](RailGraph.md) | Pure, Qt-Core-only Tier-2 core — geometry + topology + station crosswalk; Dijkstra routing, chainage-windowed projection, platform snapping. Unit-tested. |
 | [Projection](Projection.md) | Header-only `tm35fin` namespace — EPSG:3067 → WGS84 datum conversion and the shared tangent-plane segment-matching helpers. |
 
@@ -51,7 +50,7 @@ binds to.
                                    │  ▲
                        map-match   │  │ matcher (TrackService)
                                    ▼  │
-                             TrackService ──► TrackListModel ──► track layer
+                             TrackService    (rails: MapLibre layer, rails.wgs84.geojson)
                                    │
                                 RailGraph (routing/projection core)
                                    ▲ tm35fin (Projection.h)

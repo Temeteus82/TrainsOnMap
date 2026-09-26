@@ -5,7 +5,6 @@ import QtQuick.Controls.Basic
 import QtLocation
 import MapLibre.Location 4.0
 import QtPositioning
-import QtCore
 
 import TrainsOnMap
 
@@ -16,24 +15,6 @@ ApplicationWindow {
     height: 820
     title: qsTr("Trains on Map — Finland (Digitraffic)")
     color: Theme.windowBg
-
-    // Per-style basemap tile-cache directory. Qt's OSM disk cache keys tiles by
-    // map-type id only (the light and dark providers are both the one StreetMap
-    // type), not by URL — so without separate directories the two styles share a
-    // cache and serve each other's tiles after a theme flip (patchy dark/light
-    // map).
-    // Give each style its own directory to keep them isolated.
-    function cacheDirFor(style) {
-        // writableLocation() returns a file:// url; the OSM plugin wants a plain
-        // absolute path. Strip the scheme (and the leading slash on Windows
-        // drive paths: "/C:/…" -> "C:/…").
-        let base = "" + StandardPaths.writableLocation(StandardPaths.GenericCacheLocation)
-        if (base.startsWith("file://"))
-            base = base.substring(7)
-        if (base.length > 2 && base.charAt(0) === "/" && base.charAt(2) === ":")
-            base = base.substring(1)
-        return decodeURIComponent(base) + "/QtLocation/osm-" + style
-    }
 
     // Tier-2 diagnostics for the selected train: { rawLat, rawLon, snapLat,
     // snapLon, offset, tunniste, onRoute }. Polled (the model exposes it via an
@@ -122,8 +103,8 @@ ApplicationWindow {
     }
 
     // ---- Map ---------------------------------------------------------------
-    // The Esri Gray Canvas basemap (light / dark) is chosen by Theme. The osm
-    // plugin only resolves its providers at construction, so a theme flip
+    // The CARTO basemap style (Positron / Dark Matter) is chosen by Theme. The
+    // plugin only reads its style parameter at construction, so a theme flip
     // rebuilds the Plugin + Map via this Loader; the view (centre/zoom) is
     // preserved in the loader's saved* properties across the reload.
     Loader {
@@ -148,8 +129,8 @@ ApplicationWindow {
         property real savedCenterLon: initialCenterLon
         property real savedZoom: initialZoom
 
-        // Rebuild the map when the resolved light/dark state changes so the
-        // tiles re-fetch from the matching Esri service.
+        // Rebuild the map when the resolved light/dark state changes so it
+        // loads the matching style.
         Connections {
             target: Theme
             function onIsDarkChanged() {
@@ -164,7 +145,7 @@ ApplicationWindow {
 
         Map {
             id: map
-            // SPIKE: MapLibre vector basemap (CARTO Positron / Dark Matter).
+            // MapLibre vector basemap (CARTO Positron / Dark Matter).
             plugin: Plugin {
                 name: "maplibre"
                 PluginParameter {
@@ -176,7 +157,7 @@ ApplicationWindow {
                 }
             }
 
-            // SPIKE: the whole rail network as one GeoJSON source; per-item
+            // The whole rail network as one GeoJSON source; per-item
             // MapPolylines each become a MapLibre layer and freeze the GUI thread.
             MapLibre.style: Style {
                 SourceParameter {
@@ -233,18 +214,6 @@ ApplicationWindow {
                 return 156543.03392 * Math.cos(lat * Math.PI / 180) / Math.pow(2, zoomLevel)
             }
 
-            // The repository's "street" provider registers as StreetMap (not
-            // CustomMap, which is what osm.mapping.custom.host used to produce);
-            // activate it.
-            function selectBasemap() {
-                for (let i = 0; i < supportedMapTypes.length; ++i) {
-                    if (supportedMapTypes[i].style === MapType.StreetMap) {
-                        activeMapType = supportedMapTypes[i];
-                        return;
-                    }
-                }
-            }
-            onSupportedMapTypesChanged: selectBasemap()
             Component.onCompleted: {
                 // Imperative (non-binding) restore of the saved view, so panning
                 // isn't fought by a center/zoomLevel binding.
@@ -254,7 +223,6 @@ ApplicationWindow {
                     restore ? mapLoader.savedCenterLon : mapLoader.initialCenterLon)
                 zoomLevel = restore ? mapLoader.savedZoom : mapLoader.initialZoom
                 mapLoader.everBuilt = true
-                selectBasemap()
             }
 
             // ---- Tier-2 debug overlay (selected train) -----------------------

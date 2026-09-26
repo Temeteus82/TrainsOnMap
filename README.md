@@ -10,10 +10,11 @@ and a QML map front-end, plus clearly marked extension points.
 
 ## Features
 
-- **Muted base layer with light/dark theming** — Esri *Light Gray Canvas* /
-  *Dark Gray Canvas* tiles via the Qt Location `osm` plugin, pointed at an
-  embedded single-provider repository, so the coloured trains and rails stay the
-  focus. No API key or account is needed.
+- **Muted vector basemap with light/dark theming** — CARTO *Positron* /
+  *Dark Matter* vector tiles rendered by the MapLibre plugin
+  (maplibre-native-qt), so the coloured trains and rails stay the focus. The
+  styles ship with the app (`resources/styles`), so the map and rails come up
+  even offline. No API key or account is needed.
   An **Appearance** toggle (Auto / Light / Dark) reskins the whole app — basemap,
   overlays, and markers — through the `Theme` singleton; *Auto* follows the
   desktop colour scheme.
@@ -34,11 +35,11 @@ and a QML map front-end, plus clearly marked extension points.
   panel **updates live** from the MQTT `trains/#` topic (scoped to the selected
   train). Selecting a train also draws a short fading **breadcrumb trail** of
   its recent matched positions.
-- **Track geometry** drawn automatically for the current viewport (once zoomed
-  in past the threshold), served from a **pre-baked national snapshot embedded in
-  the binary** (`scripts/bake_rails.py` → `:/data/rails.geojson.qz`) — no infra-api
-  fetch at launch. `loadForBounds()` just culls the resident geometry to the
-  viewport via a spatial grid. A sidebar **legend + toggle** can hide sidings/yards
+- **Track geometry** for the whole network, drawn by MapLibre as one GeoJSON
+  source and line layer from a **pre-baked national snapshot embedded in the
+  binary** (`scripts/bake_rails.py` → `:/data/rails.wgs84.geojson`; the EPSG:3067
+  `rails.geojson.qz` blob feeds the map-matching `RailGraph`) — no infra-api
+  fetch at launch. A sidebar **legend + toggle** can hide sidings/yards
   (running lines always show); a **train-type filter** (Commuter / Long-distance /
   Cargo) can hide whole marker categories.
 - Clean split between a **C++ networking/model backend** and a **QML map UI**.
@@ -59,9 +60,8 @@ main.cpp                    Bootstraps the QML engine, loads TrainsOnMap/Main.qm
 │                            per selection, trains/<date>/<n>/# (emits trainMessage)
 │
 ├─ TrackService        (C++) Loads the baked rails.geojson.qz blob into a RailGraph
-│                            once at startup; loadForBounds() culls to the viewport → TrackListModel.
-│                            Also Tier-2 route matching (Dijkstra over reconstructed topology)
-│   └─ TrackListModel  (C++) QAbstractListModel of polyline segments (role: path)
+│                            once at startup for map matching (spatial grid) and
+│                            Tier-2 route matching (Dijkstra over reconstructed topology)
 │
 ├─ TrainDetailsService (C++) On click, fetches /trains/{date}/{number}, resolves
 │   │                        station codes via /metadata/stations → TimetableModel;
@@ -99,7 +99,7 @@ so `DigitrafficClient` and `TrackService` are instantiated declaratively in QML.
 | Timetable (initial) | `GET https://rata.digitraffic.fi/api/v1/trains/{departureDate}/{trainNumber}` | Single-element array; `timeTableRows` are ARRIVAL/DEPARTURE entries with `scheduledTime`, `liveEstimateTime`, `actualTime`, `differenceInMinutes`, `commercialStop`, `commercialTrack`. |
 | Timetable (live) | `wss://rata.digitraffic.fi:443/mqtt`, topic `trains/<date>/<number>/#` | Subscribed only while a train is selected; each PUBLISH is the full running-train object, re-applied to the open panel. |
 | Station names | `GET https://rata.digitraffic.fi/api/v1/metadata/stations` | Maps `stationShortCode` → `stationName`; fetched once and cached. |
-| Track geometry (baked) | `GET https://rata.digitraffic.fi/infra-api/latest/raiteet.geojson?bbox=…` — **build time only** | GeoJSON FeatureCollection of LineString/MultiLineString in **EPSG:3067**. The full network is 10+ MB, so `scripts/bake_rails.py` tiles the national extent in EPSG:3067, merges/de-dupes features by `tunniste`, and commits the compressed `rails.geojson.qz` blob the app embeds. **Not fetched at runtime** — loaded once at startup and culled to the viewport by `loadForBounds()`. |
+| Track geometry (baked) | `GET https://rata.digitraffic.fi/infra-api/latest/raiteet.geojson?bbox=…` — **build time only** | GeoJSON FeatureCollection of LineString/MultiLineString in **EPSG:3067**. The full network is 10+ MB, so `scripts/bake_rails.py` tiles the national extent in EPSG:3067, merges/de-dupes features by `tunniste`, and commits the compressed `rails.geojson.qz` blob the app embeds. **Not fetched at runtime** — loaded once at startup. |
 
 Every REST request — and the MQTT WebSocket handshake — sends a `Digitraffic-User`
 header identifying this client, as
@@ -131,7 +131,7 @@ works in a local metric frame (no full EPSG:3067 round-trip per fix).
 
 - **Qt 6.5 or newer** with the `Quick`, `Qml`, `QuickControls2`, `Network`,
   `Positioning`, `Location`, `WebSockets`, and `Concurrent` modules (Qt Location
-  ships the `osm` map plugin; the *Auto* theme follows the desktop colour scheme,
+  provides the `Map` the MapLibre plugin renders into; the *Auto* theme follows the desktop colour scheme,
   and the reduced-motion setting persists via `QtCore`'s `Settings`).
 - **[maplibre-native-qt](https://github.com/maplibre/maplibre-native-qt) 4.x**
   (the vector basemap), built and installed (`cmake --install … --prefix <dir>`)
@@ -296,20 +296,15 @@ matching compiler, and Run.
 - **Live stream:** `DigitrafficMqttClient { active: true }` in `Main.qml` — set
   `false` to disable MQTT and rely on the REST seed (or wire up polling).
 - **Appearance & basemap:** the **Auto / Light / Dark** toggle in the sidebar sets
-  `Theme.mode`, which resolves `Theme.isDark`. `Theme.basemapRepo` (the embedded
-  provider manifest) and every overlay colour follow it — all defined in
-  `Theme.qml`. To change tile source, edit the `UrlTemplate` in
-  `resources/basemap/{light,dark}/street`; for colours, edit the palette tokens.
-  Vector tiles were evaluated and are on hold: see
+  `Theme.mode`, which resolves `Theme.isDark`. The map style and every overlay
+  colour follow it: overlay colours are palette tokens in `Theme.qml`, and the
+  basemap is `resources/styles/{positron,dark-matter}.json` (local copies of
+  CARTO's styles, loaded as `asset://styles/…` from next to the executable). A
+  theme flip rebuilds the map, since the plugin reads its style only at
+  construction. The rails are a MapLibre layer declared in `Main.qml`; a paint
+  binding there must forward `paintUpdated` to `updateNotify()` or runtime
+  changes never reach the map. Background:
   [`docs/vector-basemap-exploration.md`](docs/vector-basemap-exploration.md).
-
-  > The `osm` plugin's simpler `osm.mapping.custom.host` is deliberately **not**
-  > used: Qt builds tile URLs by concatenating `%z/%x/%y.png` onto the host
-  > string, which cannot express Esri's `z/y/x` order, its extensionless paths,
-  > or any trailing query string (a `?key=` would land mid-path). The providers
-  > repository takes a full `UrlTemplate` and has none of those limits. Its
-  > manifest is embedded via `qrc:`, so no file is written at runtime and no
-  > repository is fetched over the network.
 - **Reduced motion:** `Theme.reducedMotion` (persisted via `QtCore.Settings`,
   category `Appearance`) — when `true`, non-essential animation (the LIVE pulse)
   is skipped. Type scale lives in `TypeScale.qml`: the plain roles

@@ -3,16 +3,19 @@
 ## 1. Class Overview
 
 `TrackService` is the GUI-facing owner of the railway track geometry in
-TrainsOnMap. It provides two things to the rest of the app:
+TrainsOnMap. It loads a pre-baked national rail snapshot embedded in the binary
+(`:/data/rails.geojson.qz`) into a `RailGraph`, indexes the tracks' bounding
+boxes in a spatial grid, and provides:
 
-1. **Render geometry** — the track polylines drawn beneath the trains. It loads a
-   pre-baked national rail snapshot embedded in the binary
-   (`:/data/rails.geojson.qz`), flattens it into render segments, and (via a
-   spatial grid) filters them to the current map viewport on demand.
-2. **Map-matching** — its `matchToNetwork` / `matchOnRoute` methods (and the
+1. **Map-matching** — its `matchToNetwork` / `matchOnRoute` methods (and the
    `TrackMatch` / `RouteMatchRequest` value types declared alongside it) let
    `TrainListModel` snap and flag GPS fixes against the rails, including Tier-2
    route-constrained matching and platform snapping.
+2. **Route polylines** for the selected train's debug overlay, and the network
+   size (`segmentCount`) for the sidebar.
+
+It does not draw the rails: MapLibre renders them from the separate WGS84 copy,
+`:/data/rails.wgs84.geojson`, as one GeoJSON source declared in `Main.qml`.
 
 The rail network changes rarely, so it ships in the repo (baked by
 `scripts/bake_rails.py`) rather than being fetched from the Digitraffic infra-api
@@ -23,14 +26,13 @@ is resident.
 ## 2. Project Structure and Dependencies
 
 - **Declared in QML** (`Main.qml`) as `TrackService { id: trackService }`, and
-  wired to `DigitrafficClient.matcher`. Its `model` feeds a `MapItemView`, and
-  its `routePolyline`/`loadForBounds`/`pinRoute` slots are called from the map.
-- **Owns:** a `TrackListModel` (child `QObject`), a `std::shared_ptr<RailGraph>`,
-  the flattened render `Segment`s and the spatial `Grid`.
+  wired to `DigitrafficClient.matcher`. Its `routePolyline`/`pinRoute` slots
+  are called from the map.
+- **Owns:** a `std::shared_ptr<RailGraph>`, the indexed `Segment`s and the
+  spatial `Grid`.
 - **Qt modules:** Qt6::Core, Qt6::Qml (`QML_ELEMENT`), Qt6::Positioning
   (`QGeoCoordinate`), Qt6::Concurrent (`QtConcurrent::run`, `QFutureWatcher`).
-- **Project-internal dependencies:** `RailGraph` (Tier-2 core), `TrackListModel`
-  (render model), `Projection.h` (`tm35fin` tangent-plane maths).
+- **Project-internal dependencies:** `RailGraph` (Tier-2 core), `Projection.h` (`tm35fin` tangent-plane maths).
 - **Declares** the `TrackMatch` and `RouteMatchRequest` value types consumed by
   `TrainListModel` (which holds only a forward-declared `const TrackService *`).
 
@@ -49,7 +51,7 @@ world, and the app's map-matcher: `matchToNetwork` (Tier 1) and `matchOnRoute`
 
 | Property | Type | READ | WRITE | NOTIFY | Description |
 |----------|------|------|-------|--------|-------------|
-| `model` | `TrackListModel *` | `model` | — | — (`CONSTANT`) | The viewport-filtered render model bound to a `MapItemView`. Read-only, set once at construction. |
+| `segmentCount` | `int` | `segmentCount` | — | `geometryReady` | Number of tracks in the loaded network (0 until loaded); the sidebar's "N track segments". |
 | `loading` | `bool` | `isLoading` | — | `loadingChanged` | True while the network is being parsed on the worker thread. |
 | `status` | `QString` | `status` | — | `statusChanged` | Human-readable status line; only non-empty while loading or on failure (e.g. "Loading rail geometry…", "Rail geometry could not be loaded"). Empty on success so the UI's `statusText` falls back to the live train-fetch status instead of a stale one-time message. |
 
@@ -59,7 +61,7 @@ None.
 
 ## 6. Public Member Variables
 
-None public. (Private state: render segments, the spatial grid, the
+None public. (Private state: indexed segments, the spatial grid, the
 `shared_ptr<RailGraph>`, the resolved route-polyline cache, the pinned route, the
 pending-route set, and the precompute-in-flight flag.)
 
@@ -77,8 +79,8 @@ Emitted when the `status` string changes.
 #### void geometryReady()
 
 Emitted on the GUI thread once the network has been parsed and applied (segments,
-grid and graph are resident). The map connects to this to seed the first viewport
-load; `kickPrecompute()` is also re-driven here for any routes that arrived before
+grid and graph are resident). It is also the NOTIFY of `segmentCount`;
+`kickPrecompute()` is also re-driven here for any routes that arrived before
 the graph finished parsing.
 
 #### void routesReady()
@@ -88,16 +90,6 @@ polylines have been merged into the cache. The map's debug route overlay
 re-evaluates its `routePolyline()` binding in response.
 
 ## 8. Public Slots and Q_INVOKABLE Methods
-
-#### void loadForBounds(double west, double south, double east, double north)
-
-Filters the render segments to those intersecting the given WGS84 bounding box and
-pushes them — paths plus their `paaraide` line-category flags — to the
-`TrackListModel`. Arguments follow the GeoJSON/OGC convention
-(west, south, east, north). Uses the spatial grid as a broadphase (gathering
-segment ids from overlapping cells, de-duplicating, then applying the exact bbox
-test), falling back to a linear scan if the grid isn't built yet. Results are kept
-in ascending id order, which the model's incremental diff requires.
 
 #### QVariantList routePolyline(const QStringList &stationCodes) const
 
@@ -115,9 +107,9 @@ list to unpin. Triggers a precompute/eviction re-evaluation.
 
 ## 9. Public Methods
 
-#### TrackListModel *model() const
+#### int segmentCount() const
 
-The render model (also the `model` property getter).
+The `segmentCount` property getter.
 
 #### bool isLoading() const
 
@@ -163,8 +155,6 @@ None.
 
 - `TrackService` is a `QObject`, normally parent-owned; when declared in
   `Main.qml` it is owned by the QML engine.
-- Its `TrackListModel *m_model` is constructed with `this` as parent, so Qt
-  deletes it with the service.
 - `QFutureWatcher` instances created for the load and for each precompute batch
   are parented to `this` and `deleteLater()`-d in their finished handlers.
 - The `RailGraph` is held by `std::shared_ptr`; worker tasks take a `shared_ptr`
@@ -185,10 +175,9 @@ route resolution) are safe.
 
 Registered with `QML_ELEMENT` in the `TrainsOnMap` module (URI `TrainsOnMap`,
 version 1.0), so QML can instantiate `TrackService {}` directly. From QML the
-`model`, `loading` and `status` properties are bound (InfoPanel, the track
-`MapItemView`), and the `loadForBounds`, `routePolyline` and `pinRoute` slots are
-invoked. The `geometryReady`/`routesReady` signals are handled in `Main.qml` to
-seed and refresh the map.
+`segmentCount` and `status` properties are bound (InfoPanel), and the
+`routePolyline` and `pinRoute` slots are invoked. `routesReady` is handled in
+`Main.qml` to refresh the route overlay.
 
 ## 14. Inter-Class Interactions
 
@@ -196,10 +185,8 @@ seed and refresh the map.
   `handleCategories` calls `precomputeRoutes()` with the whole fleet's route
   sequences each cycle.
 - **`TrainListModel`** calls `matchToNetwork` / `matchOnRoute` to snap fixes.
-- **`Main.qml`** drives `loadForBounds` (on pan/zoom debounce), `routePolyline`
-  (route overlay), and `pinRoute` (on selection change / `routeStationsChanged`).
-- **`TrackListModel`** receives the viewport-filtered segment set via
-  `setVisibleSegments`.
+- **`Main.qml`** drives `routePolyline` (route overlay) and `pinRoute` (on
+  selection change / `routeStationsChanged`).
 
 ## 15. External Communication
 

@@ -44,7 +44,6 @@ qt_add_executable(TrainsOnMap
     src/TrainListModel.h        src/TrainListModel.cpp
     src/TrackService.h          src/TrackService.cpp
     src/RailGraph.h             src/RailGraph.cpp
-    src/TrackListModel.h        src/TrackListModel.cpp
     src/TrainDetailsService.h   src/TrainDetailsService.cpp
     src/TimetableModel.h        src/TimetableModel.cpp
     src/TimetableFilterModel.h  src/TimetableFilterModel.cpp
@@ -92,18 +91,6 @@ qt_add_resources(TrainsOnMap "raildata"
     PREFIX "/data"
     BASE "${CMAKE_CURRENT_SOURCE_DIR}/resources"
     FILES resources/rails.geojson.qz resources/rails.wgs84.geojson)
-
-# Basemap provider manifests for Qt's OSM plugin, embedded so the tile source is
-# described entirely in-process (osm.mapping.providersrepository.address accepts
-# a qrc: URL, so no file is written at runtime and no repository is fetched over
-# the network). One "street" manifest per theme; Qt only asks for the map types
-# it can find, so the other six (satellite, cycle, ...) are deliberately absent.
-qt_add_resources(TrainsOnMap "basemap"
-    PREFIX "/basemap"
-    BASE "${CMAKE_CURRENT_SOURCE_DIR}/resources/basemap"
-    FILES
-        resources/basemap/light/street
-        resources/basemap/dark/street)
 
 # Application icon, embedded for the runtime window/taskbar icon (set via
 # QGuiApplication::setWindowIcon in main.cpp -> ":/appicon.png"). Regenerate the
@@ -370,7 +357,6 @@ qt_add_executable(tst_trainfilter
     src/TrainFilterModel.h src/TrainFilterModel.cpp
     src/TrainListModel.h src/TrainListModel.cpp
     src/TrackService.h src/TrackService.cpp
-    src/TrackListModel.h src/TrackListModel.cpp
     src/RailGraph.h src/RailGraph.cpp)
 target_include_directories(tst_trainfilter PRIVATE src)
 target_link_libraries(tst_trainfilter PRIVATE
@@ -387,17 +373,6 @@ qt_add_executable(tst_compositionmodel
 target_include_directories(tst_compositionmodel PRIVATE src)
 target_link_libraries(tst_compositionmodel PRIVATE Qt6::Core Qt6::Qml Qt6::Test)
 add_test(NAME compositionmodel COMMAND tst_compositionmodel)
-
-# The viewport diff behind the track layer: setVisibleSegments() has to leave the
-# model holding exactly the incoming set, ascending and with its three parallel
-# vectors aligned, while announcing every structural change. QAbstractItemModelTester
-# checks the signals against the row counts; the rest checks the contents.
-qt_add_executable(tst_tracklistmodel
-    tests/tst_tracklistmodel.cpp
-    src/TrackListModel.h src/TrackListModel.cpp)
-target_include_directories(tst_tracklistmodel PRIVATE src)
-target_link_libraries(tst_tracklistmodel PRIVATE Qt6::Core Qt6::Qml Qt6::Test)
-add_test(NAME tracklistmodel COMMAND tst_tracklistmodel)
 
 # DigitrafficFormat is header-only and pure QtCore — the timestamp and delay-cause
 # formatting the station board and the train detail panel both render. Pinned
@@ -418,7 +393,6 @@ qt_add_executable(tst_trainlistmodel
     tests/tst_trainlistmodel.cpp
     src/TrainListModel.h src/TrainListModel.cpp
     src/TrackService.h src/TrackService.cpp
-    src/TrackListModel.h src/TrackListModel.cpp
     src/RailGraph.h src/RailGraph.cpp)
 target_include_directories(tst_trainlistmodel PRIVATE src)
 target_link_libraries(tst_trainlistmodel PRIVATE
@@ -441,7 +415,6 @@ qt_add_executable(tst_traindetailsservice
     src/StationListModel.h src/StationListModel.cpp
     src/TrainListModel.h src/TrainListModel.cpp
     src/TrackService.h src/TrackService.cpp
-    src/TrackListModel.h src/TrackListModel.cpp
     src/RailGraph.h src/RailGraph.cpp)
 target_include_directories(tst_traindetailsservice PRIVATE src)
 target_link_libraries(tst_traindetailsservice PRIVATE
@@ -460,7 +433,6 @@ qt_add_executable(tst_stationboardservice
     src/StationListModel.h src/StationListModel.cpp
     src/TrainListModel.h src/TrainListModel.cpp
     src/TrackService.h src/TrackService.cpp
-    src/TrackListModel.h src/TrackListModel.cpp
     src/RailGraph.h src/RailGraph.cpp)
 target_include_directories(tst_stationboardservice PRIVATE src)
 target_link_libraries(tst_stationboardservice PRIVATE
@@ -475,7 +447,6 @@ qt_add_executable(tst_digitrafficclient
     src/StationListModel.h src/StationListModel.cpp
     src/TrainListModel.h src/TrainListModel.cpp
     src/TrackService.h src/TrackService.cpp
-    src/TrackListModel.h src/TrackListModel.cpp
     src/RailGraph.h src/RailGraph.cpp)
 target_include_directories(tst_digitrafficclient PRIVATE src)
 target_link_libraries(tst_digitrafficclient PRIVATE
