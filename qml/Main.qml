@@ -3,6 +3,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls.Basic
 import QtLocation
+import MapLibre.Location 4.0
 import QtPositioning
 import QtCore
 
@@ -163,31 +164,42 @@ ApplicationWindow {
 
         Map {
             id: map
+            // SPIKE: MapLibre vector basemap (CARTO Positron / Dark Matter).
             plugin: Plugin {
-                name: "osm"
-                // Point the OSM plugin at our own single-provider repository
-                // rather than osm.mapping.custom.host. custom.host cannot express
-                // this tile source: Qt builds the URL by naive concatenation,
-                // appending "%z/%x/%y.png" to whatever the host string is, so
-                // there is no way to get Esri's z/y/x order, its extensionless
-                // path, or a trailing query string (a "?key=" would land in the
-                // middle of the path). A repository manifest carries a full
-                // UrlTemplate with %z/%y/%x placeholders and has none of those
-                // limits. The manifest is embedded (qrc:), so nothing is fetched
-                // over the network to resolve the provider.
+                name: "maplibre"
                 PluginParameter {
-                    name: "osm.mapping.providersrepository.address"
-                    value: Theme.basemapRepo
+                    // Local copies (resources/styles, next to the executable), so the
+                    // style loads offline and the rails layer below is always added.
+                    name: "maplibre.map.styles"
+                    value: Theme.isDark ? "asset://styles/dark-matter.json"
+                                        : "asset://styles/positron.json"
                 }
-                PluginParameter {
-                    // Isolate the disk cache per basemap style — see cacheDirFor().
-                    name: "osm.mapping.cache.directory"
-                    value: win.cacheDirFor(Theme.basemapStyle)
+            }
+
+            // SPIKE: the whole rail network as one GeoJSON source; per-item
+            // MapPolylines each become a MapLibre layer and freeze the GUI thread.
+            MapLibre.style: Style {
+                SourceParameter {
+                    styleId: "rails"
+                    type: "geojson"
+                    property string data: ":/data/rails.wgs84.geojson"
                 }
-                // Note: no osm.mapping.highdpi_tiles here. With it enabled Qt
-                // looks for a "street-hires" manifest instead of "street", and
-                // Esri's MapServer has no @2x endpoint to point one at.
-                PluginParameter { name: "osm.useragent"; value: "TrainsOnMap/0.1 (Qt6 scaffolding)" }
+                LayerParameter {
+                    styleId: "rails-line"
+                    type: "line"
+                    property string source: "rails"
+                    layout: { "line-join": "round", "line-cap": "round" }
+                    paint: {
+                        "line-color": ["case", ["get", "paaraide"],
+                                       Theme.railColor.toString(), Theme.railSidingColor.toString()],
+                        "line-width": ["case", ["get", "paaraide"], 2.2, 1.3],
+                        "line-opacity": ["case", ["get", "paaraide"], 1, panel.showSidings ? 1 : 0]
+                    }
+                    // A re-evaluated paint only emits paintUpdated; the map applies
+                    // changes on StyleParameter::updated, so forward it (the layer
+                    // already exists, so this just re-sets the paint properties).
+                    onPaintUpdated: updateNotify()
+                }
             }
 
             // The starting view is restored from the loader's saved* values in
@@ -243,59 +255,6 @@ ApplicationWindow {
                 zoomLevel = restore ? mapLoader.savedZoom : mapLoader.initialZoom
                 mapLoader.everBuilt = true
                 selectBasemap()
-            }
-
-            // Rail geometry is held in memory; materialise only the segments in (a
-            // padded) viewport so a pan doesn't reproject the whole ~10k-segment
-            // network. toCoordinate() needs the map ready, so seed the first load
-            // from mapReady, then refresh on a short debounce as the view changes.
-            onMapReadyChanged: if (mapReady) refreshTracks()
-            onVisibleRegionChanged: trackReloadTimer.restart()
-
-            Timer {
-                id: trackReloadTimer
-                interval: 250        // settle delay: fire once the gesture stops
-                onTriggered: map.refreshTracks()
-            }
-
-            // Filter the track model to the current viewport (+25% margin).
-            function refreshTracks() {
-                if (!map.mapReady || map.width <= 0 || map.height <= 0)
-                    return
-                const nw = map.toCoordinate(Qt.point(0, 0), false)                  // NW corner
-                const se = map.toCoordinate(Qt.point(map.width, map.height), false) // SE corner
-                if (!nw.isValid || !se.isValid)
-                    return
-                // Pad each side so a small pan doesn't expose unloaded edges before
-                // the next debounce fires.
-                const latPad = Math.abs(nw.latitude - se.latitude) * 0.25
-                const lonPad = Math.abs(se.longitude - nw.longitude) * 0.25
-                trackService.loadForBounds(nw.longitude - lonPad,   // west
-                                           se.latitude  - latPad,   // south
-                                           se.longitude + lonPad,   // east
-                                           nw.latitude  + latPad)   // north
-            }
-
-            // Geometry is parsed on a worker thread; seed the first viewport load
-            // once it lands (the map may become ready before or after this fires).
-            Connections {
-                target: trackService
-                function onGeometryReady() { map.refreshTracks() }
-            }
-
-            // Track geometry layer (drawn beneath the trains).
-            MapItemView {
-                model: trackService.model
-                delegate: MapPolyline {
-                    required property var model
-                    // Style by line category: running lines (paaraide) read as the
-                    // network; sidings/yards recede as thinner, dimmer strands.
-                    // Sidings can be hidden entirely via the legend toggle.
-                    visible: model.mainTrack || panel.showSidings
-                    line.width: model.mainTrack ? 2.2 : 1.3
-                    line.color: model.mainTrack ? Theme.railColor : Theme.railSidingColor
-                    path: model.path
-                }
             }
 
             // ---- Tier-2 debug overlay (selected train) -----------------------
@@ -563,7 +522,7 @@ ApplicationWindow {
         anchors.margins: 12
 
         trainCount: trainClient.model.count
-        trackCount: trackService.model.count
+        trackCount: trackService.segmentCount   // whole network, as the vector layer draws it
         refreshing: trainClient.loading
         streamConnected: trainStream.connected
         streamStatus: trainStream.status

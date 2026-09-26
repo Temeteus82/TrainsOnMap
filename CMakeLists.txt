@@ -24,6 +24,11 @@ endif()
 # QRangeModel (QtCore, since 6.10).
 find_package(Qt6 6.10 REQUIRED COMPONENTS Core Gui Qml Quick Network Positioning Location WebSockets Concurrent Test)
 
+# Vector basemap: maplibre-native-qt provides the "maplibre" geoservices plugin
+# and the MapLibre.Location QML module. Add its install prefix to
+# CMAKE_PREFIX_PATH (or set QMapLibre_DIR to <prefix>/lib/cmake/QMapLibre).
+find_package(QMapLibre REQUIRED COMPONENTS Core Location)
+
 qt_standard_project_setup(REQUIRES 6.10)
 
 # QML files live in a subdirectory; opt in to the modern qmldir handling so a
@@ -86,7 +91,7 @@ qt_add_qml_module(TrainsOnMap
 qt_add_resources(TrainsOnMap "raildata"
     PREFIX "/data"
     BASE "${CMAKE_CURRENT_SOURCE_DIR}/resources"
-    FILES resources/rails.geojson.qz)
+    FILES resources/rails.geojson.qz resources/rails.wgs84.geojson)
 
 # Basemap provider manifests for Qt's OSM plugin, embedded so the tile source is
 # described entirely in-process (osm.mapping.providersrepository.address accepts
@@ -142,6 +147,7 @@ target_link_libraries(TrainsOnMap PRIVATE
     Qt6::Location
     Qt6::WebSockets
     Qt6::Concurrent
+    QMapLibre::Location
 )
 
 # Place the executable under build/bin/. This also avoids a name clash on
@@ -165,6 +171,36 @@ set_target_properties(TrainsOnMap PROPERTIES
     MACOSX_BUNDLE_COPYRIGHT "© 2025 TrainsOnMap"
 )
 
+# Registers the MapLibre QML import path for tooling and, on macOS, copies the
+# maplibre geoservices plugin into the .app. Needs RUNTIME_OUTPUT_DIRECTORY set.
+qmaplibre_location_setup_plugins(TrainsOnMap)
+get_filename_component(_qmaplibre_prefix "${QMapLibre_DIR}/../../.." ABSOLUTE)
+if(NOT WIN32 AND NOT APPLE)
+    # Linux runs straight from the build tree (no deploy step), so point the app
+    # at the MapLibre plugin + QML module in their install prefix (main.cpp).
+    target_compile_definitions(TrainsOnMap PRIVATE
+        TRAINSONMAP_MAPLIBRE_PREFIX="${_qmaplibre_prefix}")
+    # A QMapLibre install carries no RUNPATH of its own, so libQMapLibreLocation
+    # can't find its sibling libQMapLibreQuickPrivate. DT_RPATH (unlike the
+    # default DT_RUNPATH) also applies to those indirect dependencies.
+    target_link_options(TrainsOnMap PRIVATE "LINKER:--disable-new-dtags")
+endif()
+
+# Basemap styles (CARTO Positron / Dark Matter), shipped next to the executable
+# and loaded as asset://styles/... so the style — and with it the rails layer —
+# never waits on the network; only the basemap tiles, glyphs and sprites do.
+# MapLibre resolves asset:// against the executable's directory (Contents/MacOS
+# inside the .app). Copied before the deploy steps below so they get signed.
+add_custom_command(TARGET TrainsOnMap POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_CURRENT_SOURCE_DIR}/resources/styles"
+            "$<TARGET_FILE_DIR:TrainsOnMap>/styles"
+    COMMENT "Copying basemap styles next to the executable"
+    VERBATIM)
+if(NOT APPLE)
+    install(DIRECTORY resources/styles DESTINATION bin)
+endif()
+
 # On Windows, copy every Qt runtime DLL and plugin the app needs (Qt core libs,
 # the "windows" platform plugin, the TLS backend for the wss:// MQTT feed, and
 # the QML / QtLocation geoservices / QtPositioning plugins) next to the .exe in
@@ -180,8 +216,22 @@ if(WIN32)
                     --no-translations
                     --compiler-runtime
                     --qmldir "${CMAKE_SOURCE_DIR}/qml"
+                    --qmlimport "${_qmaplibre_prefix}/qml"
                     "$<TARGET_FILE:TrainsOnMap>"
             COMMENT "windeployqt: bundling Qt DLLs and QML/geoservices/TLS plugins next to the .exe"
+            VERBATIM)
+        # windeployqt only knows Qt's own plugins and DLLs: copy the QMapLibre
+        # DLLs next to the .exe and the maplibre geoservices plugin beside Qt's.
+        # ponytail: untested on Windows; verify the bundle starts on a clean box.
+        add_custom_command(TARGET TrainsOnMap POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    $<TARGET_RUNTIME_DLLS:TrainsOnMap> "$<TARGET_FILE_DIR:TrainsOnMap>"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:TrainsOnMap>/geoservices"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "$<TARGET_FILE:QMapLibre::PluginGeoServices>"
+                    "$<TARGET_FILE_DIR:TrainsOnMap>/geoservices"
+            COMMENT "Bundling QMapLibre DLLs and the maplibre geoservices plugin"
+            COMMAND_EXPAND_LISTS
             VERBATIM)
     else()
         message(WARNING "windeployqt not found near ${_qt_bin_dir}; "
@@ -219,6 +269,7 @@ if(APPLE)
             COMMAND "${MACDEPLOYQT_EXECUTABLE}"
                     "$<TARGET_BUNDLE_DIR:TrainsOnMap>"
                     "-qmldir=${CMAKE_SOURCE_DIR}/qml"
+                    "-qmlimport=${_qmaplibre_prefix}/qml"
                     -no-strip
             COMMENT "macdeployqt: bundling Qt frameworks and QML/geoservices/TLS plugins into the .app"
             VERBATIM)
