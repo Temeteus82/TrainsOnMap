@@ -14,7 +14,7 @@
 > the reasoning behind the `apply()`/merge/prune rules — all of which did ship.
 >
 > **Original scope note.** A port reference for a planned *separate* cross-platform
-> (Windows + Linux, also macOS) TrainSpotter built on **Qt 6.11 / Qt Quick**. It
+> (Windows + Linux, also macOS) TrainSpotter built on **Qt 6.12 / Qt Quick**. It
 > mirrors [`DataFlow.md`](DataFlow.md) (the shipping Swift/Apple app) but translates
 > every layer to Qt idioms. Design guidance, not a description of existing code —
 > file/class names below are *proposed*.
@@ -23,7 +23,7 @@ How live train positions (and supporting metadata) move from the Fintraffic
 Digitraffic API into the app's state and onto the map. All data comes from the free
 [Digitraffic API](https://www.digitraffic.fi/rautatieliikenne/) — no API key. The
 goal is the same **"only Qt modules, no third-party packages"** discipline the Swift
-app keeps with Apple frameworks: everything here ships in Qt 6.11.
+app keeps with Apple frameworks: everything here ships in Qt 6.12.
 
 ## Required Qt modules
 
@@ -44,7 +44,7 @@ target_link_libraries(trainspotter PRIVATE
 
 > Qt MQTT and Qt Location are **separate installable components** in the Qt online
 > installer (not part of the default Qt install). Qt Location was reintroduced in
-> 6.5 and is fully supported in 6.11; Qt MQTT gained **native WebSocket support in
+> 6.5 and is fully supported in 6.12; Qt MQTT gained **native WebSocket support in
 > 6.10** — both are central below.
 
 > **⚠️ Not what shipped — don't copy this block.** `Qt6::Mqtt` is exactly the
@@ -56,7 +56,7 @@ target_link_libraries(trainspotter PRIVATE
 
 ## How it maps from the Swift app
 
-| Swift / Apple | Qt 6.11 | Notes |
+| Swift / Apple | Qt 6.12 | Notes |
 |---|---|---|
 | `@Observable @MainActor final class TrainStore` | `QObject` subclass on the GUI thread with `Q_PROPERTY(... NOTIFY ...)`; trains as a `QAbstractListModel` | QML binds to properties/model; signals replace `@Observable` change tracking |
 | `@MainActor` isolation | Qt main (GUI) thread + event loop | Network/MQTT callbacks fire on the main thread → no locking, same as `@MainActor` |

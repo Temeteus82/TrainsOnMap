@@ -20,16 +20,16 @@ if(WIN32)
     add_compile_definitions(NOMINMAX WIN32_LEAN_AND_MEAN)
 endif()
 
-# Floor is 6.10, not QtLocation/QtPositioning's 6.5+: TimetableModel uses
-# QRangeModel (QtCore, since 6.10).
-find_package(Qt6 6.10 REQUIRED COMPONENTS Core Gui Qml Quick Network Positioning Location WebSockets Concurrent Test)
+# Floor is 6.12 (the LTS), not QtLocation/QtPositioning's 6.5+: TimetableModel
+# uses QRangeModel (QtCore, since 6.10).
+find_package(Qt6 6.12 REQUIRED COMPONENTS Core Gui Qml Quick Network Positioning Location WebSockets Concurrent Test)
 
 # Vector basemap: maplibre-native-qt provides the "maplibre" geoservices plugin
 # and the MapLibre.Location QML module. Add its install prefix to
 # CMAKE_PREFIX_PATH (or set QMapLibre_DIR to <prefix>/lib/cmake/QMapLibre).
 find_package(QMapLibre REQUIRED COMPONENTS Core Location)
 
-qt_standard_project_setup(REQUIRES 6.10)
+qt_standard_project_setup(REQUIRES 6.12)
 
 # QML files live in a subdirectory; opt in to the modern qmldir handling so a
 # qmldir is generated for each QML dir (QTP0004, Qt 6.8+). Guard on the Qt
