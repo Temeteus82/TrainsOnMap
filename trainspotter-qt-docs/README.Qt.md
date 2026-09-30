@@ -1,6 +1,6 @@
-# TrainSpotter — Qt 6.11 port docs
+# TrainSpotter — Qt 6.12 port docs
 
-Index for building a cross-platform (Windows / Linux / macOS) **Qt 6.11 + Qt Quick**
+Index for building a cross-platform (Windows / Linux / macOS) **Qt 6.12 + Qt Quick**
 TrainSpotter that reuses the data logic of the shipping Swift/Apple app. Each document
 below owns one concern; this page points you at the right one and shows how they fit
 together.

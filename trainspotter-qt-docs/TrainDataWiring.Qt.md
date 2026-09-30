@@ -1,4 +1,4 @@
-# Wiring the train-location feed into a Qt 6.11 `QAbstractListModel`
+# Wiring the train-location feed into a Qt 6.12 `QAbstractListModel`
 
 A focused how-to for pulling **live train positions** from the Fintraffic Digitraffic
 API into a Qt Quick app, using the **same fetch logic** as the shipping Swift app
@@ -149,7 +149,7 @@ bootstrap and every resync — the merge/prune logic (§5) makes them interchang
 ### 4b. MQTT (live deltas) — `MqttClient`
 
 The broker is `wss://rata.digitraffic.fi/mqtt` and **requires the `mqtt` WebSocket
-subprotocol**. In Qt 6.11 you do **not** hand-roll MQTT — `QMqttClient` frames it, and
+subprotocol**. In Qt 6.12 you do **not** hand-roll MQTT — `QMqttClient` frames it, and
 since 6.10 it speaks WebSockets natively. Setup sequence:
 
 1. Create a `QMqttClient`; set `setProtocolVersion(QMqttClient::MQTT_3_1_1)`.
