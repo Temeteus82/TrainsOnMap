@@ -129,7 +129,7 @@ works in a local metric frame (no full EPSG:3067 round-trip per fix).
 
 ## Prerequisites
 
-- **Qt 6.5 or newer** with the `Quick`, `Qml`, `QuickControls2`, `Network`,
+- **Qt 6.12 (LTS) or newer** with the `Quick`, `Qml`, `QuickControls2`, `Network`,
   `Positioning`, `Location`, `WebSockets`, and `Concurrent` modules (Qt Location
   provides the `Map` the MapLibre plugin renders into; the *Auto* theme follows the desktop colour scheme,
   and the reduced-motion setting persists via `QtCore`'s `Settings`).
