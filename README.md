@@ -166,7 +166,7 @@ presets build **Debug** (override with `-DCMAKE_BUILD_TYPE=…` if needed).
 ### Linux (Clang)
 
 ```bash
-export CMAKE_PREFIX_PATH="$HOME/Qt/6.11.2/gcc_64"   # ABI-compatible with Clang
+export CMAKE_PREFIX_PATH="$HOME/Qt/6.12.0/gcc_64"   # ABI-compatible with Clang
 cmake --preset linux-clang
 cmake --build --preset linux-clang
 ./build/linux-clang/bin/TrainsOnMap
@@ -174,22 +174,21 @@ cmake --build --preset linux-clang
 
 ### macOS (Clang)
 
-The **`macos-clang-qt611`** preset is pinned to the stable Qt 6.11.2 kit and needs
-no `CMAKE_PREFIX_PATH` export; `macos-clang-qt612` is the same but pinned to the
-6.12 beta kit, for checking the app against it. Edit the pinned path in
+The **`macos-clang-qt612`** preset is pinned to the Qt 6.12.0 (LTS) kit and needs
+no `CMAKE_PREFIX_PATH` export. Edit the pinned path in
 [`CMakePresets.json`](CMakePresets.json) if your kit lives somewhere else.
 
 ```bash
-cmake --preset macos-clang-qt611
-cmake --build --preset macos-clang-qt611
-open ./build/macos-clang-qt611/bin/TrainsOnMap.app
+cmake --preset macos-clang-qt612
+cmake --build --preset macos-clang-qt612
+open ./build/macos-clang-qt612/bin/TrainsOnMap.app
 ```
 
 The plain **`macos-clang`** preset works with any Qt kit (official or a Homebrew
 one) via `CMAKE_PREFIX_PATH`:
 
 ```bash
-export CMAKE_PREFIX_PATH="$HOME/Qt/6.11.2/macos"   # or /opt/homebrew for a Homebrew Qt
+export CMAKE_PREFIX_PATH="$HOME/Qt/6.12.0/macos"   # or /opt/homebrew for a Homebrew Qt
 cmake --preset macos-clang
 cmake --build --preset macos-clang
 open ./build/macos-clang/bin/TrainsOnMap.app
@@ -250,7 +249,7 @@ open ./build/macos-clang/bin/TrainsOnMap.app
 ### Windows (MSVC 2022, PowerShell)
 
 ```powershell
-$env:CMAKE_PREFIX_PATH = "C:/Qt/6.11.2/msvc2022_64"
+$env:CMAKE_PREFIX_PATH = "C:/Qt/6.12.0/msvc2022_64"
 cmake --preset windows-msvc
 cmake --build --preset windows-msvc        # Release
 ./build/windows-msvc/bin/Release/TrainsOnMap.exe
@@ -264,7 +263,7 @@ Uses Qt's bundled **llvm-mingw** toolchain (Clang + `lld`). Put its `bin` on
 
 ```powershell
 $env:PATH = "C:/Qt/Tools/llvm-mingw1706_64/bin;$env:PATH"
-$env:CMAKE_PREFIX_PATH = "C:/Qt/6.11.2/llvm-mingw_64"
+$env:CMAKE_PREFIX_PATH = "C:/Qt/6.12.0/llvm-mingw_64"
 cmake --preset windows-llvm
 cmake --build --preset windows-llvm        # Release
 ./build/windows-llvm/bin/TrainsOnMap.exe
