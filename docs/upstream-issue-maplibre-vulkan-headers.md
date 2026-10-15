@@ -104,9 +104,18 @@ Vulkan.
 
 This probably doesn't show up in CI because the Windows jobs don't install the
 Vulkan SDK (so `WrapVulkanHeaders` isn't found) and run the
-`Windows-Vulkan-*-no-tests` presets. Any machine with a Vulkan SDK whose headers
-differ from the vendored version should hit it. The same ordering likely applies
-on Linux with distro `vulkan-headers` installed (not tested).
+`Windows-Vulkan-*-no-tests` presets. Any machine whose Vulkan SDK headers
+differ from the vendored version and sit outside the compiler's default include
+directories should hit it.
+
+**Linux with distro headers is not affected** (checked 2026-10-15: CachyOS, Qt
+6.12.0, GCC 16.2.1, `vulkan-headers` 1.4.363 = `VK_HEADER_VERSION 363` vs. the
+vendored 352, RX 6900 XT on RADV / Mesa 26.2.4, maplibre-native-qt `ed7cc1d`).
+`WrapVulkanHeaders` resolves to `/usr/include`, but that is an implicit include
+directory: CMake leaves it off the command line and GCC searches it last, so both
+TUs pick up the vendored `vulkan.hpp` first. The `Linux-Vulkan` preset builds
+with `-DBUILD_TESTING=ON` and no workaround, all 3 suites pass on the Qt RHI
+Vulkan backend, and a downstream Qt Location app renders correctly.
 
 ## Suggested fix
 
