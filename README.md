@@ -138,11 +138,13 @@ works in a local metric frame (no full EPSG:3067 round-trip per fix).
   against the same Qt kit. Add `<dir>` to `CMAKE_PREFIX_PATH`, or pass
   `-DQMapLibre_DIR=<dir>/lib/cmake/QMapLibre` with presets that pin the Qt path.
   The app renders with whichever backend MapLibre was built for (OpenGL, Vulkan
-  or Metal). For a **Vulkan** build on a machine with the Vulkan SDK installed,
+  or Metal). For a **Vulkan** build on Windows with the Vulkan SDK installed,
   configure MapLibre with
   `-DVulkan_INCLUDE_DIR=<mlq>/vendor/maplibre-native/vendor/Vulkan-Headers/include`.
   Without that, it crashes on the first render
-  ([details](docs/upstream-issue-maplibre-vulkan-headers.md)).
+  ([details](docs/upstream-issue-maplibre-vulkan-headers.md)). On Linux the
+  `Linux-Vulkan` preset works as-is, distro `vulkan-headers` included
+  (`QT_ROOT_DIR=/usr cmake --preset Linux-Vulkan` for a system Qt).
 - **CMake ≥ 3.21**, **Ninja**, and a C++17 compiler (MSVC 2022 or the bundled
   llvm-mingw / MinGW on Windows; GCC or Clang on Linux/macOS).
 
