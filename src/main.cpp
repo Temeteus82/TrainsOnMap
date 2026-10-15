@@ -1,9 +1,18 @@
 #include <QGuiApplication>
 #include <QIcon>
 #include <QQmlApplicationEngine>
+#include <QQuickWindow>
+
+#include <QMapLibre/Utils>
 
 int main(int argc, char *argv[])
 {
+    // MapLibre renders with the one backend it was built for (OpenGL, Vulkan or
+    // Metal), so Qt Quick must use the same API. RendererType values match
+    // QSGRendererInterface::GraphicsApi. Must run before the QGuiApplication.
+    QQuickWindow::setGraphicsApi(
+        static_cast<QSGRendererInterface::GraphicsApi>(QMapLibre::supportedRendererType()));
+
     QGuiApplication app(argc, argv);
     QGuiApplication::setApplicationName(QStringLiteral("TrainsOnMap"));
     QGuiApplication::setOrganizationName(QStringLiteral("TrainsOnMap"));

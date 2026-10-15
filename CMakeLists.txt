@@ -134,6 +134,7 @@ target_link_libraries(TrainsOnMap PRIVATE
     Qt6::Location
     Qt6::WebSockets
     Qt6::Concurrent
+    QMapLibre::Core
     QMapLibre::Location
 )
 
