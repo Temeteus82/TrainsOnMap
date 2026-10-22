@@ -87,6 +87,9 @@ order:
 | TU | 1st Vulkan include | later |
 |---|---|---|
 | `src/core/rendering/vulkan_renderer_backend.cpp` | `D:\VulkanSDK\1.4.363.0\include` | `vendor/Vulkan-Headers/include` |
+| `src/core/map_renderer.cpp` | `D:\VulkanSDK\1.4.363.0\include` | `vendor/Vulkan-Headers/include` |
+| `src/quick/texture_node_vulkan.cpp` | `vendor/Vulkan-Headers/include` | `D:\VulkanSDK\1.4.363.0\include` |
+| `src/widgets/map_widget.cpp` | `vendor/Vulkan-Headers/include` | `D:\VulkanSDK\1.4.363.0\include` |
 | `vendor/.../src/mbgl/vulkan/renderer_backend.cpp` | `vendor/Vulkan-Headers/include` | `D:\VulkanSDK\1.4.363.0\include` |
 
 The SDK path reaches `MLNQtCore` through `Qt6::Gui`, which is linked `PUBLIC`.
@@ -119,26 +122,30 @@ Vulkan backend, and a downstream Qt Location app renders correctly.
 
 ## Suggested fix
 
-Make every TU that includes `vulkan.hpp` use the vendored headers. For example,
-in `src/core/CMakeLists.txt`:
+Point Qt's `WrapVulkanHeaders` at the vendored headers before Qt is found. This
+goes in the top-level `CMakeLists.txt`, just above `# Find Qt`:
 
 ```cmake
+# Qt6::Gui exposes WrapVulkanHeaders (the Vulkan SDK when installed) ahead of mbgl-core's
+# vendored Vulkan-Headers. vulkan.hpp layouts differ between versions (ODR violation, crash
+# on first render), so pin Qt's lookup to the vendored copy before Qt is found.
 if(MLN_WITH_VULKAN)
-    target_include_directories(
-        MLNQtCore
-        BEFORE PRIVATE
-            ${MLN_CORE_PATH}/vendor/Vulkan-Headers/include
-    )
+    set(Vulkan_INCLUDE_DIR "${PROJECT_SOURCE_DIR}/vendor/maplibre-native/vendor/Vulkan-Headers/include"
+        CACHE PATH "Vulkan headers, must match mbgl-core's vendored copy" FORCE)
 endif()
 ```
 
-Optionally, add a guard so a mismatch fails at compile time instead of at runtime,
-e.g. in `vulkan_renderer_backend_p.hpp`:
+This is the confirmed workaround below, built into the project. It is one change
+in one place, and the SDK path then drops off every command line, so no target's
+include order matters any more. `FORCE` is deliberate: any other value brings the
+crash back. Adding the vendored path `BEFORE PRIVATE` on `MLNQtCore` alone would
+also cover both affected TUs, but it leaves the SDK path on the command line, and
+a later target that includes `vulkan.hpp` could break the same way.
 
-```cpp
-static_assert(VK_HEADER_VERSION == <vendored version>,
-              "vulkan.hpp must come from vendor/Vulkan-Headers (ODR with mbgl-core)");
-```
+**Tested 2026-10-22** on the environment above (maplibre-native-qt `c3485f3`): with
+the fix applied, a fresh `cmake --preset Windows-Vulkan -DBUILD_TESTING=ON` with
+`VULKAN_SDK` set gives `compile_commands.json` entries for all five TUs in the
+table with only `vendor/Vulkan-Headers/include`, and **all 3 suites pass**.
 
 Workaround until fixed: configure with
 `-DVulkan_INCLUDE_DIR=<repo>/vendor/maplibre-native/vendor/Vulkan-Headers/include`.
