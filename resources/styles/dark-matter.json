@@ -18,6 +18,71 @@
       "paint": { "background-color": "#0e0e0e", "background-opacity": 1 }
     },
     {
+      "id": "landcover_open",
+      "type": "fill",
+      "source": "carto",
+      "source-layer": "landcover",
+      "filter": [
+        "in",
+        [
+          "get",
+          "class"
+        ],
+        [
+          "literal",
+          [
+            "farmland",
+            "wetland",
+            "sand",
+            "rock",
+            "ice"
+          ]
+        ]
+      ],
+      "paint": {
+        "fill-color": [
+          "match",
+          [
+            "get",
+            "class"
+          ],
+          "farmland",
+          "#13130f",
+          "wetland",
+          "#0f1617",
+          "sand",
+          "#16150f",
+          "#151515"
+        ]
+      }
+    },
+    {
+      "id": "landuse_built",
+      "type": "fill",
+      "source": "carto",
+      "source-layer": "landuse",
+      "minzoom": 10,
+      "filter": [
+        "in",
+        [
+          "get",
+          "class"
+        ],
+        [
+          "literal",
+          [
+            "industrial",
+            "commercial",
+            "retail",
+            "railway"
+          ]
+        ]
+      ],
+      "paint": {
+        "fill-color": "#161616"
+      }
+    },
+    {
       "id": "landcover",
       "type": "fill",
       "source": "carto",
@@ -29,15 +94,7 @@
         ["==", "subclass", "recreation_ground"]
       ],
       "paint": {
-        "fill-color": {
-          "stops": [
-            [8, "#0e0e0e"],
-            [9, "#0e0e0e"],
-            [11, "#0e0e0e"],
-            [13, "#0e0e0e"],
-            [15, "#0e0e0e"]
-          ]
-        },
+        "fill-color": "#121812",
         "fill-opacity": 1
       }
     },
@@ -528,7 +585,7 @@
       "type": "line",
       "source": "carto",
       "source-layer": "transportation",
-      "minzoom": 15,
+      "minzoom": 14,
       "maxzoom": 24,
       "filter": ["all", ["==", "class", "minor"], ["==", "brunnel", "tunnel"]],
       "layout": { "line-cap": "butt", "line-join": "round" },
@@ -710,7 +767,7 @@
       "type": "line",
       "source": "carto",
       "source-layer": "transportation",
-      "minzoom": 15,
+      "minzoom": 14,
       "maxzoom": 24,
       "filter": ["all", ["==", "class", "service"], ["!has", "brunnel"]],
       "layout": { "line-cap": "round", "line-join": "round" },
@@ -850,7 +907,7 @@
       "type": "line",
       "source": "carto",
       "source-layer": "transportation",
-      "minzoom": 11,
+      "minzoom": 9,
       "maxzoom": 24,
       "filter": ["all", ["in", "class", "secondary", "tertiary"], ["!has", "brunnel"]],
       "layout": { "line-cap": "round", "line-join": "round" },
@@ -909,7 +966,7 @@
         },
         "line-color": {
           "stops": [
-            [7, "#1a1a1a"],
+            [7, "#33363d"],
             [12, "#232323"]
           ]
         }
@@ -947,7 +1004,7 @@
         },
         "line-color": {
           "stops": [
-            [5, "#1a1a1a"],
+            [5, "#33363d"],
             [12, "#232323"]
           ]
         }
@@ -986,7 +1043,7 @@
         },
         "line-color": {
           "stops": [
-            [5, "#1a1a1a"],
+            [5, "#33363d"],
             [12, "#232323"]
           ]
         }
@@ -997,7 +1054,7 @@
       "type": "line",
       "source": "carto",
       "source-layer": "transportation",
-      "minzoom": 15,
+      "minzoom": 14,
       "maxzoom": 24,
       "filter": ["all", ["in", "class", "path", "track"], ["!has", "brunnel"]],
       "layout": { "line-cap": "round", "line-join": "round" },
@@ -1024,7 +1081,7 @@
       "type": "line",
       "source": "carto",
       "source-layer": "transportation",
-      "minzoom": 15,
+      "minzoom": 14,
       "maxzoom": 24,
       "filter": ["all", ["==", "class", "service"], ["!has", "brunnel"]],
       "layout": { "line-cap": "round", "line-join": "round" },
@@ -1046,7 +1103,7 @@
       "type": "line",
       "source": "carto",
       "source-layer": "transportation",
-      "minzoom": 15,
+      "minzoom": 14,
       "maxzoom": 24,
       "filter": ["all", ["==", "class", "minor"], ["!has", "brunnel"]],
       "layout": { "line-cap": "round", "line-join": "round" },
@@ -1342,7 +1399,7 @@
       "type": "line",
       "source": "carto",
       "source-layer": "transportation",
-      "minzoom": 11,
+      "minzoom": 9,
       "maxzoom": 24,
       "filter": ["all", ["in", "class", "secondary", "tertiary"], ["==", "brunnel", "bridge"]],
       "layout": { "line-cap": "butt", "line-join": "miter" },
@@ -1401,7 +1458,7 @@
         },
         "line-color": {
           "stops": [
-            [8, "#1a1a1a"],
+            [8, "#33363d"],
             [12, "#232323"]
           ]
         }
@@ -1443,7 +1500,7 @@
         },
         "line-color": {
           "stops": [
-            [5, "#1a1a1a"],
+            [5, "#33363d"],
             [12, "#232323"]
           ]
         }
@@ -1487,7 +1544,7 @@
         },
         "line-color": {
           "stops": [
-            [5, "#1a1a1a"],
+            [5, "#33363d"],
             [10, "#232323"]
           ]
         }
@@ -1547,7 +1604,7 @@
       "type": "line",
       "source": "carto",
       "source-layer": "transportation",
-      "minzoom": 15,
+      "minzoom": 14,
       "maxzoom": 24,
       "filter": ["all", ["==", "class", "minor"], ["==", "brunnel", "bridge"]],
       "layout": { "line-cap": "butt", "line-join": "round" },
@@ -1711,7 +1768,7 @@
           "base": 1,
           "stops": [
             [13, 0],
-            [16, 1]
+            [14.5, 1]
           ]
         }
       }

@@ -23,6 +23,71 @@
       }
     },
     {
+      "id": "landcover_open",
+      "type": "fill",
+      "source": "carto",
+      "source-layer": "landcover",
+      "filter": [
+        "in",
+        [
+          "get",
+          "class"
+        ],
+        [
+          "literal",
+          [
+            "farmland",
+            "wetland",
+            "sand",
+            "rock",
+            "ice"
+          ]
+        ]
+      ],
+      "paint": {
+        "fill-color": [
+          "match",
+          [
+            "get",
+            "class"
+          ],
+          "farmland",
+          "rgba(241, 239, 229, 0.7)",
+          "wetland",
+          "rgba(222, 233, 233, 0.8)",
+          "sand",
+          "rgba(242, 238, 224, 0.8)",
+          "rgba(236, 236, 236, 0.8)"
+        ]
+      }
+    },
+    {
+      "id": "landuse_built",
+      "type": "fill",
+      "source": "carto",
+      "source-layer": "landuse",
+      "minzoom": 10,
+      "filter": [
+        "in",
+        [
+          "get",
+          "class"
+        ],
+        [
+          "literal",
+          [
+            "industrial",
+            "commercial",
+            "retail",
+            "railway"
+          ]
+        ]
+      ],
+      "paint": {
+        "fill-color": "rgba(232, 232, 232, 0.6)"
+      }
+    },
+    {
       "id": "landcover",
       "type": "fill",
       "source": "carto",
@@ -46,30 +111,7 @@
         ]
       ],
       "paint": {
-        "fill-color": {
-          "stops": [
-            [
-              8,
-              "rgba(234, 241, 233, 0.5)"
-            ],
-            [
-              9,
-              "rgba(234, 241, 233, 0.5)"
-            ],
-            [
-              11,
-              "rgba(234, 241, 233, 0.5)"
-            ],
-            [
-              13,
-              "rgba(234, 241, 233, 0.5)"
-            ],
-            [
-              15,
-              "rgba(234, 241, 233, 0.5)"
-            ]
-          ]
-        },
+        "fill-color": "rgba(226, 237, 224, 0.7)",
         "fill-opacity": 1
       }
     },
@@ -1261,7 +1303,7 @@
       "type": "line",
       "source": "carto",
       "source-layer": "transportation",
-      "minzoom": 15,
+      "minzoom": 14,
       "maxzoom": 24,
       "filter": [
         "all",
@@ -1691,7 +1733,7 @@
       "type": "line",
       "source": "carto",
       "source-layer": "transportation",
-      "minzoom": 15,
+      "minzoom": 14,
       "maxzoom": 24,
       "filter": [
         "all",
@@ -2019,7 +2061,7 @@
       "type": "line",
       "source": "carto",
       "source-layer": "transportation",
-      "minzoom": 11,
+      "minzoom": 9,
       "maxzoom": 24,
       "filter": [
         "all",
@@ -2183,7 +2225,7 @@
           "stops": [
             [
               7,
-              "#e6e6e6"
+              "#d0d0d0"
             ],
             [
               12,
@@ -2282,7 +2324,7 @@
           "stops": [
             [
               5,
-              "#e6e6e6"
+              "#d0d0d0"
             ],
             [
               12,
@@ -2385,7 +2427,7 @@
           "stops": [
             [
               5,
-              "#e6e6e6"
+              "#d0d0d0"
             ],
             [
               12,
@@ -2400,7 +2442,7 @@
       "type": "line",
       "source": "carto",
       "source-layer": "transportation",
-      "minzoom": 15,
+      "minzoom": 14,
       "maxzoom": 24,
       "filter": [
         "all",
@@ -2463,7 +2505,7 @@
       "type": "line",
       "source": "carto",
       "source-layer": "transportation",
-      "minzoom": 15,
+      "minzoom": 14,
       "maxzoom": 24,
       "filter": [
         "all",
@@ -2511,7 +2553,7 @@
       "type": "line",
       "source": "carto",
       "source-layer": "transportation",
-      "minzoom": 15,
+      "minzoom": 14,
       "maxzoom": 24,
       "filter": [
         "all",
@@ -3230,7 +3272,7 @@
       "type": "line",
       "source": "carto",
       "source-layer": "transportation",
-      "minzoom": 11,
+      "minzoom": 9,
       "maxzoom": 24,
       "filter": [
         "all",
@@ -3396,7 +3438,7 @@
           "stops": [
             [
               8,
-              "#e6e6e6"
+              "#d0d0d0"
             ],
             [
               12,
@@ -3497,7 +3539,7 @@
           "stops": [
             [
               5,
-              "#e6e6e6"
+              "#d0d0d0"
             ],
             [
               12,
@@ -3601,7 +3643,7 @@
           "stops": [
             [
               5,
-              "#e6e6e6"
+              "#d0d0d0"
             ],
             [
               10,
@@ -3728,7 +3770,7 @@
       "type": "line",
       "source": "carto",
       "source-layer": "transportation",
-      "minzoom": 15,
+      "minzoom": 14,
       "maxzoom": 24,
       "filter": [
         "all",
@@ -4100,7 +4142,7 @@
               0
             ],
             [
-              16,
+              14.5,
               1
             ]
           ]
