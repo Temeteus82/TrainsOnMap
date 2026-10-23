@@ -310,24 +310,65 @@
       }
     },
     {
-      "id": "aeroway-runway",
-      "type": "line",
+      "id": "aeroway-aerodrome",
+      "type": "fill",
       "source": "carto",
       "source-layer": "aeroway",
-      "minzoom": 12,
-      "filter": ["all", ["==", "class", "runway"]],
-      "layout": { "line-cap": "square" },
+      "minzoom": 9,
+      "filter": [
+        "all",
+        [
+          "==",
+          [
+            "geometry-type"
+          ],
+          "Polygon"
+        ],
+        [
+          "==",
+          [
+            "get",
+            "class"
+          ],
+          "aerodrome"
+        ]
+      ],
       "paint": {
-        "line-width": {
-          "stops": [
-            [11, 1],
-            [13, 4],
-            [14, 6],
-            [15, 8],
-            [16, 10]
+        "fill-color": "#15161a"
+      }
+    },
+    {
+      "id": "aeroway-apron",
+      "type": "fill",
+      "source": "carto",
+      "source-layer": "aeroway",
+      "minzoom": 11,
+      "filter": [
+        "all",
+        [
+          "==",
+          [
+            "geometry-type"
+          ],
+          "Polygon"
+        ],
+        [
+          "in",
+          [
+            "get",
+            "class"
+          ],
+          [
+            "literal",
+            [
+              "apron",
+              "helipad"
+            ]
           ]
-        },
-        "line-color": "#111"
+        ]
+      ],
+      "paint": {
+        "fill-color": "#1d1f24"
       }
     },
     {
@@ -335,18 +376,80 @@
       "type": "line",
       "source": "carto",
       "source-layer": "aeroway",
-      "minzoom": 13,
-      "filter": ["all", ["==", "class", "taxiway"]],
+      "minzoom": 12,
+      "filter": [
+        "all",
+        [
+          "==",
+          [
+            "geometry-type"
+          ],
+          "LineString"
+        ],
+        [
+          "==",
+          [
+            "get",
+            "class"
+          ],
+          "taxiway"
+        ]
+      ],
+      "layout": {
+        "line-join": "round"
+      },
       "paint": {
-        "line-color": "#111",
-        "line-width": {
-          "stops": [
-            [13, 0.5],
-            [14, 1],
-            [15, 2],
-            [16, 4]
-          ]
-        }
+        "line-color": "#2b2e34",
+        "line-width": [
+          "interpolate",
+          [
+            "exponential",
+            2
+          ],
+          [
+            "zoom"
+          ],
+          12, 0.8, 14, 6, 18, 150
+        ]
+      }
+    },
+    {
+      "id": "aeroway-runway",
+      "type": "line",
+      "source": "carto",
+      "source-layer": "aeroway",
+      "minzoom": 9,
+      "filter": [
+        "all",
+        [
+          "==",
+          [
+            "geometry-type"
+          ],
+          "LineString"
+        ],
+        [
+          "==",
+          [
+            "get",
+            "class"
+          ],
+          "runway"
+        ]
+      ],
+      "paint": {
+        "line-color": "#3a3e46",
+        "line-width": [
+          "interpolate",
+          [
+            "exponential",
+            2
+          ],
+          [
+            "zoom"
+          ],
+          9, 1, 10, 1.6, 18, 400
+        ]
       }
     },
     {
@@ -2693,6 +2796,189 @@
       },
       "paint": {
         "text-color": "#515151",
+        "text-halo-color": "#151515",
+        "text-halo-width": 1
+      }
+    },
+    {
+      "id": "aerodrome_label",
+      "type": "symbol",
+      "source": "carto",
+      "source-layer": "aerodrome_label",
+      "minzoom": 9,
+      "filter": [
+        "any",
+        [
+          "==",
+          [
+            "get",
+            "class"
+          ],
+          "international"
+        ],
+        [
+          "all",
+          [
+            "has",
+            "iata"
+          ],
+          [
+            ">=",
+            [
+              "zoom"
+            ],
+            10
+          ]
+        ],
+        [
+          ">=",
+          [
+            "zoom"
+          ],
+          12
+        ]
+      ],
+      "layout": {
+        "text-field": [
+          "case",
+          [
+            "has",
+            "iata"
+          ],
+          [
+            "concat",
+            [
+              "get",
+              "name"
+            ],
+            "\n",
+            [
+              "get",
+              "iata"
+            ]
+          ],
+          [
+            "get",
+            "name"
+          ]
+        ],
+        "text-font": [
+          "Montserrat Medium",
+          "Open Sans Bold",
+          "Noto Sans Regular",
+          "HanWangHeiLight Regular",
+          "NanumBarunGothic Regular"
+        ],
+        "text-size": [
+          "interpolate",
+          [
+            "linear"
+          ],
+          [
+            "zoom"
+          ],
+          9,
+          9,
+          14,
+          12
+        ],
+        "text-max-width": 9
+      },
+      "paint": {
+        "text-color": "#8b919a",
+        "text-halo-color": "#151515",
+        "text-halo-width": 1
+      }
+    },
+    {
+      "id": "poi_major",
+      "type": "symbol",
+      "source": "carto",
+      "source-layer": "poi",
+      "minzoom": 14,
+      "filter": [
+        "any",
+        [
+          "in",
+          [
+            "get",
+            "class"
+          ],
+          [
+            "literal",
+            [
+              "museum",
+              "theatre",
+              "cinema",
+              "library",
+              "hospital",
+              "college",
+              "place_of_worship",
+              "attraction",
+              "stadium",
+              "sports_centre",
+              "lodging",
+              "town_hall",
+              "ferry_terminal",
+              "castle",
+              "monument",
+              "zoo",
+              "aquarium",
+              "swimming_pool"
+            ]
+          ]
+        ],
+        [
+          "in",
+          [
+            "get",
+            "subclass"
+          ],
+          [
+            "literal",
+            [
+              "mall",
+              "supermarket",
+              "department_store",
+              "bus_station",
+              "marina"
+            ]
+          ]
+        ]
+      ],
+      "layout": {
+        "text-field": [
+          "get",
+          "name"
+        ],
+        "text-font": [
+          "Montserrat Medium",
+          "Open Sans Bold",
+          "Noto Sans Regular",
+          "HanWangHeiLight Regular",
+          "NanumBarunGothic Regular"
+        ],
+        "text-size": [
+          "interpolate",
+          [
+            "linear"
+          ],
+          [
+            "zoom"
+          ],
+          15,
+          9,
+          18,
+          11
+        ],
+        "text-max-width": 8,
+        "symbol-sort-key": [
+          "get",
+          "rank"
+        ]
+      },
+      "paint": {
+        "text-color": "#7d828a",
         "text-halo-color": "#151515",
         "text-halo-width": 1
       }
