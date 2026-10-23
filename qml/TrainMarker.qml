@@ -77,24 +77,24 @@ MapQuickItem {
         default:      return "transparent";
         }
     }
-    // Greyed when stale, else the type colour. Drives the capsule fill + arrow.
+    // Greyed when stale, else the type colour. Drives the capsule fill (or, when
+    // stale, its hollow border) + arrow.
     readonly property color dotColor: stale ? Theme.trainStale : trainColor
     // Contrast-correct ink for the capsule labels (computed once per fill change).
-    readonly property color labelInk: inkFor(dotColor)
+    // A stale capsule is hollow (card fill), so its labels use card text.
+    readonly property color labelInk: stale ? Theme.textMuted : inkFor(dotColor)
 
     // ---- Direction-arrow geometry (TrainSpotter parity) ------------------
     readonly property real arrowW: 11
     readonly property real arrowH: 8
     // Gap between the capsule edge and the arrow's centre as it orbits.
     readonly property real arrowGap: 2.5 + arrowH / 2
-    // Hidden at a standstill; tapers from 0.35 up to fully opaque at 50 km/h,
-    // dimmed to match a stale capsule.
+    // Hidden at a standstill; tapers from 0.35 up to fully opaque at 50 km/h.
     readonly property real arrowOpacity: {
         if (model.speed <= 0)
             return 0
         const t = Math.min(Math.max(model.speed / 50, 0), 1)
-        const base = 0.35 + 0.65 * t
-        return stale ? base * 0.55 : base
+        return 0.35 + 0.65 * t
     }
 
     // Position-quality flag (#1). A fix with poor GPS accuracy, or one that sits
@@ -167,9 +167,9 @@ MapQuickItem {
             NumberAnimation { duration: 120; easing.type: Easing.OutCubic }
         }
 
-        // Dim a stale / not-running train most; a suspect (low-confidence
-        // position) train a little, so it reads as present-but-approximate (#1).
-        opacity: marker.stale ? 0.55 : (marker.suspect ? 0.72 : 1.0)
+        // No dimming (U3-C1): 0.55 / 0.72 opacity blended stale and suspect
+        // markers under 3:1 against the ground. Stale is a hollow capsule and
+        // suspect has its own ring, so each state has a shape cue instead.
 
         // Selection halo: a translucent capsule of the train colour sitting just
         // outside the fill (TrainSpotter parity).
@@ -211,14 +211,16 @@ MapQuickItem {
         }
 
         // The capsule: type-coloured fill, white text. Collapses to a small dot
-        // when labels are hidden (country scale).
+        // when labels are hidden (country scale). A stale train is hollow: card
+        // fill inside a grey ring.
         Rectangle {
             id: capsule
             radius: height / 2
-            color: marker.dotColor
-            // Hairline edge so the capsule separates from a same-hued tile.
-            border.color: Theme.isDark ? Qt.rgba(1, 1, 1, 0.30) : Qt.rgba(0, 0, 0, 0.28)
-            border.width: 1
+            color: marker.stale ? Theme.cardBg : marker.dotColor
+            // Edge so the capsule separates from the ground even where the fill
+            // can't (Theme.markerEdge, U3-C3).
+            border.color: marker.stale ? Theme.trainStale : Theme.markerEdge
+            border.width: marker.stale ? 2 : 1
             implicitWidth: marker.labelsVisible ? labelCol.implicitWidth + 14 : 14
             implicitHeight: marker.labelsVisible ? labelCol.implicitHeight + 6 : 14
             width: implicitWidth
@@ -307,7 +309,7 @@ MapQuickItem {
 
             ShapePath {
                 fillColor: marker.dotColor
-                strokeColor: Theme.isDark ? Qt.rgba(1, 1, 1, 0.35) : Qt.rgba(0, 0, 0, 0.30)
+                strokeColor: Theme.markerEdge
                 strokeWidth: 0.75
                 startX: arrow.width / 2; startY: 0
                 PathLine { x: 0;            y: arrow.height }

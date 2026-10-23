@@ -205,12 +205,18 @@ Rectangle {
                         color: Theme.textStrong
                     }
 
-                    // Delay pairs colour with text, never colour alone.
+                    // Delay pairs colour with text, never colour alone. The colour
+                    // follows the marker's ring state, so amber/red mean here what
+                    // they mean on the map (5–14 / 15+ min, passenger trains only);
+                    // a smaller delay is plain text. Text-grade tokens, not the
+                    // ring ones: those are tuned as 3:1 graphics (U3-C2).
                     Label {
                         visible: row.model.delayMinutes > 0
                         text: "+" + row.model.delayMinutes
                         font.pointSize: TypeScale.caption
-                        color: row.model.delayMinutes >= 15 ? Theme.ringVeryLate : Theme.ringLate
+                        color: row.model.ringState === "red" ? Theme.delayLate
+                             : row.model.ringState === "amber" ? Theme.ringLateText
+                             : Theme.textMuted
                     }
 
                     Label {

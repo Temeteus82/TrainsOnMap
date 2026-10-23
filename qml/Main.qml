@@ -483,6 +483,31 @@ ApplicationWindow {
         }
     }
 
+    // U3-C4: CARTO's terms and OSM's ODbL want a visible credit, and the MapLibre
+    // plugin draws none (copyrightsVisible above has no effect with it). The full
+    // line lives in the sidebar's settings group, which is closed by default, so
+    // keep a short one on the map itself. It steps left of whichever right-hand
+    // panel is open rather than hiding under it.
+    Rectangle {
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: 12
+        anchors.rightMargin: 12 + (detailPanelLoader.visible ? detailPanelLoader.width + 12
+                                   : stationBoardLoader.visible ? stationBoardLoader.width + 12 : 0)
+        implicitWidth: attribution.implicitWidth + 12
+        implicitHeight: attribution.implicitHeight + 4
+        radius: 4
+        color: Theme.cardBg
+
+        Label {
+            id: attribution
+            anchors.centerIn: parent
+            text: qsTr("© CARTO © OpenStreetMap contributors")
+            font.pointSize: TypeScale.caption
+            color: Theme.textMuted
+        }
+    }
+
     InfoPanel {
         id: panel
         anchors.left: parent.left

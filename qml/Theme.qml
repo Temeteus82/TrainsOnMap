@@ -111,6 +111,9 @@ QtObject {
     // "+N min" text badge so colour was never the sole carrier, but the ring
     // itself still has to clear 3:1, hence the darkened light-mode value.
     readonly property color ringLate:     isDark ? "#F2A900" : "#A87200"  // 8.6 / 3.9
+    // The same amber as *text* on the card (train list "+N"): the ring value is
+    // 4.1:1 there, under 1.4.3's 4.5:1 (U3-C2). Dark never failed (8.3:1).
+    readonly property color ringLateText: isDark ? "#F2A900" : "#946500"  // 8.3 / 5.1 on card
     // Dark value lifted #F25555 -> #F36868 when the basemap moved to Esri Dark
     // Gray (#474749): the old red measured 3.1:1 on CARTO Dark Matter's #1b1b1b
     // but only 2.74:1 on the lighter Esri ground, under 1.4.11's 3:1.
@@ -190,9 +193,18 @@ QtObject {
         return speed > 0 ? "#FF9500" : "#8E8E93"   // moving = orange, stopped = grey
     }
 
-    // A stale train greys out entirely (juliadata's "harmaa" marker). #9AA0A6
-    // measured 2.46:1 on Positron, so light mode gets a darkened grey.
-    readonly property color trainStale: isDark ? "#9AA0A6" : "#848B92"   // 6.5 / 3.2
+    // A stale train greys out (juliadata's "harmaa" marker), drawn as a hollow
+    // capsule with this as its 2 px border — the hollow shape is the non-colour
+    // cue (U3-C1). It used to be a filled capsule at 0.55 opacity, which blended
+    // down to 1.8:1 / 3.0:1 and carried "stale" by colour alone.
+    readonly property color trainStale: isDark ? "#9AA0A6" : "#848B92"   // 7.3 / 3.3 on CARTO ground
+
+    // Marker capsule/arrow edge. The palette's light hues (W #00B0B0, the
+    // commuter and orange fallbacks) sit at 2.1–2.6:1 on Positron's #fafaf8, and
+    // juliadata.fi parity keeps those fills as they are — so the edge carries
+    // the boundary instead: 0.55 black blends to 4.7:1 on that ground (U3-C3).
+    // The old 0.28 measured 2.0:1. Dark is unchanged; every dark fill clears 3:1.
+    readonly property color markerEdge: isDark ? Qt.rgba(1, 1, 1, 0.30) : Qt.rgba(0, 0, 0, 0.55)
 
     // Pick black or white ink for text/glyphs on a data-driven background colour,
     // whichever gives the most contrast (WCAG 2 relative luminance). Shared by any

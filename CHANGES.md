@@ -8,6 +8,40 @@ Legend: ✨ feature · 🐛 bug fix · ♻️ change/refactor · ✅ verificatio
 
 ---
 
+## UI audit round 3 — the four Criticals
+
+Audit in `docs/ui-audit-round3.md`. It re-measures the UI against the CARTO
+vector ground, which replaced the Esri ground that `Theme`'s map ratios were
+tuned on.
+
+### 🐛 Fixes
+- [x] **U3-C4:** a persistent "© CARTO © OpenStreetMap contributors" chip at the
+      map's bottom-right. The MapLibre plugin draws no attribution, and the
+      sidebar's credit line is folded away by default. The chip steps left of an
+      open right-hand panel.
+- [x] **U3-C2:** the train list's "+N" delay label uses text-grade colours,
+      following the row's `ringState`. Red is `delayLate`, amber is the new
+      `ringLateText` (5.1:1 on the light card, where the ring token was 4.1:1),
+      and anything else is muted. Amber and red now mean what they mean on the
+      map.
+- [x] **U3-C1:** stale trains are a hollow capsule (card fill, 2 px grey ring)
+      instead of a grey fill at 0.55 opacity. The faded version blended down to
+      1.8:1 (light) / 3.0:1 (dark) and showed "stale" by colour alone. Suspect
+      positions keep their ring and lose their 0.72 dimming.
+- [x] **U3-C3:** new `Theme.markerEdge` (light: 0.55 black, 4.7:1 on Positron)
+      outlines every capsule and arrow. `W` and the commuter/orange fallback fills
+      sat at 2.1–2.6:1 on the near-white ground; the juliadata.fi hues themselves
+      are unchanged. This removes the last two colour literals outside `Theme`.
+
+### ✅ Verification
+- [x] MSVC build, run in both themes. Hollow stale rings, darker dot edges and
+      the credit chip all checked on screen.
+
+### 📋 Still open (round 3)
+- [ ] Warnings U3-W1–W6 and Opportunities U3-O1–O3; see the audit for the order.
+
+---
+
 ## Bake the rails as WGS84 GeoJSON (vector-basemap prerequisite)
 
 ### ✨ Second bake output
