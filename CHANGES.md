@@ -37,8 +37,34 @@ tuned on.
 - [x] MSVC build, run in both themes. Hollow stale rings, darker dot edges and
       the credit chip all checked on screen.
 
-### 📋 Still open (round 3)
-- [ ] Warnings U3-W1–W6 and Opportunities U3-O1–O3; see the audit for the order.
+### ♻️ Warnings and Opportunities
+- [x] **U3-W1:** the basemap's own rail layers (`rail`, `rail_dash`,
+      `tunnel_rail`, `tunnel_rail_dash`) are removed from both styles. They drew
+      a second, offset track beside the app's network from z13.
+- [x] **U3-W2:** switching theme switches `activeMapType` between the two
+      registered styles instead of rebuilding the `Map`. The `Loader`, the
+      saved-view properties and `everBuilt` are gone, and with them the ~0.9 s
+      stall the rebuild cost.
+- [x] **U3-W3:** the selected-route overlay goes from 0.45 to 0.7 opacity
+      (2.0 → 3.1:1 light).
+- [x] **U3-W4:** `Theme.qml`'s map ratios are rewritten against the CARTO
+      grounds. New `scripts/check_contrast.py` (ctest `contrast`) enforces the
+      floors from the files themselves. On its first run it raised the dark
+      `markerEdge` from 0.30 to 0.35 white.
+- [x] **U3-W5:** every basemap label in both styles is lifted to ≥ 4.5:1
+      against its own ground: 32 colours in Positron and 10 in Dark Matter.
+- [x] **U3-W6:** closed as not a defect. The map renders at the window's
+      `devicePixelRatio`, the same scale `pointSize` text follows.
+- [x] **U3-O1:** a train drawn as a dot has a 24 px click target.
+- [x] **U3-O2:** rail widths grow with zoom (2.2 → 5 px running, 1.3 → 2.5 px
+      siding).
+- [x] **U3-O3:** POI category icons: nine SVGs in `resources/poi/`, registered
+      through `ImageParameter`.
+
+### ✅ Verification (Warnings/Opportunities)
+- [x] ctest: 11/11 pass, including the new `contrast`.
+- [x] Running app: Dark → Light → Dark keeps the view and the rails layer;
+      single-line rails close in; POI icons drawn; no QML warnings on stderr.
 
 ---
 

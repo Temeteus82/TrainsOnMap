@@ -17,9 +17,17 @@ English UI over Finnish data, LTR.
 
 IDs are prefixed `U3-`.
 
-> **Status (2026-10-23):** all four Criticals are fixed and marked *Fixed*
-> below (C4, C2, then C1 with C3). The fixes were checked in the running app
-> (MSVC build) in both themes. The Warnings and Opportunities are still open.
+> **Status (2026-10-23): every finding is closed.** The four Criticals landed
+> first (C4, C2, then C1 with C3), then all six Warnings and three
+> Opportunities. W6 closed as *not a defect*, because its premise was wrong
+> (see there). Everything was checked in the running app (MSVC build) in both
+> themes. The contrast floors are now enforced by `scripts/check_contrast.py`
+> (ctest `contrast`).
+>
+> **One correction to this document:** W5 said Dark Matter's labels all pass.
+> They don't. Sea and lake-line names, suburb names, major road names, park and
+> stadium names, and two country-name stops measure 1.1–4.0:1. The original
+> check sampled only a few layers. The fix covers every label in both styles.
 
 ## How the map was measured
 
@@ -188,7 +196,7 @@ chip. Keep the full credit line in the settings group.
 
 ## Warnings
 
-### U3-W1 — Rails are drawn twice from zoom 13
+### U3-W1 — Rails are drawn twice from zoom 13 — **Fixed**
 
 Positron and Dark Matter each draw their own railway lines from z13: `rail` and
 `rail_dash`, plus `tunnel_rail` and `tunnel_rail_dash`. The app draws
@@ -203,7 +211,10 @@ is actually on.
 **Fix.** Remove those four layers from both styles. That is a text patch of the
 kind made in PR #94, and nothing else reads them.
 
-### U3-W2 — Switching theme still rebuilds the whole map
+**Fixed** as proposed: both styles go from 99 layers to 95. On screen, close
+in, the network is a single line again.
+
+### U3-W2 — Switching theme still rebuilds the whole map — **Fixed**
 
 `Main.qml:134-140` switches theme by destroying and recreating the `Map` through
 the `Loader`, together with the `savedCenter*`/`savedZoom`/`everBuilt` logic that
@@ -222,7 +233,20 @@ stall drops to the 392 ms startup figure.
 properties and `everBuilt`. The result is net-negative code and keeps the
 round-2 first-run fix.
 
-### U3-W3 — The selected train's route overlay is under 3:1
+**Fixed** as proposed.
+- The plugin takes both styles as a list of `{url, name}` objects ("light",
+  "dark").
+- A `Binding` sets `activeMapType` to the type whose name matches
+  `Theme.isDark`. Its value falls back to the current type until the plugin
+  has registered the styles. Without that fallback, the binding logged a
+  conversion warning at startup.
+- The `Loader`, `saved*`, `everBuilt` and the theme `Connections` are gone. The
+  `Map` now sits directly in the window.
+- The opening view is two lines in `Component.onCompleted`.
+- On screen, flipping Dark → Light → Dark keeps the view, the rails layer
+  survives each switch, and its paint follows the new theme colours.
+
+### U3-W3 — The selected train's route overlay is under 3:1 — **Fixed**
 
 `Main.qml:237-248` draws the selected train's resolved route in `Theme.accent` at
 `opacity: 0.45`. Once the colour is blended, the overlay is **2.00:1** on the
@@ -233,7 +257,9 @@ is the main thing selecting a train shows on the map, so 1.4.11 applies.
 a narrower width. The breadcrumb trail (0.35) is meant to fade and can stay as
 it is.
 
-### U3-W4 — Theme's map-contrast notes describe a basemap that is gone
+**Fixed** with opacity 0.7. The contrast check measures it on every run.
+
+### U3-W4 — Theme's map-contrast notes describe a basemap that is gone — **Fixed**
 
 `Theme.qml:81-117` and `:193-195` quote every map ratio against Esri Light Gray
 `#efefef` / Dark Gray `#474749`, and explain the dark values as lifts for that
@@ -252,7 +278,21 @@ works if the numbers in that one file are true.
   3:1. Two grounds times about 25 tokens is a small pure-Python script, much like
   the measurement used for this document.
 
-### U3-W5 — Basemap labels miss 4.5:1 in light mode
+**Fixed** with both halves.
+- **The comments.** The map section of `Theme.qml` now quotes its ratios against
+  `#0e0e0e` / `#fafaf8` and says where they come from.
+- **The check.** `scripts/check_contrast.py` reads the tokens out of `Theme.qml`
+  and the grounds out of the two style files, so it can't go stale the way the
+  comments did. It runs as ctest `contrast`, registered only when a Python
+  interpreter is found. It enforces:
+  - eight map-drawn tokens and the route overlay at ≥ 3:1 against the ground;
+  - six text tokens at ≥ 4.5:1 on the card;
+  - every basemap label at ≥ 4.5:1 against its own ground.
+- **What it caught straight away.** The dark `markerEdge` from C3 (white at
+  0.30) measured 2.64:1. It went to 0.35, which is 3.18:1 and is also the
+  arrow stroke's old value.
+
+### U3-W5 — Basemap labels miss 4.5:1 in light mode — **Fixed**
 
 The basemap carries real text: place names, road names and, since PR #94, POIs
 and airport names. In Positron:
@@ -272,7 +312,20 @@ text at 8–10 px.
 **Fix.** Set POI and airport labels to `#6b7079` in `positron.json`. Decide
 whether to darken CARTO's road and place colours to the same floor.
 
-### U3-W6 — Map text does not follow the type scale or OS text size
+**Fixed for every label in both styles**, not just the two layers from PR #94.
+- **How.** Each failing `text-color` (including each stop of a zoom-stop
+  colour) is mixed toward black (Positron) or white (Dark Matter) in 1% steps
+  until it clears 4.6:1 against its own ground. Water labels are measured
+  against water. The step keeps each colour's hue and moves it only as far as
+  it has to.
+- **How many.** 32 colour values changed in Positron and 10 in Dark Matter.
+  This includes the Dark Matter failures this document originally missed (see
+  the correction at the top).
+- **The extremes.** Positron's sea names went from 1.46:1 to 4.58:1. Dark
+  Matter's major road names went from 1.65:1 to 4.62:1.
+- CARTO's design is still recognisably low-key, just readable.
+
+### U3-W6 — Map text does not follow the type scale or OS text size — **Not a defect**
 
 `TypeScale` works in `pointSize` so that panel text grows with the OS
 "Large text" setting. Basemap labels are fixed pixel sizes in the style JSON:
@@ -289,11 +342,19 @@ app's own type system has no say.
 `text-size` values when it loads them. I haven't checked whether the MapLibre
 Qt bindings offer a runtime multiplier that would avoid the rewrite.
 
+**Closed: the premise was wrong.** The scale `pointSize` follows is the
+display's scaling (logical DPI). The MapLibre plugin hands the renderer that
+same factor: `window->devicePixelRatio()` in `src/location/qgeomap.cpp:93-99`
+of maplibre-native-qt. So at 125% or 150% display scaling, the basemap labels
+grow with the panels; they do not drift apart. The one setting this does not
+cover is Windows' separate "Make text bigger" slider. That was not tested here,
+and it is a question about Qt Quick generally, not about the map.
+
 ---
 
 ## Opportunities
 
-### U3-O1 — Make the dot-mode marker target 24 px
+### U3-O1 — Make the dot-mode marker target 24 px — **Fixed**
 
 In dot mode the marker's `MouseArea` is the 14×14 capsule. That is below the
 24×24 of WCAG 2.5.8, which round 2 fixed for station dots. It is not a failure:
@@ -301,7 +362,9 @@ In dot mode the marker's `MouseArea` is the 14×14 capsule. That is below the
 does that. But it is a small fix: give the `MouseArea` `anchors.margins: -5`
 while `labelsVisible` is false.
 
-### U3-O2 — Rails get thinner than roads as you zoom in
+**Fixed** exactly as written.
+
+### U3-O2 — Rails get thinner than roads as you zoom in — **Fixed**
 
 `rails-line` uses fixed widths: 2.2 px for running lines, 1.3 px for sidings.
 PR #94's road widths grow with zoom, so from about z14 a minor street is 4–12 px
@@ -311,13 +374,35 @@ the app is visually weaker than the streets around it.
 An interpolated width, such as `["interpolate", ["linear"], ["zoom"], 8, 2.2,
 16, 5]` for running lines, keeps the rails dominant at every scale.
 
-### U3-O3 — POIs have no category cue
+**Fixed** with that expression: running lines go from 2.2 to 5 px and sidings
+from 1.3 to 2.5 px between z8 and z16. The main/siding split is still driven
+by `paaraide`.
+
+### U3-O3 — POIs have no category cue — **Fixed**
 
 PR #94 made POIs text-only, because CARTO's sprite contains a single circle icon.
 A hospital and a museum therefore look identical. A small app-owned sprite would
 add category icons. The MapLibre QML `Style` can register images alongside the
 rails source, so the icons need not come from CARTO. Low priority: the labels are
 background detail.
+
+**Fixed** with nine app-owned SVG icons in `resources/poi/`: health, culture,
+worship, education, lodging, shop, transport, sport and civic.
+- **What they look like.** Each is a white glyph on a `#6b7079` disc, which
+  clears 3:1 on both grounds (4.8:1 light, 3.7:1 dark), so one set serves
+  both themes.
+- **How they get to the map.** They are embedded as `:/poi/*.svg` and
+  registered from `Main.qml` with `ImageParameter`. The plugin loads them
+  through `QImage`, so the `qsvg` image plugin that already ships with the app
+  handles them.
+- **How the style uses them.** `poi_major` picks an icon with a `match` on the
+  POI class. Each icon is drawn at 30 px and shown at `icon-size: 0.5`, so it
+  stays sharp on a 2× display. The name sits beneath the icon and is optional,
+  so when labels collide the icon survives and the name drops.
+- **Why nine explicit parameters.** `Style` takes its parameters as plain
+  children, so a `Repeater`, which only creates Items, cannot generate them.
+- Verified on screen: the culture icon over a gallery and the shop icon at a
+  supermarket.
 
 ---
 
@@ -354,9 +439,9 @@ Recorded so a later pass does not re-derive it:
 3. ~~**U3-C1 + U3-C3**~~: done together. As it turned out, the hollow stale
    capsule uses `trainStale` for its ring rather than `markerEdge`; the two fixes
    share only the marker's edge code.
-4. **U3-W1 + U3-W5**: one style-patch pass over both JSON files (drop the basemap
-   rails, darken the light labels).
-5. **U3-W4**, ideally with the ratio check as a test. It turns C1/C3-type
-   regressions into a red build.
-6. **U3-W2** (no-rebuild theme flip): the largest change, and it removes code.
-7. **U3-W3**, then the Opportunities.
+4. ~~**U3-W1 + U3-W5**~~: done, in one style pass.
+5. ~~**U3-W4**~~: done. Its check caught one more failure on its first run, the
+   dark `markerEdge`.
+6. ~~**U3-W2**~~: done; it removed the `Loader` and saved-view code.
+7. ~~**U3-W3**, then the Opportunities~~: done. **U3-W6** closed as not a
+   defect.

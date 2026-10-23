@@ -78,49 +78,40 @@ QtObject {
     readonly property color cancelledBg: isDark ? "#b53030" : "#c62828"
 
     // ---- Map --------------------------------------------------------------
-    // Track strands. Both were well under 1.4.11's 3:1 on the Esri ground
-    // (running 1.54 / siding 1.06 dark, 2.81 / 1.55 light) and were lifted to
-    // clear it. On the dark ground they had to go *lighter*: #474749 is midtone
-    // enough that even pure black only reaches 2.27:1, so darkening a siding to
-    // make it recede is not available there.
+    // Ratios on map-drawn tokens are "dark / light" against the basemap ground:
+    // CARTO Dark Matter #0e0e0e / Positron #fafaf8 (the styles' `background`).
+    // WCAG 1.4.11 wants >= 3:1 for a graphic that carries state.
     //
-    // The pair also has to stay told apart from each other. On the map that is
-    // reinforced by width (2.2 px running vs 1.3 px siding, Main.qml), but the
-    // sidebar legend draws both as identical 3 px swatches, so colour carries it
-    // alone there — hence the >= 1.4:1 sibling separation the marker palette
-    // uses, which puts the running line at ~4.2:1 and the siding at ~3.0:1.
-    readonly property color railColor: isDark ? "#A8B0B9" : "#69727F"        // running lines  4.2 / 4.2
-    readonly property color railSidingColor: isDark ? "#8994A3" : "#7E8B9B"  // yards / sidings 3.0 / 3.0
+    // scripts/check_contrast.py (ctest `contrast`) reads these tokens and the
+    // grounds from the files themselves and fails under the floor, so these
+    // notes can't drift from the truth again: round 3 (U3-W4) found every figure
+    // here still quoting the Esri ground the app had left, which is how two
+    // light-mode failures went unseen (U3-C1, U3-C3).
+
+    // Track strands. The pair has to stay told apart from each other as well as
+    // from the ground: on the map width helps (Main.qml), but the sidebar legend
+    // draws both as identical 3 px swatches, so colour carries it alone there —
+    // hence the >= 1.4:1 sibling separation the marker palette uses.
+    readonly property color railColor: isDark ? "#A8B0B9" : "#69727F"        // running lines  8.8 / 4.7
+    readonly property color railSidingColor: isDark ? "#8994A3" : "#7E8B9B"  // yards / sidings 6.3 / 3.3
 
     // ---- Map overlay semantics (U2-W8) ------------------------------------
     // Everything below used to be a hex literal sitting in TrainMarker.qml,
     // Main.qml or TrainDetailPanel.qml with no dark-mode branch — which made a
     // theme pass a grep instead of a one-file edit, and is how the marker
     // palette ended up light-only over a basemap that flips (U2-C4).
-    //
-    // Ratios quoted are against the basemap the thing is drawn on (Esri Light
-    // Gray #efefef / Dark Gray #474749) or, for the amenity badges, the card.
-    // WCAG 1.4.11 wants >= 3:1 for a graphic that carries state.
-    //
-    // NB the dark ground got much lighter when the basemap moved off CARTO
-    // (#1b1b1b -> #474749), so every dark-branch ratio below is roughly halved
-    // from what it measured on Dark Matter. The map-drawn tokens were re-checked
-    // against the new ground; the on-card badges are unaffected.
+    // Ratios: map ground as above, or the card where marked.
 
-    // Delay rings. Amber measured 1.87:1 on Positron — it is paired with a
-    // "+N min" text badge so colour was never the sole carrier, but the ring
-    // itself still has to clear 3:1, hence the darkened light-mode value.
-    readonly property color ringLate:     isDark ? "#F2A900" : "#A87200"  // 8.6 / 3.9
+    // Delay rings, paired with a "+N min" text badge so colour is never the sole
+    // carrier; the ring itself still has to clear 3:1.
+    readonly property color ringLate:     isDark ? "#F2A900" : "#A87200"  // 9.6 / 4.0
     // The same amber as *text* on the card (train list "+N"): the ring value is
-    // 4.1:1 there, under 1.4.3's 4.5:1 (U3-C2). Dark never failed (8.3:1).
-    readonly property color ringLateText: isDark ? "#F2A900" : "#946500"  // 8.3 / 5.1 on card
-    // Dark value lifted #F25555 -> #F36868 when the basemap moved to Esri Dark
-    // Gray (#474749): the old red measured 3.1:1 on CARTO Dark Matter's #1b1b1b
-    // but only 2.74:1 on the lighter Esri ground, under 1.4.11's 3:1.
-    readonly property color ringVeryLate: isDark ? "#F36868" : "#E03131"  // 3.1 / 4.2
+    // 4.1:1 there, under 1.4.3's 4.5:1 (U3-C2). Dark never failed.
+    readonly property color ringLateText: isDark ? "#F2A900" : "#946500"  // 8.2 / 5.1 on card
+    readonly property color ringVeryLate: isDark ? "#F36868" : "#E03131"  // 6.4 / 4.3
     readonly property color ringReady:    liveOn
     // A fix the matcher could not place on the network: a neutral outline.
-    readonly property color ringSuspect:  isDark ? "#b9bec6" : "#5f6368"
+    readonly property color ringSuspect:  isDark ? "#b9bec6" : "#5f6368"  // 10.3 / 5.8
 
     // Weather chip borders (FMI overlay). Light mode was using dark mode's
     // accent (#5b9bf3) at 2.6:1 on Positron.
@@ -203,8 +194,10 @@ QtObject {
     // commuter and orange fallbacks) sit at 2.1–2.6:1 on Positron's #fafaf8, and
     // juliadata.fi parity keeps those fills as they are — so the edge carries
     // the boundary instead: 0.55 black blends to 4.7:1 on that ground (U3-C3).
-    // The old 0.28 measured 2.0:1. Dark is unchanged; every dark fill clears 3:1.
-    readonly property color markerEdge: isDark ? Qt.rgba(1, 1, 1, 0.30) : Qt.rgba(0, 0, 0, 0.55)
+    // The old 0.28 measured 2.0:1. Every dark fill clears 3:1 by itself, but the
+    // edge is held to the same floor (0.35 white, 3.0:1 on #0e0e0e — 0.30 was
+    // 2.6:1), which scripts/check_contrast.py enforces.
+    readonly property color markerEdge: isDark ? Qt.rgba(1, 1, 1, 0.35) : Qt.rgba(0, 0, 0, 0.55)
 
     // Pick black or white ink for text/glyphs on a data-driven background colour,
     // whichever gives the most contrast (WCAG 2 relative luminance). Shared by any

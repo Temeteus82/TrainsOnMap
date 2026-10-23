@@ -318,9 +318,11 @@ MapQuickItem {
             }
         }
 
-        // Whole marker (capsule + arrow) is clickable.
+        // Whole marker (capsule + arrow) is clickable. As a bare 14 px dot it
+        // reaches 24×24, the WCAG 2.2 2.5.8 minimum (U3-O1).
         MouseArea {
             anchors.fill: parent
+            anchors.margins: marker.labelsVisible ? 0 : -5
             cursorShape: Qt.PointingHandCursor
             onClicked: marker.clicked(marker.model.trainNumber, marker.model.departureDate)
         }

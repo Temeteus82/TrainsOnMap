@@ -103,326 +103,313 @@ ApplicationWindow {
     }
 
     // ---- Map ---------------------------------------------------------------
-    // The CARTO basemap style (Positron / Dark Matter) is chosen by Theme. The
-    // plugin only reads its style parameter at construction, so a theme flip
-    // rebuilds the Plugin + Map via this Loader; the view (centre/zoom) is
-    // preserved in the loader's saved* properties across the reload.
-    Loader {
-        id: mapLoader
+    // MapLibre vector basemap: CARTO Positron / Dark Matter, chosen by Theme.
+    //
+    // Both styles are registered up front, one map type each, and a theme flip
+    // switches `activeMapType` (U3-W2). The map used to be torn down and rebuilt
+    // through a Loader instead — a habit from the old osm plugin, which read its
+    // provider only at construction — and that stalled the GUI thread for up to
+    // ~0.9 s and needed saved-view plumbing to survive. The rails layer below is
+    // re-applied on the new style by the plugin when it finishes loading.
+    Map {
+        id: map
         anchors.fill: parent
-        sourceComponent: mapComponent
-
-        // The opening view, and separately the live one. They have to be separate
-        // properties: QtLocation's Map emits zoomLevelChanged/centerChanged during
-        // its own construction, which ran *before* Component.onCompleted read the
-        // saved values back — so a single set of properties was overwritten with
-        // the map's defaults and the intended first-run view never happened (the
-        // app opened at ~zoom 11 on a bare Helsinki suburb instead of the country).
-        // `everBuilt` is what tells a cold start from the theme-driven rebuild the
-        // saved values exist for.
-        readonly property real initialCenterLat: 61.00   // southern Finland on first launch
-        readonly property real initialCenterLon: 24.50
-        readonly property real initialZoom: 7.0
-        property bool everBuilt: false
-
-        property real savedCenterLat: initialCenterLat
-        property real savedCenterLon: initialCenterLon
-        property real savedZoom: initialZoom
-
-        // Rebuild the map when the resolved light/dark state changes so it
-        // loads the matching style.
-        Connections {
-            target: Theme
-            function onIsDarkChanged() {
-                mapLoader.active = false
-                mapLoader.active = true
+        plugin: Plugin {
+            name: "maplibre"
+            PluginParameter {
+                // Local copies (resources/styles, next to the executable), so the
+                // style loads offline and the rails layer below is always added.
+                name: "maplibre.map.styles"
+                value: [{ url: "asset://styles/positron.json", name: "light" },
+                        { url: "asset://styles/dark-matter.json", name: "dark" }]
             }
         }
-    }
 
-    Component {
-        id: mapComponent
+        readonly property var themeMapType: {
+            const want = Theme.isDark ? "dark" : "light"
+            for (const t of supportedMapTypes)
+                if (t.name === want)
+                    return t
+            return undefined
+        }
+        // The Binding evaluates `value` even while `when` is false, and
+        // undefined can't convert to a map type (it logs a warning at startup
+        // before the plugin has registered the styles), so fall back to the
+        // current type until then.
+        Binding {
+            target: map
+            property: "activeMapType"
+            value: map.themeMapType ?? map.activeMapType
+            when: map.themeMapType !== undefined
+        }
 
-        Map {
-            id: map
-            // MapLibre vector basemap (CARTO Positron / Dark Matter).
-            plugin: Plugin {
-                name: "maplibre"
-                PluginParameter {
-                    // Local copies (resources/styles, next to the executable), so the
-                    // style loads offline and the rails layer below is always added.
-                    name: "maplibre.map.styles"
-                    value: Theme.isDark ? "asset://styles/dark-matter.json"
-                                        : "asset://styles/positron.json"
+        // The whole rail network as one GeoJSON source; per-item
+        // MapPolylines each become a MapLibre layer and freeze the GUI thread.
+        MapLibre.style: Style {
+            // POI category icons for the styles' poi_major layer (U3-O3); CARTO's
+            // sprite holds a single icon. Re-applied on every style load, like
+            // the rails below. Listed out: Style takes its parameters as plain
+            // children, so a Repeater (Items only) can't generate them.
+            ImageParameter { styleId: "poi-civic";     source: ":/poi/civic.svg" }
+            ImageParameter { styleId: "poi-culture";   source: ":/poi/culture.svg" }
+            ImageParameter { styleId: "poi-education"; source: ":/poi/education.svg" }
+            ImageParameter { styleId: "poi-health";    source: ":/poi/health.svg" }
+            ImageParameter { styleId: "poi-lodging";   source: ":/poi/lodging.svg" }
+            ImageParameter { styleId: "poi-shop";      source: ":/poi/shop.svg" }
+            ImageParameter { styleId: "poi-sport";     source: ":/poi/sport.svg" }
+            ImageParameter { styleId: "poi-transport"; source: ":/poi/transport.svg" }
+            ImageParameter { styleId: "poi-worship";   source: ":/poi/worship.svg" }
+
+            SourceParameter {
+                styleId: "rails"
+                type: "geojson"
+                property string data: ":/data/rails.wgs84.geojson"
+            }
+            LayerParameter {
+                styleId: "rails-line"
+                type: "line"
+                property string source: "rails"
+                layout: { "line-join": "round", "line-cap": "round" }
+                paint: {
+                    "line-color": ["case", ["get", "paaraide"],
+                                   Theme.railColor.toString(), Theme.railSidingColor.toString()],
+                    // U3-O2: grow with zoom so the rails stay heavier than the
+                    // basemap's streets, whose widths grow too (MapLibre zoom,
+                    // about one below the app's zoomLevel).
+                    "line-width": ["interpolate", ["linear"], ["zoom"],
+                                   8,  ["case", ["get", "paaraide"], 2.2, 1.3],
+                                   16, ["case", ["get", "paaraide"], 5, 2.5]],
+                    "line-opacity": ["case", ["get", "paaraide"], 1, panel.showSidings ? 1 : 0]
                 }
+                // A re-evaluated paint only emits paintUpdated; the map applies
+                // changes on StyleParameter::updated, so forward it (the layer
+                // already exists, so this just re-sets the paint properties).
+                onPaintUpdated: updateNotify()
             }
+        }
 
-            // The whole rail network as one GeoJSON source; per-item
-            // MapPolylines each become a MapLibre layer and freeze the GUI thread.
-            MapLibre.style: Style {
-                SourceParameter {
-                    styleId: "rails"
-                    type: "geojson"
-                    property string data: ":/data/rails.wgs84.geojson"
-                }
-                LayerParameter {
-                    styleId: "rails-line"
-                    type: "line"
-                    property string source: "rails"
-                    layout: { "line-join": "round", "line-cap": "round" }
-                    paint: {
-                        "line-color": ["case", ["get", "paaraide"],
-                                       Theme.railColor.toString(), Theme.railSidingColor.toString()],
-                        "line-width": ["case", ["get", "paaraide"], 2.2, 1.3],
-                        "line-opacity": ["case", ["get", "paaraide"], 1, panel.showSidings ? 1 : 0]
-                    }
-                    // A re-evaluated paint only emits paintUpdated; the map applies
-                    // changes on StyleParameter::updated, so forward it (the layer
-                    // already exists, so this just re-sets the paint properties).
-                    onPaintUpdated: updateNotify()
-                }
+        minimumZoomLevel: 4.0
+        maximumZoomLevel: 18.0
+
+        // Anchor point captured when a pinch starts, so the gesture zooms
+        // around the fingers rather than the map centre.
+        property geoCoordinate startCentroid
+        copyrightsVisible: true
+        color: Theme.windowBg     // neutral backdrop shown while tiles load
+
+        // Ground resolution (metres/px) at this latitude and the map's current
+        // zoom — standard spherical-Mercator formula for 256 px tiles. Used to
+        // turn a screen-space declutter radius into a real-world one.
+        function metersPerPixel(lat) {
+            return 156543.03392 * Math.cos(lat * Math.PI / 180) / Math.pow(2, zoomLevel)
+        }
+
+        // Opening view: southern Finland, the whole network with labelled trains
+        // (U2-W9). Set imperatively, not bound: a center/zoomLevel binding would
+        // re-assert itself against map.pan() on every drag event.
+        Component.onCompleted: {
+            center = QtPositioning.coordinate(61.00, 24.50)
+            zoomLevel = 7.0
+        }
+
+        // ---- Tier-2 debug overlay (selected train) -----------------------
+        // Re-evaluate the route binding when a precompute finishes resolving.
+        property int routeTick: 0
+        Connections {
+            target: trackService
+            function onRoutesReady() { map.routeTick++ }
+        }
+
+        // The train's resolved route polyline (derived-graph path), accent-tinted.
+        MapPolyline {
+            id: routeOverlay
+            visible: trainDetails.hasSelection && path.length > 1
+            line.width: 4
+            line.color: Theme.accent
+            // U3-W3: 0.45 blended to 2.0:1 / 2.3:1 on the ground; 0.7 is 3.1 / 3.9.
+            opacity: 0.7
+            path: {
+                void map.routeTick   // dependency: refresh when routes finish resolving
+                return trainDetails.hasSelection
+                    ? trackService.routePolyline(trainDetails.routeStations) : []
             }
+        }
 
-            // The starting view is restored from the loader's saved* values in
-            // Component.onCompleted. We deliberately do NOT bind center/zoomLevel
-            // to those values: a live binding re-asserts the view on every
-            // savedCenter* write below, which fights map.pan() on each drag event
-            // and throttled horizontal panning to a crawl. Initialise imperatively
-            // once, then only write the saved* values back (see handlers below).
-            minimumZoomLevel: 4.0
-            maximumZoomLevel: 18.0
+        // Connector from the raw GPS fix to the snapped position.
+        MapPolyline {
+            visible: trainDetails.hasSelection && win.selMatch.rawLat !== undefined
+                     && win.selMatch.snapLat !== undefined
+            line.width: 1.5
+            line.color: Theme.accent
+            opacity: 0.8
+            path: visible
+                  ? [QtPositioning.coordinate(win.selMatch.rawLat, win.selMatch.rawLon),
+                     QtPositioning.coordinate(win.selMatch.snapLat, win.selMatch.snapLon)]
+                  : []
+        }
 
-            // Persist the view so a theme-driven reload restores it.
-            onCenterChanged: {
-                mapLoader.savedCenterLat = center.latitude
-                mapLoader.savedCenterLon = center.longitude
+        // The raw (unsnapped) fix as a small hollow ring.
+        MapQuickItem {
+            visible: trainDetails.hasSelection && win.selMatch.rawLat !== undefined
+            coordinate: visible
+                        ? QtPositioning.coordinate(win.selMatch.rawLat, win.selMatch.rawLon)
+                        : QtPositioning.coordinate(0, 0)
+            anchorPoint.x: 6
+            anchorPoint.y: 6
+            sourceItem: Rectangle {
+                width: 12; height: 12; radius: 6
+                color: "transparent"
+                border.color: Theme.accent
+                border.width: 2
             }
-            // Qualified: zoomLevelChanged carries a `zoomLevel` parameter, and a
-            // bare name here resolves to that injected parameter (Qt 6.12 warns).
-            onZoomLevelChanged: mapLoader.savedZoom = map.zoomLevel
+        }
 
-            // Anchor point captured when a pinch starts, so the gesture zooms
-            // around the fingers rather than the map centre.
-            property geoCoordinate startCentroid
-            copyrightsVisible: true
-            color: Theme.windowBg     // neutral backdrop shown while tiles load
+        // Fading breadcrumb trail of the selected train's recent matched
+        // positions (win.trailPoints, appended from the same 750 ms poll that
+        // drives the route/connector overlay above).
+        MapPolyline {
+            visible: win.trailPoints.length > 1
+            line.width: 3
+            line.color: Theme.accent
+            opacity: 0.35
+            path: win.trailPoints
+        }
 
-            // Ground resolution (metres/px) at this latitude and the map's current
-            // zoom — standard spherical-Mercator formula for 256 px tiles. Used to
-            // turn a screen-space declutter radius into a real-world one.
-            function metersPerPixel(lat) {
-                return 156543.03392 * Math.cos(lat * Math.PI / 180) / Math.pow(2, zoomLevel)
-            }
-
-            Component.onCompleted: {
-                // Imperative (non-binding) restore of the saved view, so panning
-                // isn't fought by a center/zoomLevel binding.
-                const restore = mapLoader.everBuilt   // a rebuild, not a cold start
-                center = QtPositioning.coordinate(
-                    restore ? mapLoader.savedCenterLat : mapLoader.initialCenterLat,
-                    restore ? mapLoader.savedCenterLon : mapLoader.initialCenterLon)
-                zoomLevel = restore ? mapLoader.savedZoom : mapLoader.initialZoom
-                mapLoader.everBuilt = true
-            }
-
-            // ---- Tier-2 debug overlay (selected train) -----------------------
-            // Re-evaluate the route binding when a precompute finishes resolving.
-            property int routeTick: 0
-            Connections {
-                target: trackService
-                function onRoutesReady() { map.routeTick++ }
-            }
-
-            // The train's resolved route polyline (derived-graph path), accent-tinted.
-            MapPolyline {
-                id: routeOverlay
-                visible: trainDetails.hasSelection && path.length > 1
-                line.width: 4
-                line.color: Theme.accent
-                opacity: 0.45
-                path: {
-                    void map.routeTick   // dependency: refresh when routes finish resolving
-                    return trainDetails.hasSelection
-                        ? trackService.routePolyline(trainDetails.routeStations) : []
-                }
-            }
-
-            // Connector from the raw GPS fix to the snapped position.
-            MapPolyline {
-                visible: trainDetails.hasSelection && win.selMatch.rawLat !== undefined
-                         && win.selMatch.snapLat !== undefined
-                line.width: 1.5
-                line.color: Theme.accent
-                opacity: 0.8
-                path: visible
-                      ? [QtPositioning.coordinate(win.selMatch.rawLat, win.selMatch.rawLon),
-                         QtPositioning.coordinate(win.selMatch.snapLat, win.selMatch.snapLon)]
-                      : []
-            }
-
-            // The raw (unsnapped) fix as a small hollow ring.
-            MapQuickItem {
-                visible: trainDetails.hasSelection && win.selMatch.rawLat !== undefined
-                coordinate: visible
-                            ? QtPositioning.coordinate(win.selMatch.rawLat, win.selMatch.rawLon)
-                            : QtPositioning.coordinate(0, 0)
-                anchorPoint.x: 6
-                anchorPoint.y: 6
+        // Optional weather overlay (FMI): air-temperature chips, shown only
+        // when the layer is enabled (model is empty otherwise) and zoomed in.
+        MapItemView {
+            model: fmiWeather.model
+            delegate: MapQuickItem {
+                required property var model
+                visible: map.zoomLevel >= 8.0
+                coordinate: model.coordinate
+                anchorPoint.x: chip.width / 2
+                anchorPoint.y: chip.height / 2
                 sourceItem: Rectangle {
-                    width: 12; height: 12; radius: 6
-                    color: "transparent"
+                    id: chip
+                    radius: 3
+                    color: Theme.cardBg
+                    border.width: 1
+                    border.color: model.tempC < 0 ? Theme.weatherCold : Theme.weatherWarm
+                    implicitWidth: chipText.implicitWidth + 8
+                    implicitHeight: chipText.implicitHeight + 3
+                    Text {
+                        id: chipText
+                        anchors.centerIn: parent
+                        text: model.tempText
+                        font.pointSize: TypeScale.caption
+                        color: Theme.textStrong
+                    }
+                }
+            }
+        }
+
+        // Clickable passenger-station layer (under the trains). Dots appear
+        // once zoomed in enough to pick one out; clicking opens its board.
+        MapItemView {
+            model: trainClient.stations
+            delegate: MapQuickItem {
+                required property var model
+                visible: map.zoomLevel >= 9.0
+                coordinate: model.coordinate
+                anchorPoint.x: 5
+                anchorPoint.y: 5
+                sourceItem: Rectangle {
+                    width: 10; height: 10; radius: 5
+                    color: Theme.cardBg
                     border.color: Theme.accent
                     border.width: 2
-                }
-            }
-
-            // Fading breadcrumb trail of the selected train's recent matched
-            // positions (win.trailPoints, appended from the same 750 ms poll that
-            // drives the route/connector overlay above).
-            MapPolyline {
-                visible: win.trailPoints.length > 1
-                line.width: 3
-                line.color: Theme.accent
-                opacity: 0.35
-                path: win.trailPoints
-            }
-
-            // Optional weather overlay (FMI): air-temperature chips, shown only
-            // when the layer is enabled (model is empty otherwise) and zoomed in.
-            MapItemView {
-                model: fmiWeather.model
-                delegate: MapQuickItem {
-                    required property var model
-                    visible: map.zoomLevel >= 8.0
-                    coordinate: model.coordinate
-                    anchorPoint.x: chip.width / 2
-                    anchorPoint.y: chip.height / 2
-                    sourceItem: Rectangle {
-                        id: chip
-                        radius: 3
-                        color: Theme.cardBg
-                        border.width: 1
-                        border.color: model.tempC < 0 ? Theme.weatherCold : Theme.weatherWarm
-                        implicitWidth: chipText.implicitWidth + 8
-                        implicitHeight: chipText.implicitHeight + 3
-                        Text {
-                            id: chipText
-                            anchors.centerIn: parent
-                            text: model.tempText
-                            font.pointSize: TypeScale.caption
-                            color: Theme.textStrong
+                    MouseArea {
+                        anchors.fill: parent
+                        // U2-W7: 10 px dot + 7 px per side = 24×24, the
+                        // minimum WCAG 2.2 2.5.8 (AA) asks of a target.
+                        anchors.margins: -7
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            stationBoard.show(model.code, model.name)
+                            trainDetails.clear()   // right panel shows one thing
                         }
                     }
                 }
             }
+        }
 
-            // Clickable passenger-station layer (under the trains). Dots appear
-            // once zoomed in enough to pick one out; clicking opens its board.
-            MapItemView {
-                model: trainClient.stations
-                delegate: MapQuickItem {
-                    required property var model
-                    visible: map.zoomLevel >= 9.0
-                    coordinate: model.coordinate
-                    anchorPoint.x: 5
-                    anchorPoint.y: 5
-                    sourceItem: Rectangle {
-                        width: 10; height: 10; radius: 5
-                        color: Theme.cardBg
-                        border.color: Theme.accent
-                        border.width: 2
-                        MouseArea {
-                            anchors.fill: parent
-                            // U2-W7: 10 px dot + 7 px per side = 24×24, the
-                            // minimum WCAG 2.2 2.5.8 (AA) asks of a target.
-                            anchors.margins: -7
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: {
-                                stationBoard.show(model.code, model.name)
-                                trainDetails.clear()   // right panel shows one thing
-                            }
-                        }
-                    }
+        // Live train layer.
+        MapItemView {
+            model: trainClient.model
+            delegate: TrainMarker {
+                visible: panel.categoryVisible(model.category)
+                selected: trainDetails.hasSelection && trainDetails.trainNumber === model.trainNumber
+                // Dots only at country scale; reveal the text badges once
+                // zoomed in enough that they no longer collide into a blur.
+                // Density check on top: a terminus (e.g. Helsinki) can have
+                // several trains within a couple hundred metres of each other
+                // even at a zoom where labels are otherwise legible, so also
+                // drop to a dot if the nearest other train is closer than
+                // ~30 px on screen (nearestNeighborMeters is precomputed once
+                // per poll in TrainListModel; ponytail: 30 px is a tuned
+                // heuristic, not derived from the badge's actual size).
+                labelsVisible: map.zoomLevel >= 8.0
+                               && (model.nearestNeighborMeters < 0
+                                   || model.nearestNeighborMeters
+                                      > 30 * map.metersPerPixel(model.coordinate.latitude))
+                onClicked: (trainNumber, departureDate) => {
+                    trainDetails.show(trainNumber, departureDate)
+                    stationBoard.clear()   // right panel shows one thing
                 }
             }
+        }
 
-            // Live train layer.
-            MapItemView {
-                model: trainClient.model
-                delegate: TrainMarker {
-                    visible: panel.categoryVisible(model.category)
-                    selected: trainDetails.hasSelection && trainDetails.trainNumber === model.trainNumber
-                    // Dots only at country scale; reveal the text badges once
-                    // zoomed in enough that they no longer collide into a blur.
-                    // Density check on top: a terminus (e.g. Helsinki) can have
-                    // several trains within a couple hundred metres of each other
-                    // even at a zoom where labels are otherwise legible, so also
-                    // drop to a dot if the nearest other train is closer than
-                    // ~30 px on screen (nearestNeighborMeters is precomputed once
-                    // per poll in TrainListModel; ponytail: 30 px is a tuned
-                    // heuristic, not derived from the badge's actual size).
-                    labelsVisible: map.zoomLevel >= 8.0
-                                   && (model.nearestNeighborMeters < 0
-                                       || model.nearestNeighborMeters
-                                          > 30 * map.metersPerPixel(model.coordinate.latitude))
-                    onClicked: (trainNumber, departureDate) => {
-                        trainDetails.show(trainNumber, departureDate)
-                        stationBoard.clear()   // right panel shows one thing
-                    }
-                }
+        // ---- Pan / zoom input (Qt 6 needs explicit handlers) --------------
+        // Drag to pan, wheel/trackpad to zoom, pinch to zoom; the map stays
+        // north-up (no rotation handler). Keyboard +/- zoom in steps too, and
+        // arrow keys pan (W4 — markers themselves stay mouse-only, but the map
+        // view is now fully keyboard-reachable).
+        focus: true
+        Keys.onPressed: (event) => {
+            const step = 80   // px per key-repeat, matches a comfortable drag
+            switch (event.key) {
+            case Qt.Key_Left:  map.pan(-step, 0); event.accepted = true; break
+            case Qt.Key_Right: map.pan(step, 0);  event.accepted = true; break
+            case Qt.Key_Up:    map.pan(0, -step); event.accepted = true; break
+            case Qt.Key_Down:  map.pan(0, step);  event.accepted = true; break
             }
-
-            // ---- Pan / zoom input (Qt 6 needs explicit handlers) --------------
-            // Drag to pan, wheel/trackpad to zoom, pinch to zoom; the map stays
-            // north-up (no rotation handler). Keyboard +/- zoom in steps too, and
-            // arrow keys pan (W4 — markers themselves stay mouse-only, but the map
-            // view is now fully keyboard-reachable).
-            focus: true
-            Keys.onPressed: (event) => {
-                const step = 80   // px per key-repeat, matches a comfortable drag
-                switch (event.key) {
-                case Qt.Key_Left:  map.pan(-step, 0); event.accepted = true; break
-                case Qt.Key_Right: map.pan(step, 0);  event.accepted = true; break
-                case Qt.Key_Up:    map.pan(0, -step); event.accepted = true; break
-                case Qt.Key_Down:  map.pan(0, step);  event.accepted = true; break
-                }
+        }
+        PinchHandler {
+            id: pinch
+            target: null
+            onActiveChanged: if (active)
+                map.startCentroid = map.toCoordinate(pinch.centroid.position, false)
+            onScaleChanged: (delta) => {
+                map.zoomLevel += Math.log2(delta)
+                map.alignCoordinateToPoint(map.startCentroid, pinch.centroid.position)
             }
-            PinchHandler {
-                id: pinch
-                target: null
-                onActiveChanged: if (active)
-                    map.startCentroid = map.toCoordinate(pinch.centroid.position, false)
-                onScaleChanged: (delta) => {
-                    map.zoomLevel += Math.log2(delta)
-                    map.alignCoordinateToPoint(map.startCentroid, pinch.centroid.position)
-                }
-                grabPermissions: PointerHandler.TakeOverForbidden
-            }
-            WheelHandler {
-                id: wheel
-                // Magic Mouse / Wayland trackpads report as touchpads (QTBUG-87646).
-                acceptedDevices: Qt.platform.pluginName === "cocoa"
-                                 || Qt.platform.pluginName === "wayland"
-                                 ? PointerDevice.Mouse | PointerDevice.TouchPad
-                                 : PointerDevice.Mouse
-                rotationScale: 1 / 120
-                property: "zoomLevel"
-            }
-            DragHandler {
-                id: drag
-                target: null
-                onTranslationChanged: (delta) => map.pan(-delta.x, -delta.y)
-            }
-            Shortcut {
-                enabled: map.zoomLevel < map.maximumZoomLevel
-                sequences: [StandardKey.ZoomIn]
-                onActivated: map.zoomLevel = Math.round(map.zoomLevel + 1)
-            }
-            Shortcut {
-                enabled: map.zoomLevel > map.minimumZoomLevel
-                sequences: [StandardKey.ZoomOut]
-                onActivated: map.zoomLevel = Math.round(map.zoomLevel - 1)
-            }
+            grabPermissions: PointerHandler.TakeOverForbidden
+        }
+        WheelHandler {
+            id: wheel
+            // Magic Mouse / Wayland trackpads report as touchpads (QTBUG-87646).
+            acceptedDevices: Qt.platform.pluginName === "cocoa"
+                             || Qt.platform.pluginName === "wayland"
+                             ? PointerDevice.Mouse | PointerDevice.TouchPad
+                             : PointerDevice.Mouse
+            rotationScale: 1 / 120
+            property: "zoomLevel"
+        }
+        DragHandler {
+            id: drag
+            target: null
+            onTranslationChanged: (delta) => map.pan(-delta.x, -delta.y)
+        }
+        Shortcut {
+            enabled: map.zoomLevel < map.maximumZoomLevel
+            sequences: [StandardKey.ZoomIn]
+            onActivated: map.zoomLevel = Math.round(map.zoomLevel + 1)
+        }
+        Shortcut {
+            enabled: map.zoomLevel > map.minimumZoomLevel
+            sequences: [StandardKey.ZoomOut]
+            onActivated: map.zoomLevel = Math.round(map.zoomLevel - 1)
         }
     }
 
@@ -521,7 +508,7 @@ ApplicationWindow {
         streamStatus: trainStream.status
         punctuality: trainClient.punctuality
         statusText: trackService.status.length > 0 ? trackService.status : trainClient.status
-        mapZoom: mapLoader.savedZoom   // tracks the live zoom via onZoomLevelChanged
+        mapZoom: map.zoomLevel
 
         onRefreshRequested: trainClient.refresh()
     }
@@ -560,8 +547,8 @@ ApplicationWindow {
             // Selecting a train you can't see is disorienting, so bring it into
             // view — the list is usable at any zoom, including the ones where
             // markers are unlabelled dots.
-            if (mapLoader.item && coordinate && coordinate.isValid)
-                mapLoader.item.center = coordinate
+            if (coordinate && coordinate.isValid)
+                map.center = coordinate
         }
     }
 
