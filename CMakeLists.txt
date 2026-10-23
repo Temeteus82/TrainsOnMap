@@ -92,6 +92,16 @@ qt_add_resources(TrainsOnMap "raildata"
     BASE "${CMAKE_CURRENT_SOURCE_DIR}/resources"
     FILES resources/rails.geojson.qz resources/rails.wgs84.geojson)
 
+# POI category icons for the basemap's poi_major layer (UI audit U3-O3). CARTO's
+# sprite holds a single icon, so these are registered with the map from QML
+# (Main.qml, ImageParameter) and read back as ":/poi/<category>.svg".
+qt_add_resources(TrainsOnMap "poiicons"
+    PREFIX "/poi"
+    BASE "${CMAKE_CURRENT_SOURCE_DIR}/resources/poi"
+    FILES resources/poi/civic.svg resources/poi/culture.svg resources/poi/education.svg
+          resources/poi/health.svg resources/poi/lodging.svg resources/poi/shop.svg
+          resources/poi/sport.svg resources/poi/transport.svg resources/poi/worship.svg)
+
 # Application icon, embedded for the runtime window/taskbar icon (set via
 # QGuiApplication::setWindowIcon in main.cpp -> ":/appicon.png"). Regenerate the
 # raster assets from the SVG master with scripts/make_icons.sh.
@@ -324,6 +334,15 @@ target_link_libraries(tst_railgraph PRIVATE Qt6::Core Qt6::Positioning Qt6::Test
 target_compile_definitions(tst_railgraph PRIVATE
     RAILS_BLOB="${CMAKE_CURRENT_SOURCE_DIR}/resources/rails.geojson.qz")
 add_test(NAME railgraph COMMAND tst_railgraph)
+
+# Contrast floors (UI audit U3-W4): the map-drawn and on-card Theme tokens, and
+# every basemap label, against the grounds in the vendored styles. Stdlib-only
+# Python; skipped where no interpreter is found.
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_Interpreter_FOUND)
+    add_test(NAME contrast
+             COMMAND Python3::Interpreter -I ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_contrast.py)
+endif()
 
 # TimetableModel is a QRangeModel subclass (Qt 6.10+); this pins the role table
 # auto-derived from TimetableStop's Q_PROPERTYs to the names the QML detail panel

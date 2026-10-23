@@ -8,6 +8,66 @@ Legend: ✨ feature · 🐛 bug fix · ♻️ change/refactor · ✅ verificatio
 
 ---
 
+## UI audit round 3 — the four Criticals
+
+Audit in `docs/ui-audit-round3.md`. It re-measures the UI against the CARTO
+vector ground, which replaced the Esri ground that `Theme`'s map ratios were
+tuned on.
+
+### 🐛 Fixes
+- [x] **U3-C4:** a persistent "© CARTO © OpenStreetMap contributors" chip at the
+      map's bottom-right. The MapLibre plugin draws no attribution, and the
+      sidebar's credit line is folded away by default. The chip steps left of an
+      open right-hand panel.
+- [x] **U3-C2:** the train list's "+N" delay label uses text-grade colours,
+      following the row's `ringState`. Red is `delayLate`, amber is the new
+      `ringLateText` (5.1:1 on the light card, where the ring token was 4.1:1),
+      and anything else is muted. Amber and red now mean what they mean on the
+      map.
+- [x] **U3-C1:** stale trains are a hollow capsule (card fill, 2 px grey ring)
+      instead of a grey fill at 0.55 opacity. The faded version blended down to
+      1.8:1 (light) / 3.0:1 (dark) and showed "stale" by colour alone. Suspect
+      positions keep their ring and lose their 0.72 dimming.
+- [x] **U3-C3:** new `Theme.markerEdge` (light: 0.55 black, 4.7:1 on Positron)
+      outlines every capsule and arrow. `W` and the commuter/orange fallback fills
+      sat at 2.1–2.6:1 on the near-white ground; the juliadata.fi hues themselves
+      are unchanged. This removes the last two colour literals outside `Theme`.
+
+### ✅ Verification
+- [x] MSVC build, run in both themes. Hollow stale rings, darker dot edges and
+      the credit chip all checked on screen.
+
+### ♻️ Warnings and Opportunities
+- [x] **U3-W1:** the basemap's own rail layers (`rail`, `rail_dash`,
+      `tunnel_rail`, `tunnel_rail_dash`) are removed from both styles. They drew
+      a second, offset track beside the app's network from z13.
+- [x] **U3-W2:** switching theme switches `activeMapType` between the two
+      registered styles instead of rebuilding the `Map`. The `Loader`, the
+      saved-view properties and `everBuilt` are gone, and with them the ~0.9 s
+      stall the rebuild cost.
+- [x] **U3-W3:** the selected-route overlay goes from 0.45 to 0.7 opacity
+      (2.0 → 3.1:1 light).
+- [x] **U3-W4:** `Theme.qml`'s map ratios are rewritten against the CARTO
+      grounds. New `scripts/check_contrast.py` (ctest `contrast`) enforces the
+      floors from the files themselves. On its first run it raised the dark
+      `markerEdge` from 0.30 to 0.35 white.
+- [x] **U3-W5:** every basemap label in both styles is lifted to ≥ 4.5:1
+      against its own ground: 32 colours in Positron and 10 in Dark Matter.
+- [x] **U3-W6:** closed as not a defect. The map renders at the window's
+      `devicePixelRatio`, the same scale `pointSize` text follows.
+- [x] **U3-O1:** a train drawn as a dot has a 24 px click target.
+- [x] **U3-O2:** rail widths grow with zoom (2.2 → 5 px running, 1.3 → 2.5 px
+      siding).
+- [x] **U3-O3:** POI category icons: nine SVGs in `resources/poi/`, registered
+      through `ImageParameter`.
+
+### ✅ Verification (Warnings/Opportunities)
+- [x] ctest: 11/11 pass, including the new `contrast`.
+- [x] Running app: Dark → Light → Dark keeps the view and the rails layer;
+      single-line rails close in; POI icons drawn; no QML warnings on stderr.
+
+---
+
 ## Bake the rails as WGS84 GeoJSON (vector-basemap prerequisite)
 
 ### ✨ Second bake output
