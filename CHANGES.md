@@ -8,6 +8,26 @@ Legend: ✨ feature · 🐛 bug fix · ♻️ change/refactor · ✅ verificatio
 
 ---
 
+## macOS: basemap styles move out of Contents/MacOS so the bundle signs
+
+### 🐛 Fixes
+- [x] The `.app` failed macdeployqt's codesign pass ("code object is not signed
+      at all — In subcomponent: …/Contents/MacOS/styles/positron.json"), and
+      `codesign --verify --strict` rejected the bundle. codesign treats
+      everything in `Contents/MacOS` as code. The styles now go to
+      `Contents/Resources/styles`, and `Contents/MacOS/styles` is a relative
+      symlink to them, so `asset://styles/…` resolves unchanged and the QML is
+      untouched. Linux and Windows still copy them next to the executable.
+
+### ✅ Verification
+- [x] Release build (`macos-clang-qt612`, Qt 6.12.0, QMapLibre 4.0.0 `c3485f3`,
+      Metal) with `--clean-first` over a tree that still had the old real
+      `styles` directory: zero compiler warnings, no signing errors,
+      `codesign --verify --deep --strict` passes, all 11 ctest suites pass, and
+      the app launches with nothing on stderr.
+
+---
+
 ## UI audit round 3 — the four Criticals
 
 Audit in `docs/ui-audit-round3.md`. It re-measures the UI against the CARTO
