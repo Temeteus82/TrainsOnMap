@@ -135,7 +135,7 @@ if(MLN_WITH_VULKAN)
 endif()
 ```
 
-This is the confirmed workaround below, built into the project. It is one change
+This is the workaround confirmed above, built into the project. It is one change
 in one place, and the SDK path then drops off every command line, so no target's
 include order matters any more. `FORCE` is deliberate: any other value brings the
 crash back. Adding the vendored path `BEFORE PRIVATE` on `MLNQtCore` alone would
