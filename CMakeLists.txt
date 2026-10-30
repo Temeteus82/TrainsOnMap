@@ -189,13 +189,28 @@ endif()
 # never waits on the network; only the basemap tiles, glyphs and sprites do.
 # MapLibre resolves asset:// against the executable's directory (Contents/MacOS
 # inside the .app). Copied before the deploy steps below so they get signed.
-add_custom_command(TARGET TrainsOnMap POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-            "${CMAKE_CURRENT_SOURCE_DIR}/resources/styles"
-            "$<TARGET_FILE_DIR:TrainsOnMap>/styles"
-    COMMENT "Copying basemap styles next to the executable"
-    VERBATIM)
-if(NOT APPLE)
+if(APPLE)
+    # codesign treats everything in Contents/MacOS as code and refuses plain data
+    # files there ("code object is not signed at all ... styles/positron.json"),
+    # so the styles live in Contents/Resources and Contents/MacOS/styles is a
+    # relative symlink to them, which keeps asset://styles/... resolving. The
+    # rm clears a real directory left by builds from before this layout.
+    add_custom_command(TARGET TrainsOnMap POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${CMAKE_CURRENT_SOURCE_DIR}/resources/styles"
+                "$<TARGET_BUNDLE_CONTENT_DIR:TrainsOnMap>/Resources/styles"
+        COMMAND ${CMAKE_COMMAND} -E rm -rf "$<TARGET_FILE_DIR:TrainsOnMap>/styles"
+        COMMAND ${CMAKE_COMMAND} -E create_symlink
+                ../Resources/styles "$<TARGET_FILE_DIR:TrainsOnMap>/styles"
+        COMMENT "Copying basemap styles into the bundle's Resources"
+        VERBATIM)
+else()
+    add_custom_command(TARGET TrainsOnMap POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${CMAKE_CURRENT_SOURCE_DIR}/resources/styles"
+                "$<TARGET_FILE_DIR:TrainsOnMap>/styles"
+        COMMENT "Copying basemap styles next to the executable"
+        VERBATIM)
     install(DIRECTORY resources/styles DESTINATION bin)
 endif()
 
