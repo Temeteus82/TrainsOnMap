@@ -187,9 +187,22 @@ no `CMAKE_PREFIX_PATH` export. Edit the pinned path in
 [`CMakePresets.json`](CMakePresets.json) if your kit lives somewhere else.
 
 ```bash
-cmake --preset macos-clang-qt612
+cmake --preset macos-clang-qt612 -DQMapLibre_DIR=$HOME/Qt/QMapLibre-6.12.0/lib/cmake/QMapLibre
 cmake --build --preset macos-clang-qt612
 open ./build/macos-clang-qt612/bin/TrainsOnMap.app
+```
+
+maplibre-native-qt is built for Metal with its own `macOS` preset, on Apple
+Silicon arm64-only, and verified rendering at upstream `c3485f3`
+([details](docs/vector-basemap-exploration.md#macos--verified-2026-10-30)):
+
+```bash
+git clone --recurse-submodules --shallow-submodules --depth 1 \
+    https://github.com/maplibre/maplibre-native-qt.git && cd maplibre-native-qt
+QT_ROOT_DIR=$HOME/Qt/6.12.0/macos cmake --preset macOS -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_OSX_ARCHITECTURES=arm64 -DBUILD_TESTING=OFF \
+    -DCMAKE_INSTALL_PREFIX=$HOME/Qt/QMapLibre-6.12.0
+cmake --build ../build/qt6-macOS --parallel && cmake --install ../build/qt6-macOS
 ```
 
 The plain **`macos-clang`** preset works with any Qt kit (official or a Homebrew
