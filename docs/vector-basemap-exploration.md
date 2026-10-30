@@ -21,6 +21,12 @@
 > (exit hang, teardown crash) did not reproduce. See
 > [Linux and Windows](#linux-and-windows-2026-09-13).
 >
+> **Update 2026-10-30 — macOS renders too.** A newer upstream `main`
+> (`c3485f3`), built for Metal against the official Qt 6.12.0 kit, draws the
+> basemap in the real app, and zoom works. See
+> [macOS — verified](#macos--verified-2026-10-30). The blockers below describe
+> the September spike and are kept for the record.
+>
 > Nothing in `qml/`, `src/` or `CMakeLists.txt` was touched. The whole spike ran
 > in a scratch directory and is reproducible from
 > [Appendix: reproduction](#appendix-reproduction).
@@ -478,13 +484,27 @@ against each other, not against today's `osm` build.
   `QMapLibre*.dll`s or the two plugin directories, so the release zip would need
   them copied in explicitly.
 
+### macOS — verified (2026-10-30)
+
+Verified on: Apple Silicon, official Qt 6.12.0 kit (`~/Qt/6.12.0/macos`),
+`maplibre-native-qt` `main` at `c3485f3` (2026-09-20, still `VERSION.txt` 4.0.0,
+unreleased), with the app on `main` after #97.
+
+MapLibre was built with their `macOS` preset plus `-DCMAKE_BUILD_TYPE=Release
+-DCMAKE_OSX_ARCHITECTURES=arm64 -DBUILD_TESTING=OFF`, leaving the preset's
+`MLN_WITH_METAL=ON`, and installed to `~/Qt/QMapLibre-6.12.0`. The app's Release
+build (`macos-clang-qt612` with `-DQMapLibre_DIR=…/lib/cmake/QMapLibre`) passes
+all 11 ctest suites and signs cleanly. Run by hand, the basemap draws and zoom
+works, with no issues seen. This is the silent blank from the spike, now gone.
+We did not dig into which upstream change fixed it.
+
 ### Verdict by platform
 
 | | Renders? | What stands between it and shipping |
 |---|---|---|
 | **Linux** | ✅ verified in-app | Rails as one GeoJSON layer (WGS84 bake); MapLibre built from unreleased source |
 | **Windows** | ✅ verified in-app (MSVC, OpenGL) | Same as Linux, plus forcing the UI onto OpenGL, an MSVC release build, deploying the MapLibre DLLs; #285/#302 not reproduced |
-| **macOS** | ❌ | Unchanged — see [What blocks it](#what-blocks-it) |
+| **macOS** | ✅ verified in-app (Metal), 2026-10-30 | See [macOS — verified](#macos--verified-2026-10-30) |
 
 ## Where this leaves us
 
