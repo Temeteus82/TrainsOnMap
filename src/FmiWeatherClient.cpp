@@ -77,8 +77,13 @@ void FmiWeatherClient::fetchData()
 void FmiWeatherClient::handleData(QNetworkReply *reply)
 {
     reply->deleteLater();
-    if (!m_active || reply->error() != QNetworkReply::NoError)
+    if (!m_active)
         return;
+    if (reply->error() != QNetworkReply::NoError) {
+        // The overlay keeps its last readings; the poll timer retries (CPP2-I3).
+        qWarning("FmiWeatherClient: request failed: %ls", qUtf16Printable(reply->errorString()));
+        return;
+    }
 
     // Flat repeating records; the window holds several timestamps per station,
     // so key on the coordinate and keep the most recent valid reading.

@@ -347,6 +347,29 @@ private slots:
                  qPrintable(QStringLiteral("offset=%1").arg(p.offsetMeters)));
     }
 
+    // R3-L1: the carried chainage can be a dead-reckoned over-estimate, with the
+    // train really *behind* it. No hit ahead is then near the fix, and the
+    // projection must fall back to the whole route instead of returning a far
+    // forward hit the caller can only reject.
+    void overshotChainageReacquiresBehind()
+    {
+        RailGraph g;
+        QVERIFY(g.loadFromJson(reacquireBlob()));
+        const RailGraph::RoutePolyline rp = g.buildPolyline(
+            g.routePath({QStringLiteral("WST"), QStringLiteral("TRN"), QStringLiteral("WND")}));
+        QVERIFY(rp.isValid());
+
+        // Carried chainage 1400 (inbound limb C), but the train is 50 m off the
+        // outbound limb A at chainage ~300: 350 m from anything ahead of 1250.
+        const QGeoCoordinate fix = tm35fin::toWgs84(500300, 6699950);
+        const RailGraph::RouteProjection p = g.projectOntoRoute(rp, fix, 1400.0, 0.0);
+        QVERIFY(p.isValid());
+        QVERIFY2(p.chainage < 700.0,
+                 qPrintable(QStringLiteral("chainage=%1 (stuck ahead of the train)").arg(p.chainage)));
+        QVERIFY2(p.offsetMeters < 100.0,
+                 qPrintable(QStringLiteral("offset=%1").arg(p.offsetMeters)));
+    }
+
     void projectsFixOntoRoute()
     {
         RailGraph g;

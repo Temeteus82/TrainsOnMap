@@ -65,9 +65,9 @@ public:
 
     /// Ordered track indices forming a connected path through `stationCodes`
     /// (consecutive station pairs joined by Dijkstra over the derived graph).
-    /// Empty when fewer than two stations resolve, or when any consecutive pair
-    /// is unroutable — an internal gap aborts the whole route rather than
-    /// stitching a chord across it (the caller then falls back to Tier-1).
+    /// Empty when fewer than two stations resolve. An unroutable consecutive
+    /// pair ends the path there: the routable prefix is kept rather than
+    /// stitching a chord across the gap (R6).
     QVector<int> routePath(const QStringList &stationCodes) const;
 
     /// Build a chainage-parameterised polyline from an ordered track-index path.

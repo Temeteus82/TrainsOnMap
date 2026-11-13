@@ -11,7 +11,7 @@ QtObject {
     id: theme
 
     // "auto" | "light" | "dark". Set from the sidebar toggle; "auto" tracks the
-    // desktop via QStyleHints::colorScheme (Qt 6.8+).
+    // desktop via QStyleHints::colorScheme (Qt 6.8+). Persisted below.
     property string mode: "auto"
 
     // W3 (UI audit): reduced-motion opt-out. Qt has no `prefers-reduced-motion`
@@ -22,6 +22,7 @@ QtObject {
     property Settings _settings: Settings {
         category: "Appearance"
         property alias reducedMotion: theme.reducedMotion
+        property alias mode: theme.mode
     }
 
     readonly property bool systemDark: Application.styleHints.colorScheme === Qt.ColorScheme.Dark

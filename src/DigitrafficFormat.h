@@ -25,8 +25,12 @@ namespace digitraffic {
 /// All four callers had grown their own copy of this literal, which is how you
 /// end up identifying as several different apps; keep the one string here.
 ///
-/// Keep the version in step with `project(... VERSION)` in CMakeLists.txt.
-constexpr auto kUserAgent = "TrainsOnMap/0.1 (+https://github.com/Temeteus82/TrainsOnMap)";
+/// The version is `PROJECT_VERSION`, handed in by CMakeLists.txt (R3-L6).
+#ifndef TRAINSONMAP_VERSION
+#define TRAINSONMAP_VERSION "dev"
+#endif
+constexpr auto kUserAgent =
+    "TrainsOnMap/" TRAINSONMAP_VERSION " (+https://github.com/Temeteus82/TrainsOnMap)";
 
 /// Abort a stalled request rather than leaving a panel stuck on "Loading…".
 /// One value for all three Digitraffic clients: it had grown into a named
@@ -96,6 +100,16 @@ inline QString localTime(const QString &iso)
     if (!dt.isValid())
         return {};
     return QLocale::system().toString(dt.toLocalTime().time(), QLocale::ShortFormat);
+}
+
+/// Best known time of a timeTableRow, as the raw ISO string: the actual time
+/// once the train has been there, otherwise the live estimate; empty when the
+/// row has neither. The timetable panel and the station board each had this
+/// inline, in opposite order (CPP2-I8).
+inline QString bestKnownTime(const QJsonObject &row)
+{
+    const QString actual = row.value(QLatin1String("actualTime")).toString();
+    return actual.isEmpty() ? row.value(QLatin1String("liveEstimateTime")).toString() : actual;
 }
 
 /// Parse a remote JSON body whose root must be an array, naming `context` in a

@@ -152,7 +152,7 @@ Rectangle {
                 readonly property bool current: row.ListView.isCurrentItem
                 readonly property string label:
                     row.model.commuterLine && row.model.commuterLine.length > 0
-                        ? row.model.commuterLine
+                        ? row.model.commuterLine + " " + row.model.trainNumber
                         : (row.model.trainType && row.model.trainType.length > 0
                            ? row.model.trainType + " " + row.model.trainNumber
                            : "" + row.model.trainNumber)

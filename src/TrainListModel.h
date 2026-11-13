@@ -30,6 +30,11 @@ struct TrainStatus {
     }
 };
 
+/// A train is "late" from this many minutes behind schedule: the amber ring
+/// starts here, and the punctuality line counts anything below it as on time.
+/// One constant so the two can't disagree about a train exactly on it (CPP2-I4).
+inline constexpr int kLateMinutes = 5;
+
 /// A single decoded train position from the Digitraffic train-locations feed.
 struct TrainPosition {
     int trainNumber = 0;
@@ -45,6 +50,9 @@ struct TrainPosition {
 /// the booked commercialTrack per stopping station (used for platform snapping).
 struct TrainRoute {
     QStringList codes;
+    /// RailGraph::routeKey(codes), built once with the route so the matcher
+    /// doesn't re-join the codes on every fix (CPP2-I7). May be empty.
+    QString key;
     QHash<QString, QString> commercialTrack;
 };
 
@@ -237,9 +245,11 @@ private:
     /// (the case this matters for, e.g. a terminus) enough to need it live.
     void recomputeNearestNeighbors();
 
-    /// Bearing from `prev` (the row's last coordinate) to `coordinate`; 0 when
-    /// either is invalid or the train barely moved.
-    static double bearingFor(const QGeoCoordinate &prev, const QGeoCoordinate &coordinate);
+    /// Bearing from `prev` (the row's last coordinate) to `coordinate`, or
+    /// `fallback` (the row's current bearing) when either is invalid or the
+    /// train moved under a metre.
+    static double bearingFor(const QGeoCoordinate &prev, const QGeoCoordinate &coordinate,
+                             double fallback);
 
     /// Short code of the nearest scheduled station to `fix` within the snap radius
     /// (for platform snapping and the off-network station pin), or "" when the

@@ -12,10 +12,14 @@ IDs use an `R3-` prefix so they don't collide with the `CPP-*`, `CPP2-*` and `U*
 
 | Finding | Status |
 |---|---|
-| R3-1 to R3-7 | Open. |
-| CPP2-I1, I5, I6, I10 + `MqttCodec` test | Open (carried over; still the planned next group). |
-| CPP2-I2, I3, I4, I7, I8 | Open (carried over). |
-| R3-L1 to R3-L9 | Open, low priority. |
+| R3-1 | Fixed: equal timestamps are dropped and a sub-metre move keeps the previous bearing. |
+| R3-2 to R3-7 | Fixed. R3-6 refreshes every 45 s. None of the QML ones was exercised by hand in the running app. |
+| CPP2-I1, I5, I6, I10 + `MqttCodec` test | Fixed. `tst_mqttcodec` covers the codec; the client's watchdog, backoff and SUBACK handling have no test and were not tried against the live broker. |
+| CPP2-I2, I3, I7, I8 | Fixed. I3 is a `qWarning` on each path; `FmiWeatherClient` still has no error flag. |
+| CPP2-I4 | Fixed by moving the punctuality line to the ring's boundary: under 5 min is on time, and the label now reads "<5m". |
+| R3-L1 to R3-L7 | Fixed. R3-L1 has a `tst_railgraph` case. |
+| R3-L8 | Open. The app needs a source-built QMapLibre to configure, so CI needs either that or a tests-only configure option first. The preset text that claimed CI exists is corrected. |
+| R3-L9 | Fixed for the tests: they share one static library. The app still compiles its own copy, because `qt_add_qml_module` registers the `QML_ELEMENT` types from the target that compiles them. |
 
 ---
 

@@ -229,7 +229,8 @@ TrackMatch TrackService::matchOnRoute(const QGeoCoordinate &fix, const RouteMatc
         }
     }
 
-    const auto it = m_routePolys.constFind(RailGraph::routeKey(req.stationCodes));
+    const auto it = m_routePolys.constFind(
+        req.routeKey.isEmpty() ? RailGraph::routeKey(req.stationCodes) : req.routeKey);
     if (it == m_routePolys.constEnd())
         return match;   // route not resolved yet -> caller falls back to Tier-1
 

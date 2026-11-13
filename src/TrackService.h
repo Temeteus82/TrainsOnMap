@@ -27,6 +27,7 @@ struct TrackMatch {
 /// continuity/platform context the matcher needs to disambiguate parallel tracks.
 struct RouteMatchRequest {
     QStringList stationCodes;      ///< ordered scheduled station short codes
+    QString routeKey;              ///< RailGraph::routeKey(stationCodes) if the caller has it cached
     double prevChainage = -1.0;    ///< last route position (m); <0 => global search
     double advanceMeters = 0.0;    ///< expected progress since the last fix (speed·Δt)
     QString platformStation;       ///< when stopped at a station, snap to its platform

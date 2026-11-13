@@ -479,6 +479,16 @@ Rectangle {
             // When a newly selected train's stops load, scroll the timetable so
             // the NEXT stop sits at the top (current position in view, upcoming
             // route below). Once per train — live updates won't yank the view.
+            // Every show() raises `loading`, so that is the moment to re-arm:
+            // a reopened train, or the same number under another date, starts
+            // from the top again and needs the scroll (R3-5).
+            Connections {
+                target: root.details
+                function onLoadingChanged() {
+                    if (root.details.loading)
+                        root.autoScrolledTrain = -1
+                }
+            }
             Connections {
                 target: root.details.model
                 function onProgressChanged() {

@@ -136,8 +136,12 @@ void DigitrafficClient::handleCategories(QNetworkReply *reply, bool full)
 {
     reply->deleteLater();
     adjustPending(-1);
-    if (reply->error() != QNetworkReply::NoError)
-        return;   // markers keep their last colours until the next refresh
+    if (reply->error() != QNetworkReply::NoError) {
+        // Markers keep their last colours until the next refresh; the log line
+        // is what tells a bug report why they went stale (CPP2-I3).
+        qWarning("live-trains: request failed: %ls", qUtf16Printable(reply->errorString()));
+        return;
+    }
 
     const auto parsed = digitraffic::parseArray(reply->readAll(), "live-trains");
     if (!parsed)
@@ -207,6 +211,7 @@ void DigitrafficClient::handleCategories(QNetworkReply *reply, bool full)
         // Skip empties + collapse consecutive duplicates via the shared helper, so
         // this key matches TrainDetailsService::routeStations exactly (R8).
         route.codes = RailGraph::canonicalRouteCodes(rawCodes);
+        route.key = RailGraph::routeKey(route.codes);
 
         m_accStatuses.insert(key, st);
         if (!route.codes.isEmpty())
@@ -248,8 +253,12 @@ void DigitrafficClient::handleStations(QNetworkReply *reply)
     reply->deleteLater();
     m_stationsFetch.inFlight = false;
     adjustPending(-1);
-    if (reply->error() != QNetworkReply::NoError)
-        return;   // station snapping stays disabled until a retry lands
+    if (reply->error() != QNetworkReply::NoError) {
+        // Station snapping stays disabled until a retry lands (CPP2-I3).
+        qWarning("metadata/stations: request failed: %ls",
+                 qUtf16Printable(reply->errorString()));
+        return;
+    }
 
     const auto parsed = digitraffic::parseArray(reply->readAll(), "metadata/stations");
     if (!parsed)
@@ -308,8 +317,12 @@ void DigitrafficClient::handleCauseCategories(QNetworkReply *reply)
     reply->deleteLater();
     m_causeFetch.inFlight = false;
     adjustPending(-1);
-    if (reply->error() != QNetworkReply::NoError)
-        return;   // the delay-cause line stays blank until a retry lands
+    if (reply->error() != QNetworkReply::NoError) {
+        // The delay-cause line stays blank until a retry lands (CPP2-I3).
+        qWarning("metadata/cause-category-codes: request failed: %ls",
+                 qUtf16Printable(reply->errorString()));
+        return;
+    }
 
     const auto parsed = digitraffic::parseArray(reply->readAll(),
                                                 "metadata/cause-category-codes");
@@ -347,8 +360,12 @@ void DigitrafficClient::handleDetailedCauseCategories(QNetworkReply *reply)
     reply->deleteLater();
     m_detailedCauseFetch.inFlight = false;
     adjustPending(-1);
-    if (reply->error() != QNetworkReply::NoError)
-        return;   // stays at the coarser top-level category until a retry lands
+    if (reply->error() != QNetworkReply::NoError) {
+        // Stays at the coarser top-level category until a retry lands (CPP2-I3).
+        qWarning("metadata/detailed-cause-category-codes: request failed: %ls",
+                 qUtf16Printable(reply->errorString()));
+        return;
+    }
 
     const auto parsed = digitraffic::parseArray(reply->readAll(),
                                                 "metadata/detailed-cause-category-codes");
@@ -439,6 +456,12 @@ void DigitrafficClient::handleReply(QNetworkReply *reply)
     m_model->updateTrains(trains);
     // Missing name/cause metadata is a known degraded state, not a rendering
     // bug — say so rather than leaving the user with bare codes and no clue.
+    // Name what is actually missing: the cause maps can be out while the
+    // station names are in (R3-L3).
+    const QString gap = !m_stationsFetch.loaded
+        ? QStringLiteral(" • station names unavailable, retrying")
+        : metadataIncomplete() ? QStringLiteral(" • delay causes unavailable, retrying")
+                               : QString();
     setStatus(QStringLiteral("%1 trains • updated %2%3")
                   .arg(trains.size())
                   // Locale's own short time, not a hardcoded "HH:mm:ss" (U2-W6).
@@ -446,9 +469,7 @@ void DigitrafficClient::handleReply(QNetworkReply *reply)
                   // so second-precision was never telling the user anything.
                   .arg(QLocale::system().toString(QDateTime::currentDateTime().time(),
                                                   QLocale::ShortFormat),
-                       metadataIncomplete()
-                           ? QStringLiteral(" • station names unavailable, retrying")
-                           : QString()));
+                       gap));
 }
 
 void DigitrafficClient::setStatus(const QString &status)
@@ -470,8 +491,8 @@ void DigitrafficClient::adjustPending(int delta)
 void DigitrafficClient::recomputePunctuality()
 {
     // Aggregate on-time performance from the running fleet: a train is punctual
-    // when it's running, not cancelled, and ≤5 min behind schedule at its last
-    // passed stop. Grouped by the broad categories the sidebar filters on. Reuses
+    // when it's running, not cancelled, and under kLateMinutes behind schedule at
+    // its last passed stop — the same boundary as the amber ring (CPP2-I4). Grouped by the broad categories the sidebar filters on. Reuses
     // the /live-trains data already polled each cycle — no extra request.
     struct Tally { int onTime = 0; int total = 0; };
     QHash<QString, Tally> byCat;
@@ -485,7 +506,7 @@ void DigitrafficClient::recomputePunctuality()
             continue;
         Tally &t = byCat[cat];
         ++t.total;
-        if (st.delayMinutes <= 5)
+        if (st.delayMinutes < kLateMinutes)
             ++t.onTime;
     }
 
@@ -503,7 +524,8 @@ void DigitrafficClient::recomputePunctuality()
     }
     const QString s = parts.isEmpty()
         ? QString()
-        : QStringLiteral("On time (≤5m): ") + parts.join(QStringLiteral(" · "));
+        : QStringLiteral("On time (<%1m): ").arg(kLateMinutes)
+              + parts.join(QStringLiteral(" · "));
     if (m_punctuality != s) {
         m_punctuality = s;
         emit punctualityChanged();

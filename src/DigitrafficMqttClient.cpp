@@ -23,7 +23,15 @@ namespace {
 constexpr auto kBrokerUrl = "wss://rata.digitraffic.fi:443/mqtt";
 constexpr auto kLocationsTopic = "train-locations/#";
 constexpr quint16 kKeepAliveSecs = 60;
-constexpr int kReconnectMs = 5000;
+// Reconnect delay: doubles on every failed attempt up to the cap, and returns
+// to the minimum once the locations subscription is acknowledged (CPP2-I6).
+constexpr int kReconnectMinMs = 5000;
+constexpr int kReconnectMaxMs = 2 * 60 * 1000;
+// TLS + WebSocket handshake + CONNACK must all land within this (CPP2-I5).
+constexpr int kHandshakeTimeoutMs = 15000;
+// With a PINGREQ every half keep-alive, this much silence means the link is
+// half-open: PINGRESP alone would have broken it (CPP2-I5).
+constexpr qint64 kLivenessMs = kKeepAliveSecs * 1500;
 // Train messages are a few KB; anything near the 256 MB MQTT ceiling means the
 // stream is out of sync. Cap well below that and resync rather than buffer it.
 constexpr int kMaxPacketBytes = 1 << 20;   // 1 MiB
@@ -32,6 +40,7 @@ constexpr int kMaxPacketBytes = 1 << 20;   // 1 MiB
 DigitrafficMqttClient::DigitrafficMqttClient(QObject *parent)
     : QObject(parent)
     , m_socket(new QWebSocket(QString(), QWebSocketProtocol::VersionLatest, this))
+    , m_reconnectDelayMs(kReconnectMinMs)
 {
     connect(m_socket, &QWebSocket::connected, this, &DigitrafficMqttClient::onSocketConnected);
     connect(m_socket, &QWebSocket::disconnected, this, &DigitrafficMqttClient::onSocketDisconnected);
@@ -57,10 +66,19 @@ DigitrafficMqttClient::DigitrafficMqttClient(QObject *parent)
 #endif
 
     m_pingTimer.setInterval(kKeepAliveSecs * 1000 / 2);
-    connect(&m_pingTimer, &QTimer::timeout, this, [this] { send(mqttwire::buildPingReq()); });
+    connect(&m_pingTimer, &QTimer::timeout, this, [this] {
+        if (m_lastRx.isValid() && m_lastRx.elapsed() > kLivenessMs)
+            dropConnection("no data from the broker within the keep-alive window");
+        else
+            send(mqttwire::buildPingReq());
+    });
+
+    m_handshakeTimer.setSingleShot(true);
+    m_handshakeTimer.setInterval(kHandshakeTimeoutMs);
+    connect(&m_handshakeTimer, &QTimer::timeout, this,
+            [this] { dropConnection("no CONNACK from the broker"); });
 
     m_reconnectTimer.setSingleShot(true);
-    m_reconnectTimer.setInterval(kReconnectMs);
     connect(&m_reconnectTimer, &QTimer::timeout, this, [this] {
         if (m_active)
             openConnection();
@@ -111,6 +129,16 @@ void DigitrafficMqttClient::openConnection()
     QWebSocketHandshakeOptions options;
     options.setSubprotocols({QStringLiteral("mqtt")});
     m_socket->open(request, options);
+    m_handshakeTimer.start();
+}
+
+void DigitrafficMqttClient::dropConnection(const char *reason)
+{
+    qWarning("DigitrafficMqttClient: dropping the connection: %s", reason);
+    m_socket->abort();
+    // abort() does not promise a disconnected() from every state, and the
+    // handler is idempotent, so run it directly.
+    onSocketDisconnected();
 }
 
 void DigitrafficMqttClient::subscribeTrain(const QString &departureDate, int trainNumber)
@@ -147,7 +175,9 @@ void DigitrafficMqttClient::sendTrainSubscription()
 void DigitrafficMqttClient::closeConnection()
 {
     m_pingTimer.stop();
+    m_handshakeTimer.stop();
     m_reconnectTimer.stop();
+    m_reconnectDelayMs = kReconnectMinMs;
     m_rxBuffer.clear();
     if (m_socket->state() == QAbstractSocket::ConnectedState)
         m_socket->sendBinaryMessage(mqttwire::buildDisconnect());
@@ -169,10 +199,15 @@ void DigitrafficMqttClient::onSocketConnected()
 void DigitrafficMqttClient::onSocketDisconnected()
 {
     m_pingTimer.stop();
+    m_handshakeTimer.stop();
+    m_lastRx.invalidate();
     setConnected(false);
-    if (m_active) {
+    // Guarded on the timer so a second call for the same drop (see
+    // dropConnection) neither restarts the wait nor doubles the delay twice.
+    if (m_active && !m_reconnectTimer.isActive()) {
         setStatus(QStringLiteral("Reconnecting…"));
-        m_reconnectTimer.start();
+        m_reconnectTimer.start(m_reconnectDelayMs);
+        m_reconnectDelayMs = std::min(m_reconnectDelayMs * 2, kReconnectMaxMs);
     }
 }
 
@@ -181,6 +216,7 @@ void DigitrafficMqttClient::onBinaryMessage(const QByteArray &message)
     // WebSocket frame boundaries are independent of MQTT packet boundaries, so
     // accumulate and parse as many complete packets as are available.
     m_rxBuffer += message;
+    m_lastRx.start();
 
     // Consume with a cursor and erase once at the end. Removing each packet from
     // the front instead memmoves the whole remainder, so draining a frame of k
@@ -195,8 +231,9 @@ void DigitrafficMqttClient::onBinaryMessage(const QByteArray &message)
             break; // length field not fully arrived yet
 
         const int total = 1 + lengthBytes + remaining;
-        if (total > kMaxPacketBytes) {
-            // Implausibly large frame: the stream is corrupt or out of sync.
+        if (remaining < 0 || total > kMaxPacketBytes) {
+            // Malformed length field (CPP2-I10) or an implausibly large frame:
+            // the stream is corrupt or out of sync.
             // Drop everything and let the socket reconnect from a clean MQTT
             // session instead of buffering toward the protocol ceiling.
             setStatus(QStringLiteral("Dropping malformed MQTT stream; reconnecting…"));
@@ -225,9 +262,11 @@ void DigitrafficMqttClient::dispatchPacket(quint8 type, quint8 flags, const QByt
     switch (type) {
     case mqttwire::ConnAck:
         if (body.size() >= 2 && body.at(1) == 0) {
+            m_handshakeTimer.stop();
             setConnected(true);
             m_pingTimer.start();
-            send(mqttwire::buildSubscribe(nextPacketId(), QString::fromLatin1(kLocationsTopic), 0));
+            m_locationsSubId = nextPacketId();
+            send(mqttwire::buildSubscribe(m_locationsSubId, QString::fromLatin1(kLocationsTopic), 0));
             sendTrainSubscription();   // restore a selected-train sub across reconnects
             setStatus(QStringLiteral("Subscribing…"));
         } else {
@@ -235,9 +274,27 @@ void DigitrafficMqttClient::dispatchPacket(quint8 type, quint8 flags, const QByt
             m_socket->close();
         }
         break;
-    case mqttwire::SubAck:
-        setStatus(QStringLiteral("Live (MQTT)"));
+    case mqttwire::SubAck: {
+        // Packet id, then one return code per filter (we always send one);
+        // 0x80 is a refusal (MQTT 3.1.1 §3.9.3). Only the locations
+        // subscription decides the status (CPP2-I1).
+        if (body.size() < 3)
+            break;
+        const quint16 id = quint16((quint8(body.at(0)) << 8) | quint8(body.at(1)));
+        const bool refused = quint8(body.at(2)) == 0x80;
+        if (id != m_locationsSubId) {
+            if (refused)
+                qWarning("DigitrafficMqttClient: the broker refused the train subscription");
+        } else if (refused) {
+            qWarning("DigitrafficMqttClient: the broker refused %s", kLocationsTopic);
+            setStatus(QStringLiteral("Broker refused the subscription"));
+            m_socket->close();   // → reconnect, with the backoff still growing
+        } else {
+            m_reconnectDelayMs = kReconnectMinMs;
+            setStatus(QStringLiteral("Live (MQTT)"));
+        }
         break;
+    }
     case mqttwire::Publish: {
         const mqttwire::PublishMessage msg = mqttwire::parsePublish(body, flags);
         if (msg.topic.startsWith(QLatin1String("train-locations/")))

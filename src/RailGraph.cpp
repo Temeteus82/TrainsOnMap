@@ -403,9 +403,15 @@ RailGraph::RouteProjection RailGraph::projectOntoRoute(const RoutePolyline &rp,
         // search. The global scan could otherwise snap to a point behind the train
         // or to a parallel limb it already passed (nearer in 2-D, kilometres away
         // in chainage) — the backward "jump onto the wrong track" seen at tunnels.
+        //
+        // Only while that forward hit is itself plausible, though. The carried
+        // chainage can be a dead-reckoned over-estimate (the train stopped during
+        // the gap), and then the real position is *behind* it: every forward hit
+        // is far from the fix, and without the global scan below the train would
+        // stay unmatched until it physically caught up (R3-L1).
         const RouteProjection forward =
             search(prevChainage - kWindowBack, std::numeric_limits<double>::infinity());
-        if (forward.isValid())
+        if (forward.isValid() && forward.offsetMeters <= kRouteReacquireMeters)
             return forward;
     }
     return search(-1.0, std::numeric_limits<double>::infinity());

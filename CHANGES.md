@@ -8,6 +8,57 @@ Legend: ✨ feature · 🐛 bug fix · ♻️ change/refactor · ✅ verificatio
 
 ---
 
+## Code review round 3 — everything but CI
+
+Review in `docs/code-review-2026-11-13.md`; its status table has the per-finding
+detail.
+
+### 🐛 Fixes
+- [x] **R3-1:** direction arrows no longer swing to north once a minute. A fix
+      with the row's own timestamp (the REST resync re-delivering it) is dropped,
+      and a sub-metre move keeps the previous bearing.
+- [x] **R3-2:** swapping between the train panel and the station board keeps
+      focus in the panel that opened.
+- [x] **R3-3:** the map's selection highlight compares the departure date too.
+- [x] **R3-4:** the breadcrumb trail only grows when the train has moved.
+- [x] **R3-5:** reopening a train scrolls its timetable to the next stop again.
+- [x] **R3-6:** an open station board refreshes every 45 s, in place.
+- [x] **R3-7:** commuter rows in the train list show the number ("R 9123").
+- [x] **MQTT (CPP2-I1, I5, I6, I10):** a refused subscription no longer reads as
+      "Live"; a silent connection is dropped after 1.5 × keep-alive and a missing
+      CONNACK after 15 s; reconnects back off from 5 s to 2 min; a malformed
+      remaining-length field resets the stream.
+- [x] **CPP2-I4:** the punctuality line uses the ring's boundary. Under 5 min is
+      on time, and the label reads "On time (<5m)".
+- [x] **CPP2-I8:** the station board prefers the actual time over the estimate,
+      as the timetable panel does.
+- [x] **R3-L1:** a dead-reckoned chainage that overshot the train re-acquires
+      over the whole route once nothing ahead is within 300 m of the fix.
+- [x] **R3-L2 to L6:** the consist's leg resolves when station names load late;
+      the status names the metadata that is actually missing; the live status
+      uses the locale's time format; the theme choice persists; the user-agent
+      takes its version from `PROJECT_VERSION`.
+
+### ♻️ Changes
+- [x] **CPP2-I2:** the nearest-neighbour recompute emits only the rows that
+      changed. **CPP2-I7:** the route key is built once per route.
+      **CPP2-I3:** transport failures on the weather, category and metadata
+      fetches log a warning.
+- [x] **R3-L9:** the tests link one static library instead of each compiling
+      its own sources. **R3-L7:** four stale comments corrected.
+
+### ✅ Verification
+- [x] Debug build (`macos-clang-qt612`): no compiler warnings, 12 ctest suites
+      pass (new: `tst_mqttcodec`; new cases in `tst_railgraph`,
+      `tst_stationboardservice`, `tst_trainlistmodel`), and the app runs for
+      20 s with nothing on stderr.
+
+### 📋 Follow-ups
+- [ ] The QML fixes and the MQTT watchdog/backoff were not exercised by hand.
+- [ ] **R3-L8:** no CI yet.
+
+---
+
 ## macOS: basemap styles move out of Contents/MacOS so the bundle signs
 
 ### 🐛 Fixes

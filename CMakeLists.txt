@@ -134,6 +134,9 @@ endif()
 # (it probes them via __has_include(<Header.h>)).
 target_include_directories(TrainsOnMap PRIVATE src)
 
+# The version the app identifies itself with to Digitraffic (DigitrafficFormat.h).
+target_compile_definitions(TrainsOnMap PRIVATE TRAINSONMAP_VERSION="${PROJECT_VERSION}")
+
 target_link_libraries(TrainsOnMap PRIVATE
     Qt6::Core
     Qt6::Gui
@@ -235,7 +238,6 @@ if(WIN32)
             VERBATIM)
         # windeployqt only knows Qt's own plugins and DLLs: copy the QMapLibre
         # DLLs next to the .exe and the maplibre geoservices plugin beside Qt's.
-        # ponytail: untested on Windows; verify the bundle starts on a clean box.
         add_custom_command(TARGET TrainsOnMap POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                     $<TARGET_RUNTIME_DLLS:TrainsOnMap> "$<TARGET_FILE_DIR:TrainsOnMap>"
@@ -340,12 +342,38 @@ install(TARGETS TrainsOnMap
 # QtTest — both on a synthetic fixture network and a smoke test over the real
 # baked blob. Run with: ctest --test-dir build/<preset> --output-on-failure
 enable_testing()
+
+# Everything the tests exercise, compiled once (R3-L9). Each test used to list
+# the sources it needed, so RailGraph.cpp was built seven times over. Tests-only:
+# the app keeps its own source list, because qt_add_qml_module registers the
+# QML_ELEMENT types from the target that compiles them.
+qt_add_library(trainsonmap_testcore STATIC
+    src/DigitrafficClient.h     src/DigitrafficClient.cpp
+    src/TrainListModel.h        src/TrainListModel.cpp
+    src/TrackService.h          src/TrackService.cpp
+    src/RailGraph.h             src/RailGraph.cpp
+    src/TrainDetailsService.h   src/TrainDetailsService.cpp
+    src/TimetableModel.h        src/TimetableModel.cpp
+    src/TimetableFilterModel.h  src/TimetableFilterModel.cpp
+    src/TrainFilterModel.h      src/TrainFilterModel.cpp
+    src/CompositionModel.h      src/CompositionModel.cpp
+    src/DigitrafficMqttClient.h src/DigitrafficMqttClient.cpp
+    src/StationListModel.h      src/StationListModel.cpp
+    src/StationBoardModel.h     src/StationBoardModel.cpp
+    src/StationBoardService.h   src/StationBoardService.cpp
+    src/Projection.h
+    src/MqttCodec.h
+    src/DigitrafficFormat.h
+    src/FleetMetadata.h
+    src/NetworkDiagnostics.h)
+target_include_directories(trainsonmap_testcore PUBLIC src)
+target_compile_definitions(trainsonmap_testcore PUBLIC TRAINSONMAP_VERSION="${PROJECT_VERSION}")
+target_link_libraries(trainsonmap_testcore PUBLIC
+    Qt6::Core Qt6::Qml Qt6::Network Qt6::WebSockets Qt6::Positioning Qt6::Concurrent)
+
 qt_add_executable(tst_railgraph
-    tests/tst_railgraph.cpp
-    src/RailGraph.h src/RailGraph.cpp
-    src/Projection.h)
-target_include_directories(tst_railgraph PRIVATE src)
-target_link_libraries(tst_railgraph PRIVATE Qt6::Core Qt6::Positioning Qt6::Test)
+    tests/tst_railgraph.cpp)
+target_link_libraries(tst_railgraph PRIVATE trainsonmap_testcore Qt6::Test)
 target_compile_definitions(tst_railgraph PRIVATE
     RAILS_BLOB="${CMAKE_CURRENT_SOURCE_DIR}/resources/rails.geojson.qz")
 add_test(NAME railgraph COMMAND tst_railgraph)
@@ -364,38 +392,25 @@ endif()
 # binds to, plus the setStops()/clear()/count contract. Links Qt6::Qml for the
 # QtQmlIntegration header (the QML_ELEMENT macros in TimetableModel.h).
 qt_add_executable(tst_timetablemodel
-    tests/tst_timetablemodel.cpp
-    src/TimetableModel.h src/TimetableModel.cpp)
-target_include_directories(tst_timetablemodel PRIVATE src)
-target_link_libraries(tst_timetablemodel PRIVATE Qt6::Core Qt6::Qml Qt6::Test)
+    tests/tst_timetablemodel.cpp)
+target_link_libraries(tst_timetablemodel PRIVATE trainsonmap_testcore Qt6::Test)
 add_test(NAME timetablemodel COMMAND tst_timetablemodel)
 
 # TimetableFilterModel is the proxy that makes the timetable ListView virtualise by
 # dropping passing points from the row set. Pinned against the real TimetableModel
 # so the cached "stopping" role stays tied to the QRangeModel-derived role table.
 qt_add_executable(tst_timetablefilter
-    tests/tst_timetablefilter.cpp
-    src/TimetableFilterModel.h src/TimetableFilterModel.cpp
-    src/TimetableModel.h src/TimetableModel.cpp)
-target_include_directories(tst_timetablefilter PRIVATE src)
-target_link_libraries(tst_timetablefilter PRIVATE Qt6::Core Qt6::Qml Qt6::Test)
+    tests/tst_timetablefilter.cpp)
+target_link_libraries(tst_timetablefilter PRIVATE trainsonmap_testcore Qt6::Test)
 add_test(NAME timetablefilter COMMAND tst_timetablefilter)
 
 # TrainFilterModel backs the sidebar train list — the keyboard/assistive path to
 # selecting a train (UI audit U2-C1). Pinned against the real TrainListModel: the
 # proxy resolves its role numbers from the source's roleNames(), so a stub with a
-# different role table would exercise the wrong code. TrainListModel pulls in
-# TrackService (the matcher) and thus RailGraph, even though the filter never
-# matches a fix.
+# different role table would exercise the wrong code.
 qt_add_executable(tst_trainfilter
-    tests/tst_trainfilter.cpp
-    src/TrainFilterModel.h src/TrainFilterModel.cpp
-    src/TrainListModel.h src/TrainListModel.cpp
-    src/TrackService.h src/TrackService.cpp
-    src/RailGraph.h src/RailGraph.cpp)
-target_include_directories(tst_trainfilter PRIVATE src)
-target_link_libraries(tst_trainfilter PRIVATE
-    Qt6::Core Qt6::Qml Qt6::Positioning Qt6::Concurrent Qt6::Test)
+    tests/tst_trainfilter.cpp)
+target_link_libraries(tst_trainfilter PRIVATE trainsonmap_testcore Qt6::Test)
 add_test(NAME trainfilter COMMAND tst_trainfilter)
 
 # CompositionModel is the same QRangeModel idiom (Qt 6.10+) for the carriage strip;
@@ -403,35 +418,31 @@ add_test(NAME trainfilter COMMAND tst_trainfilter)
 # QStringList `amenities` role included — to the names the QML carriage delegate binds
 # to, plus the setVehicles()/clear()/count contract.
 qt_add_executable(tst_compositionmodel
-    tests/tst_compositionmodel.cpp
-    src/CompositionModel.h src/CompositionModel.cpp)
-target_include_directories(tst_compositionmodel PRIVATE src)
-target_link_libraries(tst_compositionmodel PRIVATE Qt6::Core Qt6::Qml Qt6::Test)
+    tests/tst_compositionmodel.cpp)
+target_link_libraries(tst_compositionmodel PRIVATE trainsonmap_testcore Qt6::Test)
 add_test(NAME compositionmodel COMMAND tst_compositionmodel)
 
 # DigitrafficFormat is header-only and pure QtCore — the timestamp and delay-cause
 # formatting the station board and the train detail panel both render. Pinned
 # because these started as per-service copies that silently drifted apart.
 qt_add_executable(tst_digitrafficformat
-    tests/tst_digitrafficformat.cpp
-    src/DigitrafficFormat.h)
-target_include_directories(tst_digitrafficformat PRIVATE src)
-target_link_libraries(tst_digitrafficformat PRIVATE Qt6::Core Qt6::Test)
+    tests/tst_digitrafficformat.cpp)
+target_link_libraries(tst_digitrafficformat PRIVATE trainsonmap_testcore Qt6::Test)
 add_test(NAME digitrafficformat COMMAND tst_digitrafficformat)
+
+# MqttCodec is header-only too: the remaining-length varint and PUBLISH parsing
+# the MQTT client frames its stream with (CPP2-I10).
+qt_add_executable(tst_mqttcodec
+    tests/tst_mqttcodec.cpp)
+target_link_libraries(tst_mqttcodec PRIVATE trainsonmap_testcore Qt6::Test)
+add_test(NAME mqttcodec COMMAND tst_mqttcodec)
 
 # The nearest-neighbour scan behind marker label declutter. Visiting only j > i
 # and writing the one haversine to both rows is a halving that is easy to break
 # one-sidedly, and nothing else in the suite touches TrainListModel directly.
-# Same source set as tst_trainfilter: the model pulls in TrackService (its
-# matcher) and thus RailGraph, even though no fix is ever matched here.
 qt_add_executable(tst_trainlistmodel
-    tests/tst_trainlistmodel.cpp
-    src/TrainListModel.h src/TrainListModel.cpp
-    src/TrackService.h src/TrackService.cpp
-    src/RailGraph.h src/RailGraph.cpp)
-target_include_directories(tst_trainlistmodel PRIVATE src)
-target_link_libraries(tst_trainlistmodel PRIVATE
-    Qt6::Core Qt6::Qml Qt6::Positioning Qt6::Concurrent Qt6::Test)
+    tests/tst_trainlistmodel.cpp)
+target_link_libraries(tst_trainlistmodel PRIVATE trainsonmap_testcore Qt6::Test)
 add_test(NAME trainlistmodel COMMAND tst_trainlistmodel)
 
 # The network-facing services, driven through tests/FakeNetwork.h — a
@@ -441,51 +452,21 @@ add_test(NAME trainlistmodel COMMAND tst_trainlistmodel)
 # 2026-08-28 review shipped without a regression test because there was no seam.
 qt_add_executable(tst_traindetailsservice
     tests/tst_traindetailsservice.cpp
-    tests/FakeNetwork.h
-    src/TrainDetailsService.h src/TrainDetailsService.cpp
-    src/TimetableModel.h src/TimetableModel.cpp
-    src/CompositionModel.h src/CompositionModel.cpp
-    src/DigitrafficMqttClient.h src/DigitrafficMqttClient.cpp
-    src/DigitrafficClient.h src/DigitrafficClient.cpp
-    src/StationListModel.h src/StationListModel.cpp
-    src/TrainListModel.h src/TrainListModel.cpp
-    src/TrackService.h src/TrackService.cpp
-    src/RailGraph.h src/RailGraph.cpp)
-target_include_directories(tst_traindetailsservice PRIVATE src)
-target_link_libraries(tst_traindetailsservice PRIVATE
-    Qt6::Core Qt6::Qml Qt6::Network Qt6::WebSockets Qt6::Positioning
-    Qt6::Concurrent Qt6::Test)
+    tests/FakeNetwork.h)
+target_link_libraries(tst_traindetailsservice PRIVATE trainsonmap_testcore Qt6::Test)
 add_test(NAME traindetailsservice COMMAND tst_traindetailsservice)
 
 # CPP2-C1: the station board's stale-reply guard, same FakeNetwork seam.
 qt_add_executable(tst_stationboardservice
     tests/tst_stationboardservice.cpp
-    tests/FakeNetwork.h
-    src/StationBoardService.h src/StationBoardService.cpp
-    src/StationBoardModel.h src/StationBoardModel.cpp
-    src/DigitrafficMqttClient.h src/DigitrafficMqttClient.cpp
-    src/DigitrafficClient.h src/DigitrafficClient.cpp
-    src/StationListModel.h src/StationListModel.cpp
-    src/TrainListModel.h src/TrainListModel.cpp
-    src/TrackService.h src/TrackService.cpp
-    src/RailGraph.h src/RailGraph.cpp)
-target_include_directories(tst_stationboardservice PRIVATE src)
-target_link_libraries(tst_stationboardservice PRIVATE
-    Qt6::Core Qt6::Qml Qt6::Network Qt6::WebSockets Qt6::Positioning
-    Qt6::Concurrent Qt6::Test)
+    tests/FakeNetwork.h)
+target_link_libraries(tst_stationboardservice PRIVATE trainsonmap_testcore Qt6::Test)
 add_test(NAME stationboardservice COMMAND tst_stationboardservice)
 
 qt_add_executable(tst_digitrafficclient
     tests/tst_digitrafficclient.cpp
-    tests/FakeNetwork.h
-    src/DigitrafficClient.h src/DigitrafficClient.cpp
-    src/StationListModel.h src/StationListModel.cpp
-    src/TrainListModel.h src/TrainListModel.cpp
-    src/TrackService.h src/TrackService.cpp
-    src/RailGraph.h src/RailGraph.cpp)
-target_include_directories(tst_digitrafficclient PRIVATE src)
-target_link_libraries(tst_digitrafficclient PRIVATE
-    Qt6::Core Qt6::Qml Qt6::Network Qt6::Positioning Qt6::Concurrent Qt6::Test)
+    tests/FakeNetwork.h)
+target_link_libraries(tst_digitrafficclient PRIVATE trainsonmap_testcore Qt6::Test)
 add_test(NAME digitrafficclient COMMAND tst_digitrafficclient)
 
 # Only the app gets windeployqt'd, so on Windows the test exes have no Qt DLLs

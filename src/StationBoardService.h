@@ -3,6 +3,7 @@
 #include <QHash>
 #include <QObject>
 #include <QString>
+#include <QTimer>
 #include <QtQmlIntegration>
 
 #include "FleetMetadata.h"
@@ -54,6 +55,9 @@ public slots:
     void show(const QString &code, const QString &name);
     /// Hide the board and clear the model.
     void clear();
+    /// Re-fetch the open board in place, keeping its rows until the reply
+    /// lands. Runs on a timer while a station is selected (R3-6).
+    void refresh();
 
 signals:
     void selectionChanged();
@@ -64,12 +68,14 @@ signals:
 private:
     void onStationNames();                       ///< pull the fleet's name map
     void onCauseCategoryNames();                  ///< pull the fleet's cause code -> name map
+    void fetch();                                 ///< issue the request for m_stationCode
     void handleReply(QNetworkReply *reply, const QString &code);
     void rebuildBoard();                          ///< re-resolve destination + causeText for m_rows, push to the model
     void setLoading(bool loading);
     void setStatus(const QString &status);
 
     QNetworkAccessManager *m_net = nullptr;
+    QTimer m_refreshTimer;                    ///< periodic refresh() while selected
     StationBoardModel *m_board = nullptr;
     DigitrafficClient *m_fleet = nullptr;
     FleetMetadata m_meta;                     ///< reads `fleet`'s shared name/cause maps
