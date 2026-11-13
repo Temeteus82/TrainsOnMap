@@ -87,8 +87,11 @@ QVector<TimetableStop> buildStops(const QJsonArray &rows)
             s.sawTrainStopping = true;
         // A recorded actualTime means the train has been here — drives journey
         // progress (the `passed`/`isNext` flags computed in TimetableModel).
-        if (!row.value(QStringLiteral("actualTime")).toString().isEmpty())
+        if (!row.value(QStringLiteral("actualTime")).toString().isEmpty()) {
             s.sawActual = true;
+            if (!isArrival)
+                s.departed = true;
+        }
     }
 
     // Decide which points are "stops". Prefer commercial passenger stops; if the
@@ -308,6 +311,7 @@ void TrainDetailsService::applyTrainObject(const QJsonObject &train, bool live)
             ++stopCount;
 
     rebuildStops();
+    updateCompositionSection();   // the train may have just left a split/join station
     setStatus(live ? QStringLiteral("%1 stops · live %2")
                          .arg(stopCount)
                          // Locale's own short time, like every other one (R3-L4).
@@ -360,35 +364,75 @@ void TrainDetailsService::handleComposition(QNetworkReply *reply)
         return;
     }
 
-    // Show the departure consist (first section). Runs that join/split mid-route
-    // have more sections; we surface the count so the panel can flag it.
-    const QJsonObject first = sections.first().toObject();
-    const QVector<CompositionVehicle> vehicles = buildVehicles(first);
-    m_composition->setVehicles(vehicles);
+    // A run that splits or joins en route has one section per leg (S 9 is twelve
+    // cars from Helsinki and six after Kouvola). Keep them all, and show the one
+    // for the leg the train is on; updateCompositionSection() moves on as the
+    // timetable records departures.
+    m_sections.clear();
+    m_sections.reserve(sections.size());
+    for (const QJsonValue &sv : sections) {
+        const QJsonObject section = sv.toObject();
+        CompositionSection cs;
+        cs.vehicles = buildVehicles(section);
+        cs.begin = section.value(QStringLiteral("beginTimeTableRow")).toObject()
+                       .value(QStringLiteral("stationShortCode")).toString();
+        cs.end = section.value(QStringLiteral("endTimeTableRow")).toObject()
+                     .value(QStringLiteral("stationShortCode")).toString();
 
-    int wagons = 0;
-    for (const CompositionVehicle &cv : vehicles)
-        if (!cv.locomotive)
-            ++wagons;
+        int wagons = 0;
+        for (const CompositionVehicle &cv : cs.vehicles)
+            if (!cv.locomotive)
+                ++wagons;
+        const int totalLen = section.value(QStringLiteral("totalLength")).toInt();
+        const int maxSpeed = section.value(QStringLiteral("maximumSpeed")).toInt();
+        QStringList parts;
+        parts << (wagons == 1 ? QStringLiteral("1 car") : QStringLiteral("%1 cars").arg(wagons));
+        if (totalLen > 0)
+            parts << QStringLiteral("%1 m").arg(totalLen);
+        if (maxSpeed > 0)
+            parts << QStringLiteral("max %1 km/h").arg(maxSpeed);
+        cs.summary = parts.join(QStringLiteral(" · "));
+        m_sections.push_back(std::move(cs));
+    }
 
-    const int totalLen = first.value(QStringLiteral("totalLength")).toInt();
-    const int maxSpeed = first.value(QStringLiteral("maximumSpeed")).toInt();
-    QStringList parts;
-    parts << (wagons == 1 ? QStringLiteral("1 car") : QStringLiteral("%1 cars").arg(wagons));
-    if (totalLen > 0)
-        parts << QStringLiteral("%1 m").arg(totalLen);
-    if (maxSpeed > 0)
-        parts << QStringLiteral("max %1 km/h").arg(maxSpeed);
-    m_compositionSummary = parts.join(QStringLiteral(" · "));
+    m_compositionSectionCount = m_sections.size();
+    m_sectionIndex = -1;   // force the first apply
+    updateCompositionSection();
+}
 
-    m_compositionBegin = first.value(QStringLiteral("beginTimeTableRow")).toObject()
-                             .value(QStringLiteral("stationShortCode")).toString();
-    m_compositionEnd = first.value(QStringLiteral("endTimeTableRow")).toObject()
-                           .value(QStringLiteral("stationShortCode")).toString();
+int TrainDetailsService::currentSectionIndex() const
+{
+    // The last section whose first station the train has departed from; the
+    // first section until then (and while no timetable has loaded).
+    int current = 0;
+    for (int i = 1; i < m_sections.size(); ++i) {
+        const QString &begin = m_sections.at(i).begin;
+        const bool left = std::any_of(m_stops.cbegin(), m_stops.cend(),
+                                      [&begin](const TimetableStop &s) {
+                                          return s.departed && s.stationShortCode == begin;
+                                      });
+        if (left)
+            current = i;
+    }
+    return current;
+}
+
+void TrainDetailsService::updateCompositionSection()
+{
+    if (m_sections.isEmpty())
+        return;
+    const int index = currentSectionIndex();
+    if (index == m_sectionIndex)
+        return;
+    m_sectionIndex = index;
+
+    const CompositionSection &cs = m_sections.at(index);
+    m_composition->setVehicles(cs.vehicles);
+    m_compositionSummary = cs.summary;
+    m_compositionBegin = cs.begin;
+    m_compositionEnd = cs.end;
     m_compositionLeg = compositionLegText();
-
-    m_compositionSectionCount = sections.size();
-    m_hasComposition = !vehicles.isEmpty();
+    m_hasComposition = !cs.vehicles.isEmpty();
     emit compositionChanged();
 }
 
@@ -397,6 +441,8 @@ void TrainDetailsService::clearComposition()
     const bool had = m_hasComposition || !m_compositionSummary.isEmpty()
                      || !m_compositionLeg.isEmpty() || m_compositionSectionCount != 0;
     m_composition->clear();
+    m_sections.clear();
+    m_sectionIndex = -1;
     m_hasComposition = false;
     m_compositionSummary.clear();
     m_compositionLeg.clear();

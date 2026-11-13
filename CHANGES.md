@@ -8,6 +8,28 @@ Legend: ✨ feature · 🐛 bug fix · ♻️ change/refactor · ✅ verificatio
 
 ---
 
+## Split trains: the consist follows the current leg
+
+### 🐛 Fixes
+- [x] A train that splits or joins en route showed its departure consist for
+      the whole journey: S 9 stayed at 12 cars and "Helsinki → Kouvola" after
+      leaving its Kajaani half (S 69) at Kouvola. The detail panel now shows
+      the composition section for the leg the train is on, and moves to the
+      next one when the timetable records the departure from the station where
+      that section starts.
+
+### ✅ Verification
+- [x] `tst_traindetailsservice` has a two-section case (12 cars, then 6 after
+      the departure from the split station). All 12 ctest suites pass on the
+      `macos-clang-qt612` debug build.
+
+### 📋 Follow-ups
+- [ ] The panel does not say which cars leave at the split, or that they
+      continue as another train (S 69). Digitraffic does not link the two
+      runs; it would take matching car numbers across the day's compositions.
+
+---
+
 ## Code review round 3 — everything but CI
 
 Review in `docs/code-review-2026-11-13.md`; its status table has the per-finding

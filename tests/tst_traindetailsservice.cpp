@@ -248,6 +248,76 @@ private slots:
         QCOMPARE(routeSpy.count(), 1);
         QCOMPARE(svc.routeStations(), diverted);
     }
+
+    /// A run that splits en route (S 9: twelve cars from Helsinki, six after
+    /// Kouvola) must show the consist of the leg the train is on. The panel
+    /// used to show the departure section for the whole journey.
+    void compositionFollowsTheCurrentLeg()
+    {
+        fake::Manager net;
+        DigitrafficMqttClient mqtt;   // inert until connect() — never called here
+        TrainDetailsService svc(nullptr, &net);
+        svc.setStream(&mqtt);
+
+        const auto section = [](const QString &from, const QString &to, int wagons) {
+            QJsonArray cars;
+            for (int i = 1; i <= wagons; ++i)
+                cars.push_back(QJsonObject{{"location", i}, {"salesNumber", i},
+                                           {"wagonType", "Sm3"}});
+            return QJsonObject{{"beginTimeTableRow", QJsonObject{{"stationShortCode", from}}},
+                               {"endTimeTableRow", QJsonObject{{"stationShortCode", to}}},
+                               {"totalLength", wagons * 27},
+                               {"wagons", cars}};
+        };
+        const QByteArray composition = QJsonDocument(QJsonObject{
+            {"journeySections", QJsonArray{section(QStringLiteral("HKI"), QStringLiteral("KV"), 12),
+                                           section(QStringLiteral("KV"), QStringLiteral("JNS"), 6)}}})
+            .toJson(QJsonDocument::Compact);
+
+        // The MQTT form of the run, with an actual departure from the first
+        // `departed` stations.
+        const auto stream = [](int departed) {
+            const QStringList route{QStringLiteral("HKI"), QStringLiteral("KV"),
+                                    QStringLiteral("JNS")};
+            QJsonObject train = QJsonDocument::fromJson(
+                streamPayload(9, QStringLiteral("S"), route)).object();
+            QJsonArray rows = train.value("timeTableRows").toArray();
+            for (int i = 0; i < departed; ++i) {
+                QJsonObject r = rows.at(i).toObject();
+                r.insert("actualTime", r.value("scheduledTime"));
+                rows.replace(i, r);
+            }
+            train.insert("timeTableRows", rows);
+            return QJsonDocument(train).toJson(QJsonDocument::Compact);
+        };
+
+        svc.show(9, QString::fromLatin1(kDate));
+        fake::Reply *timetable = net.take(QStringLiteral("/trains/2026-09-03/9"));
+        fake::Reply *comp = net.take(QStringLiteral("/compositions/2026-09-03/9"));
+        QVERIFY(timetable && comp);
+
+        // The composition lands first, with no timetable yet: departure section.
+        comp->respond(composition);
+        QCOMPARE(svc.compositionSectionCount(), 2);
+        QCOMPARE(svc.composition()->count(), 12);
+        QCOMPARE(svc.compositionLeg(), QStringLiteral("HKI → KV"));
+
+        // Under way but not yet past Kouvola: still twelve cars.
+        timetable->respond("[" + stream(1) + "]");
+        QCOMPARE(svc.composition()->count(), 12);
+
+        // A live update records the departure from Kouvola: the six-car leg.
+        QSignalSpy spy(&svc, &TrainDetailsService::compositionChanged);
+        emit mqtt.trainMessage(stream(2));
+        QCOMPARE(spy.count(), 1);
+        QCOMPARE(svc.composition()->count(), 6);
+        QCOMPARE(svc.compositionLeg(), QStringLiteral("KV → JNS"));
+        QVERIFY(svc.compositionSummary().startsWith(QStringLiteral("6 cars")));
+
+        // The same state again changes nothing.
+        emit mqtt.trainMessage(stream(2));
+        QCOMPARE(spy.count(), 1);
+    }
 };
 
 QTEST_MAIN(TestTrainDetailsService)

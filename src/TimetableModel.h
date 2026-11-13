@@ -50,6 +50,7 @@ public:
     bool sawCommercial = false;
     bool sawTrainStopping = false;
     bool sawActual = false;       ///< a row recorded an actualTime → the train has been here
+    bool departed = false;        ///< the DEPARTURE row has an actualTime → the train has left
 };
 
 // By default QRangeModel maps a gadget's properties to *columns*. A QML list
