@@ -22,12 +22,25 @@ endif()
 
 # Floor is 6.12 (the LTS), not QtLocation/QtPositioning's 6.5+: TimetableModel
 # uses QRangeModel (QtCore, since 6.10).
-find_package(Qt6 6.12 REQUIRED COMPONENTS Core Gui Qml Quick Network Positioning Location WebSockets Concurrent Test)
+#
+# TRAINSONMAP_BUILD_APP=OFF configures the tests alone (R3-L8). The app needs a
+# source-built maplibre-native-qt; the tests need neither it nor Gui, Quick or
+# Location, which is what lets CI (.github/workflows/ci.yml) run them on a
+# stock Qt kit.
+option(TRAINSONMAP_BUILD_APP "Build the application (needs QMapLibre), not only the tests" ON)
+
+set(_qt_components Core Qml Network Positioning WebSockets Concurrent Test)
+if(TRAINSONMAP_BUILD_APP)
+    list(APPEND _qt_components Gui Quick Location)
+endif()
+find_package(Qt6 6.12 REQUIRED COMPONENTS ${_qt_components})
 
 # Vector basemap: maplibre-native-qt provides the "maplibre" geoservices plugin
 # and the MapLibre.Location QML module. Add its install prefix to
 # CMAKE_PREFIX_PATH (or set QMapLibre_DIR to <prefix>/lib/cmake/QMapLibre).
-find_package(QMapLibre REQUIRED COMPONENTS Core Location)
+if(TRAINSONMAP_BUILD_APP)
+    find_package(QMapLibre REQUIRED COMPONENTS Core Location)
+endif()
 
 qt_standard_project_setup(REQUIRES 6.12)
 
@@ -37,6 +50,11 @@ qt_standard_project_setup(REQUIRES 6.12)
 if(QT_KNOWN_POLICY_QTP0004)
     qt_policy(SET QTP0004 NEW)
 endif()
+
+# ---- Application -------------------------------------------------------------
+# Everything from here to the matching endif() above the Tests section; left
+# unindented so the option did not touch every line of it.
+if(TRAINSONMAP_BUILD_APP)
 
 qt_add_executable(TrainsOnMap
     src/main.cpp
@@ -337,6 +355,8 @@ install(TARGETS TrainsOnMap
     BUNDLE  DESTINATION .
     RUNTIME DESTINATION bin)
 
+endif()   # TRAINSONMAP_BUILD_APP
+
 # ---- Tests (Tier-2 routing core) ---------------------------------------------
 # RailGraph is pure (QtCore + QtPositioning), so it's unit-tested directly with
 # QtTest — both on a synthetic fixture network and a smoke test over the real
@@ -474,6 +494,9 @@ add_test(NAME digitrafficclient COMMAND tst_digitrafficclient)
 # be on PATH. Prepend it for every registered test rather than deploying each
 # one; reading the DIRECTORY TESTS property covers tests added later too.
 if(WIN32)
+    # Looked up here too: the app's deploy block sets it only when the app is built.
+    get_target_property(_qmake_exe Qt6::qmake IMPORTED_LOCATION)
+    get_filename_component(_qt_bin_dir "${_qmake_exe}" DIRECTORY)
     file(TO_NATIVE_PATH "${_qt_bin_dir}" _qt_bin_dir_native)
     get_property(_all_tests DIRECTORY PROPERTY TESTS)
     set_tests_properties(${_all_tests} PROPERTIES

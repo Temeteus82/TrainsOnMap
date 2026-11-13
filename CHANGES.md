@@ -8,6 +8,21 @@ Legend: ✨ feature · 🐛 bug fix · ♻️ change/refactor · ✅ verificatio
 
 ---
 
+## CI: the tests run on every push and pull request (R3-L8)
+
+### ✨ Features
+- [x] `.github/workflows/ci.yml`: Linux, Qt 6.12.0 from the official kit,
+      configure with `-DTRAINSONMAP_BUILD_APP=OFF`, build, `ctest`.
+- [x] New CMake option `TRAINSONMAP_BUILD_APP` (default `ON`). `OFF` skips the
+      app target and with it QMapLibre and the Gui, Quick and Location
+      modules, leaving the shared test library and the 12 test suites.
+
+### 📋 Follow-ups
+- [ ] The app itself is not built in CI; that needs maplibre-native-qt built
+      from source (or cached) on the runner.
+
+---
+
 ## Split trains: the consist follows the current leg
 
 ### 🐛 Fixes

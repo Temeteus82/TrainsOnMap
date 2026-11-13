@@ -18,7 +18,7 @@ IDs use an `R3-` prefix so they don't collide with the `CPP-*`, `CPP2-*` and `U*
 | CPP2-I2, I3, I7, I8 | Fixed. I3 is a `qWarning` on each path; `FmiWeatherClient` still has no error flag. |
 | CPP2-I4 | Fixed by moving the punctuality line to the ring's boundary: under 5 min is on time, and the label now reads "<5m". |
 | R3-L1 to R3-L7 | Fixed. R3-L1 has a `tst_railgraph` case. |
-| R3-L8 | Open. The app needs a source-built QMapLibre to configure, so CI needs either that or a tests-only configure option first. The preset text that claimed CI exists is corrected. |
+| R3-L8 | Fixed: `.github/workflows/ci.yml` builds and runs the tests on Linux with Qt 6.12 on every push to `main` and every pull request, through the new `TRAINSONMAP_BUILD_APP=OFF` option. The app itself is not built in CI, because it needs a source-built QMapLibre. |
 | R3-L9 | Fixed for the tests: they share one static library. The app still compiles its own copy, because `qt_add_qml_module` registers the `QML_ELEMENT` types from the target that compiles them. |
 
 ---

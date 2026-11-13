@@ -171,6 +171,19 @@ Release) is the recommended default; `windows-msvc` (VS 2022) is also supported.
 The `windows-llvm` and `windows-msvc` presets build **Release**; the Linux/macOS
 presets build **Debug** (override with `-DCMAKE_BUILD_TYPE=…` if needed).
 
+### Tests only
+
+The tests need neither MapLibre nor the Gui, Quick and Location modules, so they
+can be built on their own. This is what CI runs
+([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) on every push to `main`
+and every pull request:
+
+```bash
+cmake -S . -B build/tests -G Ninja -DTRAINSONMAP_BUILD_APP=OFF
+cmake --build build/tests
+ctest --test-dir build/tests --output-on-failure
+```
+
 ### Linux (Clang)
 
 ```bash
