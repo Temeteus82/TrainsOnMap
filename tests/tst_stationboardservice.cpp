@@ -82,6 +82,49 @@ private slots:
         QCOMPARE(svc.board()->count(), 1);
     }
 
+    /// R3-6. refresh() (what the timer calls) re-fetches the open board in place:
+    /// no spinner, the rows stay up until the new ones land, and a failed
+    /// refresh leaves them alone.
+    void refreshUpdatesTheOpenBoardInPlace()
+    {
+        fake::Manager net;
+        StationBoardService svc(nullptr, &net);
+
+        svc.refresh();   // nothing selected: no request
+        QCOMPARE(net.take(QStringLiteral("/station/")), nullptr);
+
+        svc.show(QStringLiteral("HKI"), {});
+        svc.refresh();   // the first load is still out: not superseded
+        fake::Reply *first = net.take(QStringLiteral("/station/HKI"));
+        QVERIFY(first);
+        QCOMPARE(net.take(QStringLiteral("/station/HKI")), nullptr);
+        first->respond(boardPayload(QStringLiteral("HKI"), QStringLiteral("TPE")));
+
+        StationBoardModel *model = svc.board();
+        const int role = model->roleNames().key("destination");
+        QCOMPARE(model->index(0, 0).data(role).toString(), QStringLiteral("TPE"));
+
+        svc.refresh();
+        fake::Reply *failed = net.take(QStringLiteral("/station/HKI"));
+        QVERIFY(failed);
+        QVERIFY(!svc.isLoading());
+        QCOMPARE(model->count(), 1);
+        failed->fail();
+        QCOMPARE(model->count(), 1);
+        QVERIFY(svc.status().isEmpty());
+
+        svc.refresh();
+        fake::Reply *second = net.take(QStringLiteral("/station/HKI"));
+        QVERIFY(second);
+        second->respond(boardPayload(QStringLiteral("HKI"), QStringLiteral("OL")));
+        QCOMPARE(model->count(), 1);
+        QCOMPARE(model->index(0, 0).data(role).toString(), QStringLiteral("OL"));
+
+        svc.clear();
+        svc.refresh();   // closed again: no request
+        QCOMPARE(net.take(QStringLiteral("/station/")), nullptr);
+    }
+
     /// CPP2-W2. The board lands while /metadata/stations is still out, so the
     /// destination shows as a code; when the names land it must become a name
     /// without the user re-selecting the station.

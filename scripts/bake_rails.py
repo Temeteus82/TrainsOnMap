@@ -60,7 +60,8 @@ Output: resources/rails.wgs84.geojson
   ~0.1 m), carrying only `paaraide`, for a MapLibre GeoJSON source -- the app's
   blob stays EPSG:3067 because RailGraph matches in metres. A GeoJSON source needs
   lon/lat; fed EPSG:3067 metres, MapLibre accepts it silently and draws the rails
-  off-screen (docs/vector-basemap-exploration.md). Not embedded in the app yet.
+  off-screen (docs/vector-basemap-exploration.md). Embedded in the app as
+  `:/data/rails.wgs84.geojson`.
   `bakedAt` matches the blob it was derived from.
 
 Network gotchas: infra-api `latest` 307-redirects to a versioned, build-numbered

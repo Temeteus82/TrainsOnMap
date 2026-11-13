@@ -32,7 +32,7 @@ class DigitrafficClient : public QObject
     // flight, so the sidebar can show feedback instead of the Refresh button
     // sitting inert for the duration of the network call (Doherty Threshold).
     Q_PROPERTY(bool loading READ isLoading NOTIFY loadingChanged)
-    // Live punctuality summary (% on time, ≤5 min late) per broad category,
+    // Live punctuality summary (% on time, under 5 min late) per broad category,
     // aggregated from the /live-trains delay data already polled each cycle — no
     // extra request. Empty until the first categories fetch lands.
     Q_PROPERTY(QString punctuality READ punctuality NOTIFY punctualityChanged)

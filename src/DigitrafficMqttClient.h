@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QByteArray>
+#include <QElapsedTimer>
 #include <QObject>
 #include <QTimer>
 #include <QtQmlIntegration>
@@ -65,6 +66,8 @@ private:
     void dispatchPacket(quint8 type, quint8 flags, const QByteArray &body);
     void handleLocationPayload(const QByteArray &payload);
     void sendTrainSubscription();   ///< (re)subscribe to m_trainTopic if set & connected
+    /// Abort a connection that stopped answering and schedule the reconnect.
+    void dropConnection(const char *reason);
     void send(const QByteArray &packet);
     /// Next MQTT packet identifier. 0 is not a valid id in MQTT 3.1.1, so wrap
     /// back to 1 instead of through 0 after 65535 SUBSCRIBE/UNSUBSCRIBEs.
@@ -82,6 +85,10 @@ private:
     TrainListModel *m_model = nullptr;
     QTimer m_pingTimer;        ///< MQTT keep-alive
     QTimer m_reconnectTimer;   ///< retry after a drop while active
+    QTimer m_handshakeTimer;   ///< open() to CONNACK deadline (CPP2-I5)
+    QElapsedTimer m_lastRx;    ///< time since the broker last sent anything (CPP2-I5)
+    int m_reconnectDelayMs;    ///< doubles per failed attempt, reset once live (CPP2-I6)
+    quint16 m_locationsSubId = 0;   ///< packet id of the train-locations SUBSCRIBE (CPP2-I1)
     QByteArray m_rxBuffer;     ///< MQTT packets may span / share WebSocket frames
     QString m_trainTopic;      ///< current per-train subscription, e.g. trains/<date>/<n>/#
     quint16 m_packetId = 1;

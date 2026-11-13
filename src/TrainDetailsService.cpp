@@ -8,6 +8,7 @@
 #include <QTime>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QLocale>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
@@ -19,11 +20,7 @@
 namespace {
 QString estimate(const QJsonObject &row, const QString &scheduled)
 {
-    // Best known time: actual if it happened, otherwise the live estimate.
-    QString iso = row.value(QStringLiteral("actualTime")).toString();
-    if (iso.isEmpty())
-        iso = row.value(QStringLiteral("liveEstimateTime")).toString();
-    const QString est = digitraffic::localTime(iso);
+    const QString est = digitraffic::localTime(digitraffic::bestKnownTime(row));
     return est == scheduled ? QString() : est;   // only surface when it differs
 }
 
@@ -172,6 +169,20 @@ void TrainDetailsService::onStationNames()
 {
     if (m_meta.stationsLoaded() && !m_stops.isEmpty())
         rebuildStops();   // a timetable arrived before the names did
+    // Likewise the consist's leg, resolved when the composition landed (R3-L2).
+    const QString leg = compositionLegText();
+    if (leg != m_compositionLeg) {
+        m_compositionLeg = leg;
+        emit compositionChanged();
+    }
+}
+
+QString TrainDetailsService::compositionLegText() const
+{
+    if (m_compositionBegin.isEmpty() && m_compositionEnd.isEmpty())
+        return {};
+    return QStringLiteral("%1 → %2").arg(m_meta.stationLabel(m_compositionBegin),
+                                         m_meta.stationLabel(m_compositionEnd));
 }
 
 void TrainDetailsService::onCauseCategoryNames()
@@ -299,7 +310,9 @@ void TrainDetailsService::applyTrainObject(const QJsonObject &train, bool live)
     rebuildStops();
     setStatus(live ? QStringLiteral("%1 stops · live %2")
                          .arg(stopCount)
-                         .arg(QTime::currentTime().toString(QStringLiteral("HH:mm:ss")))
+                         // Locale's own short time, like every other one (R3-L4).
+                         .arg(QLocale::system().toString(QTime::currentTime(),
+                                                         QLocale::ShortFormat))
                    : QStringLiteral("%1 stops").arg(stopCount));
 }
 
@@ -368,13 +381,11 @@ void TrainDetailsService::handleComposition(QNetworkReply *reply)
         parts << QStringLiteral("max %1 km/h").arg(maxSpeed);
     m_compositionSummary = parts.join(QStringLiteral(" · "));
 
-    const QString begin = first.value(QStringLiteral("beginTimeTableRow")).toObject()
-                              .value(QStringLiteral("stationShortCode")).toString();
-    const QString end = first.value(QStringLiteral("endTimeTableRow")).toObject()
-                            .value(QStringLiteral("stationShortCode")).toString();
-    m_compositionLeg = (begin.isEmpty() && end.isEmpty())
-        ? QString()
-        : QStringLiteral("%1 → %2").arg(m_meta.stationLabel(begin), m_meta.stationLabel(end));
+    m_compositionBegin = first.value(QStringLiteral("beginTimeTableRow")).toObject()
+                             .value(QStringLiteral("stationShortCode")).toString();
+    m_compositionEnd = first.value(QStringLiteral("endTimeTableRow")).toObject()
+                           .value(QStringLiteral("stationShortCode")).toString();
+    m_compositionLeg = compositionLegText();
 
     m_compositionSectionCount = sections.size();
     m_hasComposition = !vehicles.isEmpty();
@@ -389,6 +400,8 @@ void TrainDetailsService::clearComposition()
     m_hasComposition = false;
     m_compositionSummary.clear();
     m_compositionLeg.clear();
+    m_compositionBegin.clear();
+    m_compositionEnd.clear();
     m_compositionSectionCount = 0;
     if (had)
         emit compositionChanged();

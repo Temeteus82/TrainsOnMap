@@ -162,6 +162,11 @@ subscription.
   packets as are available. A frame implausibly larger than 1 MiB is treated as a
   corrupt/out-of-sync stream: the buffer is dropped and the socket closed to force
   a clean reconnect rather than buffering toward the protocol ceiling.
-- **Reconnection:** while `active`, a drop schedules a reconnect after 5 s; a
+- **Reconnection:** while `active`, a drop schedules a reconnect after 5 s,
+  doubling per failed attempt up to 2 min and resetting once the
+  `train-locations/#` subscription is acknowledged. A connection is also dropped
+  when no CONNACK arrives within 15 s of opening, when nothing has been received
+  for 1.5 × the keep-alive, when the length field is malformed, or when the
+  broker refuses the locations subscription (SUBACK 0x80). A
   selected-train subscription is restored automatically on the next CONNACK. All
   socket callbacks fire on the GUI thread.

@@ -28,6 +28,11 @@ ApplicationWindow {
     onSelMatchChanged: {
         if (selMatch.snapLat === undefined)
             return
+        // The poll assigns a fresh object every tick whether or not the train
+        // moved; only a new position extends the trail (R3-4).
+        const last = trailPoints[trailPoints.length - 1]
+        if (last && last.latitude === selMatch.snapLat && last.longitude === selMatch.snapLon)
+            return
         trailPoints = trailPoints.concat([QtPositioning.coordinate(selMatch.snapLat, selMatch.snapLon)])
                                   .slice(-maxTrailPoints)
     }
@@ -340,6 +345,7 @@ ApplicationWindow {
             delegate: TrainMarker {
                 visible: panel.categoryVisible(model.category)
                 selected: trainDetails.hasSelection && trainDetails.trainNumber === model.trainNumber
+                          && trainDetails.departureDate === model.departureDate
                 // Dots only at country scale; reveal the text badges once
                 // zoomed in enough that they no longer collide into a blur.
                 // Density check on top: a terminus (e.g. Helsinki) can have
@@ -565,8 +571,12 @@ ApplicationWindow {
         visible: opacity > 0
         // U2-W4: focus enters the panel when it opens, so Tab reaches its close
         // button instead of restarting at the top of the window — and goes back
-        // to the train list when it closes, rather than nowhere.
+        // to the train list when it closes, rather than nowhere. Not on a swap
+        // to the station board, though: that panel took focus when it opened and
+        // this one's fade-out finishes later (R3-2).
         onVisibleChanged: {
+            if (!visible && stationBoard.hasSelection)
+                return
             const t = visible ? (item as Item) : trainListPanel
             if (t)
                 t.forceActiveFocus()
@@ -598,6 +608,8 @@ ApplicationWindow {
         visible: opacity > 0
         // U2-W4: same focus entry/return as the detail panel above.
         onVisibleChanged: {
+            if (!visible && trainDetails.hasSelection)
+                return
             const t = visible ? (item as Item) : trainListPanel
             if (t)
                 t.forceActiveFocus()

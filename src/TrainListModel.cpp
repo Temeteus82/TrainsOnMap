@@ -5,6 +5,7 @@
 #include <QSet>
 
 #include <algorithm>
+#include <cmath>
 #include <limits>
 
 namespace {
@@ -23,7 +24,6 @@ constexpr qint64 kAbandonedSecs = 6 * 60 * 60;
 // How often the abandoned-row sweep may run. It is O(rows) and only matters
 // during a multi-hour REST outage, so once a minute is generous.
 constexpr qint64 kAbandonSweepSecs = 60;
-constexpr int kLateMinutes = 5;              // amber "late" ring at this delay or more
 constexpr int kVeryLateMinutes = 15;         // red "very late" ring at this delay or more
 constexpr double kStoppedSpeedKmh = 0.5;     // below this a train counts as stopped/waiting
 
@@ -47,7 +47,8 @@ constexpr double kStationSnapMeters = 250.0;
 // forward by speed·Δt instead of freezing it, so the next fix's route window
 // stays centred on where the train should be rather than at the tunnel mouth.
 // Capped so a garbage Δt can't fling the window across the country; over-shooting
-// is self-correcting (the forward re-acquire in projectOntoRoute catches up).
+// is self-correcting (projectOntoRoute re-acquires globally once no hit ahead of
+// the carried chainage is near the fix, R3-L1).
 constexpr double kMaxGapAdvanceMeters = 20000.0;
 
 // Teleport guard. A single feed glitch — a stale/duplicate coordinate, or a
@@ -124,11 +125,12 @@ QHash<int, QByteArray> TrainListModel::roleNames() const
     return roles;
 }
 
-double TrainListModel::bearingFor(const QGeoCoordinate &prev, const QGeoCoordinate &coordinate)
+double TrainListModel::bearingFor(const QGeoCoordinate &prev, const QGeoCoordinate &coordinate,
+                                  double fallback)
 {
     if (prev.isValid() && coordinate.isValid() && prev.distanceTo(coordinate) > 1.0)
         return prev.azimuthTo(coordinate);
-    return 0.0;
+    return fallback;
 }
 
 QString TrainListModel::nearestRouteStationCode(const TrainKey &key,
@@ -271,10 +273,14 @@ void TrainListModel::applyOne(const TrainPosition &train)
     // position (it would record a ~180°-reversed bearing). Drop it here, before the
     // route projection / platform snap, so that work isn't burned fleet-wide on
     // every resync only to be discarded below (#11).
+    //
+    // An *equal* timestamp is dropped too (R3-1): it is the fix the row already
+    // holds, re-delivered by the resync. Re-applying it moved the marker 0 m, which
+    // reset the bearing, and re-matched it without a heading.
     const auto existing = m_indexByKey.constFind(key);
     if (existing != m_indexByKey.constEnd() && train.timestamp.isValid()
         && m_rows.at(existing.value()).pos.timestamp.isValid()
-        && train.timestamp < m_rows.at(existing.value()).pos.timestamp)
+        && train.timestamp <= m_rows.at(existing.value()).pos.timestamp)
         return;
 
     // Teleport guard: drop a physically impossible jump from the last fix (a feed
@@ -366,6 +372,7 @@ void TrainListModel::applyOne(const TrainPosition &train)
         if (route != m_routeByKey.constEnd() && route->codes.size() >= 2) {
             RouteMatchRequest req;
             req.stationCodes = route->codes;
+            req.routeKey = route->key;
             req.prevChainage = prevChainage;
             req.advanceMeters = advance;
             if (stopped) {
@@ -425,7 +432,9 @@ void TrainListModel::applyOne(const TrainPosition &train)
         const int rowIndex = it.value();
         Row &row = m_rows[rowIndex];
         // Staleness was already rejected at the top of applyOne (#11).
-        row.bearing = bearingFor(prevCoord, matched.coordinate);
+        // A sub-metre move has no usable azimuth: keep the last bearing rather than
+        // swinging the arrow to north (R3-1).
+        row.bearing = bearingFor(prevCoord, matched.coordinate, row.bearing);
         row.pos = matched;
         row.trackOffsetMeters = offset;
         row.rawCoordinate = raw;
@@ -443,7 +452,7 @@ void TrainListModel::applyOne(const TrainPosition &train)
     const int newRow = m_rows.size();
     beginInsertRows(QModelIndex(), newRow, newRow);
     Row row;
-    row.bearing = bearingFor(prevCoord, matched.coordinate);
+    row.bearing = bearingFor(prevCoord, matched.coordinate, 0.0);
     row.pos = matched;
     row.trackOffsetMeters = offset;
     row.rawCoordinate = raw;
@@ -476,8 +485,11 @@ void TrainListModel::recomputeNearestNeighbors()
     // distanceTo() is symmetric, so each pair only needs visiting once: the
     // inner loop starts at i + 1 and feeds the one haversine to both rows.
     // Scanning the full range and skipping j == i computed every pair twice.
-    for (int i = 0; i < m_rows.size(); ++i)
+    QVector<double> previous(m_rows.size());
+    for (int i = 0; i < m_rows.size(); ++i) {
+        previous[i] = m_rows.at(i).nearestNeighborMeters;
         m_rows[i].nearestNeighborMeters = -1.0;   // "no valid neighbour"
+    }
 
     for (int i = 0; i < m_rows.size(); ++i) {
         const QGeoCoordinate &a = m_rows.at(i).pos.coordinate;
@@ -496,8 +508,13 @@ void TrainListModel::recomputeNearestNeighbors()
                 nearestB = d;
         }
     }
-    if (!m_rows.isEmpty())
-        emit dataChanged(index(0), index(m_rows.size() - 1), { NearestNeighborRole });
+    // Only the rows whose distance moved (CPP2-I2): a whole-model emission made
+    // the filter proxy re-sort the fleet on every snapshot. Sub-metre changes
+    // are noise next to the ~30 px declutter radius this feeds.
+    QVector<bool> changed(m_rows.size(), false);
+    for (int i = 0; i < m_rows.size(); ++i)
+        changed[i] = std::abs(m_rows.at(i).nearestNeighborMeters - previous.at(i)) >= 1.0;
+    emitChangedRuns(changed, { NearestNeighborRole });
 }
 
 void TrainListModel::setTrainMetadata(const QHash<TrainKey, QString> &types,

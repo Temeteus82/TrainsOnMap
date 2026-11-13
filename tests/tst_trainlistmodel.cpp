@@ -202,8 +202,8 @@ private slots:
     /// BearingRole is the azimuth from the row's previous coordinate. CPP2-W3
     /// dropped the separate m_previous history in favour of the row's own
     /// position, so pin what that history produced: 0 on the first fix,
-    /// north/east on moves, 0 for sub-metre jitter, and an out-of-order fix
-    /// leaving the bearing untouched.
+    /// north/east on moves, and the bearing held through sub-metre jitter, a
+    /// re-delivered fix (same timestamp, R3-1) and an out-of-order fix.
     void bearingFollowsSuccessiveFixes()
     {
         TrainListModel m;
@@ -222,8 +222,11 @@ private slots:
         QCOMPARE(fix(60.0, 24.9, 0), 0.0);                       // first fix: no history
         QVERIFY(qAbs(fix(60.001, 24.9, 10)) < 0.5);              // ~111 m north
         QVERIFY(qAbs(fix(60.001, 24.902, 20) - 90.0) < 1.0);     // ~111 m east
-        QCOMPARE(fix(60.001, 24.902001, 30), 0.0);               // < 1 m: jitter
-        QCOMPARE(fix(60.0, 24.9, 5), 0.0);                       // older fix: dropped
+        const double east = fix(60.001, 24.902, 20);             // same fix again (REST resync)
+        QVERIFY(qAbs(east - 90.0) < 1.0);
+        QCOMPARE(fix(60.001, 24.902001, 30), east);              // < 1 m: jitter keeps bearing
+        QCOMPARE(fix(60.0, 24.9, 30), east);                     // equal timestamp: dropped
+        QCOMPARE(fix(60.0, 24.9, 5), east);                      // older fix: dropped
         QVERIFY(qAbs(fix(60.0, 24.902, 40) - 180.0) < 0.5);      // back south
     }
 };

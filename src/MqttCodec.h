@@ -33,6 +33,9 @@ inline QByteArray encodeRemainingLength(int length)
 
 /// Decode a "Remaining Length" starting at `offset`.
 /// Returns false if more bytes are needed; otherwise sets value/bytesUsed.
+/// A field whose fourth byte still has the continuation bit set is malformed
+/// (MQTT 3.1.1 §2.2.3): it comes back as true with `value == -1`, and the
+/// caller must drop the connection rather than read on (CPP2-I10).
 inline bool decodeRemainingLength(const QByteArray &buf, int offset, int &value, int &bytesUsed)
 {
     value = 0;
@@ -48,7 +51,8 @@ inline bool decodeRemainingLength(const QByteArray &buf, int offset, int &value,
             return true;
         multiplier *= 128;
     }
-    return true; // 4-byte maximum reached
+    value = -1; // a fifth length byte: malformed
+    return true;
 }
 
 /// Encode a UTF-8 string with a 2-byte big-endian length prefix.

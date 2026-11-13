@@ -8,6 +8,7 @@
 #include <QUrl>
 
 #include <algorithm>
+#include <chrono>
 
 #include "DigitrafficClient.h"
 #include "DigitrafficFormat.h"
@@ -20,6 +21,10 @@ StationBoardService::StationBoardService(QObject *parent, QNetworkAccessManager 
 {
     m_net->setTransferTimeout(digitraffic::kRequestTimeout);
     netdiag::logSslErrors(m_net, "StationBoardService");
+
+    // An open board is live data: re-fetch it while a station is selected (R3-6).
+    m_refreshTimer.setInterval(std::chrono::seconds{45});
+    connect(&m_refreshTimer, &QTimer::timeout, this, &StationBoardService::refresh);
 }
 
 void StationBoardService::setFleet(DigitrafficClient *fleet)
@@ -78,7 +83,21 @@ void StationBoardService::show(const QString &code, const QString &name)
     m_board->clear();
     setLoading(true);
     setStatus(QStringLiteral("Loading board…"));
+    fetch();
+    m_refreshTimer.start();
+}
 
+void StationBoardService::refresh()
+{
+    // Quietly: the rows stay up and no spinner shows. A load still in flight
+    // is left alone rather than superseded.
+    if (m_hasSelection && !m_loading)
+        fetch();
+}
+
+void StationBoardService::fetch()
+{
+    const QString code = m_stationCode;
     const QString url = QStringLiteral(
         "https://rata.digitraffic.fi/api/v1/live-trains/station/%1"
         "?arriving_trains=8&departing_trains=8&include_nonstopping=false").arg(code);
@@ -105,6 +124,7 @@ void StationBoardService::clear()
     m_stationCode.clear();
     m_stationName.clear();
     m_hasSelection = false;
+    m_refreshTimer.stop();
     ++m_request;   // any in-flight reply is now stale
     m_rows.clear();
     m_board->clear();
@@ -117,14 +137,17 @@ void StationBoardService::handleReply(QNetworkReply *reply, const QString &code)
 {
     reply->deleteLater();
     setLoading(false);
-    if (reply->error() != QNetworkReply::NoError) {
-        setStatus(QStringLiteral("Board unavailable"));
-        return;
-    }
-
-    const auto parsed = digitraffic::parseArray(reply->readAll(), "live-trains/station");
+    // A failed *refresh* keeps the rows already shown; only a board with
+    // nothing to show says it is unavailable.
+    const auto parsed = reply->error() == QNetworkReply::NoError
+        ? digitraffic::parseArray(reply->readAll(), "live-trains/station")
+        : std::nullopt;
     if (!parsed) {
-        setStatus(QStringLiteral("Board unavailable"));
+        if (reply->error() != QNetworkReply::NoError)
+            qWarning("live-trains/station: request failed: %ls",
+                     qUtf16Printable(reply->errorString()));
+        if (m_rows.isEmpty())
+            setStatus(QStringLiteral("Board unavailable"));
         return;
     }
 
@@ -172,9 +195,7 @@ void StationBoardService::handleReply(QNetworkReply *reply, const QString &code)
         row.destinationCode = tt.last().toObject().value("stationShortCode").toString();
 
         const QString sched = r.value("scheduledTime").toString();
-        const QString live = r.value("liveEstimateTime").toString().isEmpty()
-                                 ? r.value("actualTime").toString()
-                                 : r.value("liveEstimateTime").toString();
+        const QString live = digitraffic::bestKnownTime(r);
         row.timeText = digitraffic::localTime(sched);
         const QString est = digitraffic::localTime(live);
         if (!est.isEmpty() && est != row.timeText)

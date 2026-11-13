@@ -68,7 +68,9 @@ continuation. Used by `makePacket`.
 Decodes a "Remaining Length" starting at `offset` in `buf`. Returns `false` when
 more bytes are still needed (so the caller can wait for the next frame);
 otherwise returns `true` and sets `value` (the decoded length) and `bytesUsed`
-(how many bytes the field occupied). Reads at most 4 bytes. This is the function
+(how many bytes the field occupied). Reads at most 4 bytes; if the fourth still
+has its continuation bit set the field is malformed, and it returns `true` with
+`value == -1` so the caller can drop the connection. This is the function
 that lets `DigitrafficMqttClient::onBinaryMessage` re-frame a byte stream whose
 WebSocket boundaries don't line up with MQTT packet boundaries.
 

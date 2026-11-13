@@ -112,6 +112,7 @@ private:
     void fetchComposition(int trainNumber, const QString &departureDate, quint64 request);
     void handleComposition(QNetworkReply *reply);
     void clearComposition();             ///< reset carriage state + notify
+    QString compositionLegText() const;  ///< "Helsinki → Joensuu" from the stored leg codes
     void onStreamTrainMessage(const QByteArray &payload);        ///< live MQTT update
     void rebuildStops();                 ///< re-resolve names + push to model
     void setLoading(bool loading);
@@ -143,5 +144,7 @@ private:
     bool m_hasComposition = false;
     QString m_compositionSummary;   ///< "6 cars · 178 m · max 200 km/h"
     QString m_compositionLeg;       ///< departure-section leg, resolved to names
+    QString m_compositionBegin;     ///< the leg's station codes, kept so it can be
+    QString m_compositionEnd;       ///<   re-resolved when names load late (R3-L2)
     int m_compositionSectionCount = 0;
 };
