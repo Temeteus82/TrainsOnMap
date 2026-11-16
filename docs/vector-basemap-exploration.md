@@ -413,10 +413,24 @@ Verified on: Windows 11 Pro (10.0.26200), AMD Radeon RX 6900 XT, official Qt
 `maplibre-native-qt` builds unmodified with its `Windows-OpenGL` preset from a
 `vcvars64` shell, and all three upstream suites pass. Configure again prints
 "Configuring OpenGL **ES** backend", which is harmless here too. The app builds
-with our own `windows-msvc` preset. **llvm-mingw, our release toolchain
-(`windows-llvm-qt611`), was not tried**; it is not in upstream's CI matrix
-either, and the plugin DLLs must match the app's ABI, so a MapLibre build means
-an MSVC app build.
+with our own `windows-msvc` preset. The plugin DLLs must match the app's ABI,
+so the MapLibre build and the app build must use the same toolchain.
+
+**llvm-mingw, our release toolchain, also works (2026-11-16).** It is not in
+upstream's CI matrix. Tested with Qt 6.12.0 `llvm-mingw_64`, Clang 22.1.7
+(`D:\Qt\Tools\llvm-mingw2217_64`) and upstream `c3485f3`. The `Windows-OpenGL`
+preset builds unmodified (539/539 steps, no warnings) with `QT_ROOT_DIR` set to
+that kit and `CC=clang`/`CXX=clang++`, and all three upstream suites pass. The
+app then builds with `windows-llvm-qt612` against that install. Run by hand, the
+basemap, rails and trains draw correctly, with no errors in the log.
+
+The `Windows-Vulkan` preset works on llvm-mingw too (Vulkan SDK 1.4.363). It
+needs the bundled Vulkan headers pinned, exactly as on MSVC (see the Vulkan
+notes above). The build finishes 597/597 with no warnings: lld links the SDK's
+MSVC-format `vulkan-1.lib` without complaint. All three upstream suites pass.
+The app, built against that install, runs Qt Quick on Vulkan
+(`QSG_INFO=1` logs `Creating QRhi with backend Vulkan`) and draws correctly by
+eye, with no errors in the log.
 
 As on Linux, the test was the app itself in a throwaway worktree: the `maplibre`
 plugin with both CARTO styles registered, rails as the single GeoJSON layer from
@@ -478,7 +492,9 @@ against each other, not against today's `osm` build.
   `QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL)` in `main.cpp`
   before the `QGuiApplication` exists. Machines without a real GL driver (VMs,
   RDP) were not tried and would fall back to software GL.
-- **Leaving llvm-mingw** for the Windows release, or proving MapLibre on it.
+- ~~**Leaving llvm-mingw** for the Windows release, or proving MapLibre on it.~~
+  MapLibre builds and passes its tests on llvm-mingw (2026-11-16, above), so the
+  release can stay on it.
 - **Deployment.** The probe ran with `QT_PLUGIN_PATH`/`QML_IMPORT_PATH` pointed
   at the MapLibre build tree; `windeployqt` does not know about the three
   `QMapLibre*.dll`s or the two plugin directories, so the release zip would need
@@ -503,7 +519,7 @@ We did not dig into which upstream change fixed it.
 | | Renders? | What stands between it and shipping |
 |---|---|---|
 | **Linux** | ✅ verified in-app | Rails as one GeoJSON layer (WGS84 bake); MapLibre built from unreleased source |
-| **Windows** | ✅ verified in-app (MSVC, OpenGL) | Same as Linux, plus forcing the UI onto OpenGL, an MSVC release build, deploying the MapLibre DLLs; #285/#302 not reproduced |
+| **Windows** | ✅ verified in-app (MSVC, OpenGL) | Same as Linux, plus deploying the MapLibre DLLs (MSVC or llvm-mingw, Vulkan by default; `main.cpp` matches Qt Quick's API to MapLibre's); #285/#302 not reproduced |
 | **macOS** | ✅ verified in-app (Metal), 2026-10-30 | See [macOS — verified](#macos--verified-2026-10-30) |
 
 ## Where this leaves us
@@ -529,7 +545,8 @@ We did not dig into which upstream change fixed it.
    from the blob).
 5. **A Linux + Windows vector basemap is possible today**, leaving macOS on the
    Esri raster. That splits the basemap code by platform. On Windows it also
-   means switching the release build from llvm-mingw to MSVC and forcing OpenGL.
+   uses Vulkan, the default MapLibre backend on Windows and Linux (`main.cpp`
+   sets Qt Quick to match), and the release build can stay on llvm-mingw.
    #285 and #302 did not reproduce, so they no longer block; keep an eye on
    both upstream.
 

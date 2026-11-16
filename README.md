@@ -138,13 +138,18 @@ works in a local metric frame (no full EPSG:3067 round-trip per fix).
   against the same Qt kit. Add `<dir>` to `CMAKE_PREFIX_PATH`, or pass
   `-DQMapLibre_DIR=<dir>/lib/cmake/QMapLibre` with presets that pin the Qt path.
   The app renders with whichever backend MapLibre was built for (OpenGL, Vulkan
-  or Metal). For a **Vulkan** build on Windows with the Vulkan SDK installed,
-  configure MapLibre with
+  or Metal). **Vulkan is the default on Windows and Linux**: build MapLibre with
+  upstream's `Windows-Vulkan` / `Linux-Vulkan` preset, and use `macOS` (Metal) on
+  macOS. On Windows, install the
+  [Vulkan SDK](https://vulkan.lunarg.com/sdk/home#windows) and configure MapLibre
+  with
   `-DVulkan_INCLUDE_DIR=<mlq>/vendor/maplibre-native/vendor/Vulkan-Headers/include`.
   Without that, it crashes on the first render
   ([details](docs/upstream-issue-maplibre-vulkan-headers.md)). On Linux the
   `Linux-Vulkan` preset works as-is, distro `vulkan-headers` included
-  (`QT_ROOT_DIR=/usr cmake --preset Linux-Vulkan` for a system Qt).
+  (`QT_ROOT_DIR=/usr cmake --preset Linux-Vulkan` for a system Qt). The
+  `*-OpenGL` presets remain the fallback for machines without a Vulkan driver
+  (VMs, RDP sessions).
 - **CMake ≥ 3.21**, **Ninja**, and a C++17 compiler (MSVC 2022 or the bundled
   llvm-mingw / MinGW on Windows; GCC or Clang on Linux/macOS).
 
@@ -296,7 +301,7 @@ Uses Qt's bundled **llvm-mingw** toolchain (Clang + `lld`). Put its `bin` on
 **not** the `msvc2022_64` kit.
 
 ```powershell
-$env:PATH = "C:/Qt/Tools/llvm-mingw1706_64/bin;$env:PATH"
+$env:PATH = "C:/Qt/Tools/llvm-mingw2217_64/bin;$env:PATH"
 $env:CMAKE_PREFIX_PATH = "C:/Qt/6.12.0/llvm-mingw_64"
 cmake --preset windows-llvm
 cmake --build --preset windows-llvm        # Release
@@ -307,6 +312,18 @@ cmake --build --preset windows-llvm        # Release
 > (VS 2022 Build Tools v17.14), the LLVM/Clang preset (llvm-mingw Clang 17 +
 > `lld` + Ninja), and a MinGW kit (Qt's bundled GCC 13 + Ninja) all configure
 > and build clean.
+
+> MapLibre must be built with the same llvm-mingw toolchain: MinGW and MSVC
+> DLLs do not mix. Upstream's `Windows-Vulkan` preset works unmodified with
+> `QT_ROOT_DIR` set to the `llvm-mingw_64` kit, `CC=clang`, `CXX=clang++`, the
+> toolchain `bin` on `PATH`, and the `Vulkan_INCLUDE_DIR` setting from
+> Prerequisites above. Verified 2026-11-16 with Qt 6.12.0 and Clang 22.1.7: it
+> builds without warnings and all three upstream test suites pass. The
+> `Windows-OpenGL` fallback builds the same way, without `Vulkan_INCLUDE_DIR`. If the
+> toolchain folder in `PATH` is missing (Qt's installer renames it per LLVM
+> version), CMake silently picks any other `clang++` it finds, such as a
+> standalone LLVM targeting the MSVC ABI. The build then fails at the first
+> static library with *The system cannot find the path specified*.
 
 > The build runs **windeployqt** automatically, copying the Qt DLLs and the
 > needed plugins (the `windows` platform plugin, the TLS backend for the `wss://`
